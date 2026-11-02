@@ -8,14 +8,23 @@ import {
 } from "react-router-dom";
 import { api } from "./api";
 import { AuthProvider } from "./auth";
-import { AdminRoute, LoadingScreen, ProtectedRoute } from "./components/Guards";
+import {
+  AdminRoute,
+  LoadingScreen,
+  ProfileRoute,
+  ProtectedRoute,
+} from "./components/Guards";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
-import { HomePage } from "./pages/HomePage";
+import { AccountPage } from "./pages/AccountPage";
+import { AccountsPage } from "./pages/AccountsPage";
+import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
+import { MovementsPage } from "./pages/MovementsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PendingPage } from "./pages/PendingPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { SavingsPage } from "./pages/SavingsPage";
 import { SetupPage } from "./pages/SetupPage";
 
 function SetupGate({ children }: { children: ReactNode }) {
@@ -59,8 +68,40 @@ export function App() {
               <Route
                 path="/"
                 element={
+                  <ProfileRoute>
+                    <DashboardPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/accounts"
+                element={
+                  <ProfileRoute>
+                    <AccountsPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/savings"
+                element={
+                  <ProfileRoute>
+                    <SavingsPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/movements"
+                element={
+                  <ProfileRoute>
+                    <MovementsPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/account"
+                element={
                   <ProtectedRoute>
-                    <HomePage />
+                    <AccountPage />
                   </ProtectedRoute>
                 }
               />

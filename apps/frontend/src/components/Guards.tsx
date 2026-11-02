@@ -29,3 +29,12 @@ export function AdminRoute({ children }: { children: ReactNode }) {
   if (!user.is_global_admin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
+
+export function ProfileRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.is_global_admin) return <Navigate to="/admin" replace />;
+  return <>{children}</>;
+}

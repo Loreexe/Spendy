@@ -28,6 +28,82 @@ export interface Settings {
   setup_completed: boolean;
 }
 
+export type AccountType = "cash" | "checking" | "card" | "other";
+export type TransactionKind = "opening" | "income" | "expense" | "transfer";
+
+export interface Account {
+  id: number;
+  name: string;
+  type: AccountType;
+  type_label: string;
+  initial_balance: string;
+  currency: string;
+  archived: boolean;
+  balance: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavingsAccount {
+  id: number;
+  name: string;
+  backing_account: number;
+  backing_account_name: string;
+  balance: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Line {
+  id: number;
+  target_type: "account" | "savings";
+  account: number | null;
+  account_name: string | null;
+  savings: number | null;
+  savings_name: string | null;
+  amount: string;
+  role: "principal" | "technical" | "transfer_out" | "transfer_in";
+}
+
+export interface Transaction {
+  id: number;
+  kind: TransactionKind;
+  kind_label: string;
+  date: string;
+  description: string;
+  amount: string;
+  lines: Line[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Dashboard {
+  total_balance: string;
+  total_savings: string;
+  total_patrimony: string;
+  period_balance: string;
+  income_total: string;
+  expense_total: string;
+  period: { start: string; end: string };
+  accounts: Account[];
+  savings: SavingsAccount[];
+  recent_transactions: Transaction[];
+}
+
+export interface TransactionPayload {
+  kind: "income" | "expense" | "transfer";
+  date: string;
+  description?: string;
+  amount: string;
+  account?: number;
+  savings?: number;
+  from_account?: number;
+  to_account?: number;
+  from_savings?: number;
+  to_savings?: number;
+  confirm_coverage?: boolean;
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -166,4 +242,89 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ registration_mode: registrationMode }),
     }),
+
+  dashboard: (start?: string, end?: string) => {
+    const params = new URLSearchParams();
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
+    const query = params.toString();
+    return request<Dashboard>(`/api/finance/dashboard/${query ? `?${query}` : ""}`);
+  },
+
+  accounts: () =>
+    request<{ accounts: Account[] }>("/api/finance/accounts/"),
+
+  createAccount: (data: {
+    name: string;
+    type: AccountType;
+    initial_balance: string;
+  }) =>
+    request<Account>("/api/finance/accounts/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateAccount: (
+    id: number,
+    data: Partial<{ name: string; type: AccountType; archived: boolean }>,
+  ) =>
+    request<Account>(`/api/finance/accounts/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteAccount: (id: number) =>
+    request<void>(`/api/finance/accounts/${id}/`, { method: "DELETE" }),
+
+  savings: () =>
+    request<{ savings: SavingsAccount[] }>("/api/finance/savings/"),
+
+  createSavings: (data: { name: string; backing_account: number }) =>
+    request<SavingsAccount>("/api/finance/savings/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateSavings: (id: number, data: Partial<{ name: string }>) =>
+    request<SavingsAccount>(`/api/finance/savings/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSavings: (id: number) =>
+    request<void>(`/api/finance/savings/${id}/`, { method: "DELETE" }),
+
+  transactions: (params: {
+    account?: number;
+    savings?: number;
+    start?: string;
+    end?: string;
+    limit?: number;
+  } = {}) => {
+    const query = new URLSearchParams();
+    if (params.account) query.set("account", String(params.account));
+    if (params.savings) query.set("savings", String(params.savings));
+    if (params.start) query.set("start", params.start);
+    if (params.end) query.set("end", params.end);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString();
+    return request<{ transactions: Transaction[] }>(
+      `/api/finance/transactions/${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+
+  createTransaction: (data: TransactionPayload) =>
+    request<Transaction>("/api/finance/transactions/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateTransaction: (id: number, data: TransactionPayload) =>
+    request<Transaction>(`/api/finance/transactions/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteTransaction: (id: number) =>
+    request<void>(`/api/finance/transactions/${id}/`, { method: "DELETE" }),
 };

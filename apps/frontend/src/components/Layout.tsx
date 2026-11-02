@@ -19,7 +19,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <nav className="app-nav">
           {user && (
             <>
-              <Link to="/">Home</Link>
+              {!user.is_global_admin && (
+                <>
+                  <Link to="/">Dashboard</Link>
+                  <Link to="/accounts">Conti</Link>
+                  <Link to="/savings">Salvadanai</Link>
+                  <Link to="/movements">Movimenti</Link>
+                </>
+              )}
+              <Link to="/account">Account</Link>
               {user.is_global_admin && <Link to="/admin">Amministrazione</Link>}
               <button type="button" className="link-button" onClick={handleLogout}>
                 Esci
@@ -30,7 +38,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </header>
       <main className="app-main">{children}</main>
       <footer className="app-footer">
-        Spendy · fondamenta tecniche
+        Spendy · finanze personali
       </footer>
     </div>
   );

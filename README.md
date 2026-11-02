@@ -1,16 +1,33 @@
 # Spendy
 
-Fondamenta tecniche di Spendy: monorepo con backend Django/DRF, frontend
-React/TypeScript, PostgreSQL e Docker Compose. In questa fase **non** sono
-presenti funzionalità finanziarie.
+Spendy è un'app self-hosted per la gestione delle finanze personali. Questo
+repository contiene le fondamenta tecniche e il **primo slice usabile**:
+dashboard, conti, movimenti, saldi, salvadanai e pagamento delle spese dai
+salvadanai. Gruppi, investimenti, automazioni, MCP e notifiche non sono ancora
+implementati.
 
 ## Struttura
 
-- `apps/backend/` — Django 6 + DRF, autenticazione a sessione, account e admin.
+- `apps/backend/` — Django 6 + DRF, autenticazione, admin e app `finance`.
 - `apps/frontend/` — React 19 + TypeScript + Vite, servito da Nginx.
 - `packages/` — spazio per contratti e codice condiviso (vuoto per ora).
 - `compose.yaml` — PostgreSQL, backend e frontend.
 - `.github/workflows/ci.yml` — controlli backend, frontend e Compose.
+
+## Funzionalità disponibili
+
+- Registrazione con approvazione dell'admin e login email/password.
+- Admin globale `admin` senza profilo finanziario.
+- Dashboard con saldo totale, patrimonio, saldo del periodo, entrate e uscite.
+- Conti personali con nome, tipo, saldo iniziale e archiviazione.
+- Movimenti: entrate, spese e trasferimenti.
+- Salvadanai con conto di appoggio, versamenti e prelievi.
+- Pagamento di spese dal salvadanaio, con movimenti tecnici e copertura parziale
+  dal conto di appoggio.
+- Eliminazione dei salvadanai con trasferimento del saldo residuo.
+
+Non ancora disponibili: gruppi, investimenti, automazioni periodiche, notifiche
+push, MCP e deploy di produzione.
 
 ## Avvio con Docker Compose
 
@@ -77,6 +94,20 @@ cd apps/backend && ../../.venv/bin/python manage.py test
 cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
+
+Stato verificato: **45 test backend**, lint e build frontend, configurazione
+Compose valida, immagini Docker costruite e flusso UI verificato.
+
+## Versionamento
+
+Le versioni usano tre numeri: **`x.y.z`**.
+
+- `x` è deciso dall'utente;
+- `y` aumenta per una nuova funzionalità importante;
+- `z` aumenta per correzioni di bug o funzionalità minori.
+
+Le release sono pubblicate su GitHub con tag `vX.Y.Z`. La prima release è
+**0.1.0**.
 
 ## Sicurezza
 
