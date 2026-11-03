@@ -573,22 +573,34 @@ export function ImportPage() {
                 <strong>{analysis.summary.accounts_to_create}</strong>
               </div>
               <div className="stat">
-                <span className="stat-label">Entrate</span>
+                <span className="stat-label">Entrate del periodo</span>
                 <strong>{money(analysis.summary.income_total)}</strong>
               </div>
               <div className="stat">
-                <span className="stat-label">Uscite</span>
+                <span className="stat-label">Uscite del periodo</span>
                 <strong>{money(analysis.summary.expense_total)}</strong>
               </div>
               <div className="stat">
-                <span className="stat-label">Aperture</span>
+                <span className="stat-label">Aperture (saldi iniziali)</span>
                 <strong>{money(analysis.summary.openings_total)}</strong>
+              </div>
+              <div className="stat">
+                <span className="stat-label">Uscite coperte dalle aperture</span>
+                <strong>{money(analysis.summary.covered_by_openings)}</strong>
               </div>
               <div className="stat">
                 <span className="stat-label">Netto importato</span>
                 <strong>{money(analysis.summary.net_total)}</strong>
               </div>
             </div>
+            <p className="muted small">
+              Totale disponibile: {money(analysis.summary.available_total)} =
+              aperture {money(analysis.summary.openings_total)} + entrate{" "}
+              {money(analysis.summary.income_total)}. Il netto importato è il
+              totale disponibile meno le uscite: le uscite possono superare le
+              entrate del periodo quando la differenza è coperta dal saldo
+              iniziale.
+            </p>
 
             <h3>Saldi dopo l&apos;import</h3>
             <ul className="balance-list">
@@ -631,22 +643,30 @@ export function ImportPage() {
           </p>
           <div className="stat-grid">
             <div className="stat">
-              <span className="stat-label">Entrate</span>
+              <span className="stat-label">Entrate del periodo</span>
               <strong>{money(result.income_total)}</strong>
             </div>
             <div className="stat">
-              <span className="stat-label">Uscite</span>
+              <span className="stat-label">Uscite del periodo</span>
               <strong>{money(result.expense_total)}</strong>
             </div>
             <div className="stat">
-              <span className="stat-label">Aperture</span>
+              <span className="stat-label">Aperture (saldi iniziali)</span>
               <strong>{money(result.openings_total)}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">Uscite coperte dalle aperture</span>
+              <strong>{money(result.covered_by_openings)}</strong>
             </div>
             <div className="stat">
               <span className="stat-label">Netto importato</span>
               <strong>{money(result.net_total)}</strong>
             </div>
           </div>
+          <p className="muted small">
+            Totale disponibile: {money(result.available_total)} = aperture{" "}
+            {money(result.openings_total)} + entrate {money(result.income_total)}.
+          </p>
 
           <h3>Saldi</h3>
           <ul className="balance-list">

@@ -165,6 +165,8 @@ export interface ImportAnalysis {
     income_total: string;
     expense_total: string;
     openings_total: string;
+    available_total: string;
+    covered_by_openings: string;
     net_total: string;
     balances: { name: string; final_balance: string }[];
     can_confirm: boolean;
@@ -186,6 +188,8 @@ export interface ImportResult {
   income_total: string;
   expense_total: string;
   openings_total: string;
+  available_total: string;
+  covered_by_openings: string;
   net_total: string;
   accounts: { name: string; balance: string }[];
 }

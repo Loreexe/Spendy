@@ -231,14 +231,21 @@ def parse_date(value: str, date_format: str = DEFAULT_DATE_FORMAT):
 
 def parse_amount(value: str, decimal_separator: str = ","):
     separator = decimal_separator if decimal_separator in DECIMAL_SEPARATORS else ","
-    escaped = re.escape(separator)
-    if not re.match(rf"^-?\d{{1,10}}{escaped}\d{{2}}$", value):
-        label = "virgola" if separator == "," else "punto"
+    other = "." if separator == "," else ","
+    label = "virgola" if separator == "," else "punto"
+    if other in value:
         return None, (
-            f"L'importo deve usare la {label} ({'1234,56' if separator == ',' else '1234.56'}), "
-            "senza € e senza migliaia."
+            f"L'importo deve usare la {label} per i decimali, "
+            "senza € e senza separatori delle migliaia."
         )
-    amount = Decimal(value.replace(separator, "."))
+    pattern = rf"^-?\d{{1,10}}(?:{re.escape(separator)}\d{{1,2}})?$"
+    if not re.match(pattern, value):
+        example = "1234,56" if separator == "," else "1234.56"
+        return None, (
+            f"L'importo deve essere un numero con la {label} per i decimali "
+            f"(es. 1234 o {example}), senza € e senza migliaia."
+        )
+    amount = Decimal(value.replace(separator, ".")).quantize(Decimal("0.01"))
     if amount == ZERO:
         return None, "L'importo non può essere zero."
     return amount, None
@@ -630,7 +637,11 @@ def _analyze(
         ),
         ZERO,
     )
-    net_total = openings_total + income_total - expense_total
+    available_total = openings_total + income_total
+    net_total = available_total - expense_total
+    covered_by_openings = (
+        expense_total - income_total if expense_total > income_total else ZERO
+    )
 
     balances = []
     for entry in account_entries:
@@ -683,6 +694,8 @@ def _analyze(
             "income_total": f"{income_total:.2f}",
             "expense_total": f"{expense_total:.2f}",
             "openings_total": f"{openings_total:.2f}",
+            "available_total": f"{available_total:.2f}",
+            "covered_by_openings": f"{covered_by_openings:.2f}",
             "net_total": f"{net_total:.2f}",
             "balances": balances,
             "can_confirm": can_confirm,
@@ -804,6 +817,8 @@ def confirm(
         "income_total": payload["summary"]["income_total"],
         "expense_total": payload["summary"]["expense_total"],
         "openings_total": payload["summary"]["openings_total"],
+        "available_total": payload["summary"]["available_total"],
+        "covered_by_openings": payload["summary"]["covered_by_openings"],
         "net_total": payload["summary"]["net_total"],
         "accounts": balances,
     }

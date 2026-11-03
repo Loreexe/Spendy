@@ -146,11 +146,13 @@ class ParserTests(FinanceTestBase):
         self.assertEqual(parse_amount("12,50")[0], Decimal("12.50"))
         self.assertEqual(parse_amount("-100,00")[0], Decimal("-100.00"))
         self.assertEqual(parse_amount("12.50", ".")[0], Decimal("12.50"))
+        self.assertEqual(parse_amount("150")[0], Decimal("150.00"))
+        self.assertEqual(parse_amount("12,5")[0], Decimal("12.50"))
         self.assertIsNotNone(parse_amount("12.50")[1])
         self.assertIsNotNone(parse_amount("1.234,56")[1])
         self.assertIsNotNone(parse_amount("€12,50")[1])
         self.assertIsNotNone(parse_amount("0,00")[1])
-        self.assertIsNotNone(parse_amount("12")[1])
+        self.assertIsNotNone(parse_amount("12,345")[1])
 
 
 class FormatDetectionTests(FinanceTestBase):
@@ -177,10 +179,24 @@ class AnalyzeTests(ImportTestBase):
         self.assertEqual(data["summary"]["accounts_to_create"], 1)
         self.assertEqual(data["summary"]["openings_total"], "1000.00")
         self.assertEqual(data["summary"]["expense_total"], "12.50")
+        self.assertEqual(data["summary"]["available_total"], "1000.00")
+        self.assertEqual(data["summary"]["covered_by_openings"], "12.50")
         self.assertEqual(data["summary"]["net_total"], "987.50")
         self.assertEqual(data["rows"][0]["kind"], "opening")
         self.assertEqual(data["rows"][1]["kind"], "expense")
         self.assertEqual(data["accounts"][0]["state"], "new")
+
+    def test_covered_by_openings_is_zero_when_income_covers_expenses(self):
+        response = self.upload(
+            [
+                ["01-10-2026", "Saldo", "altro", "Contanti", "-100,00"],
+                ["02-10-2026", "Entrata", "altro", "Contanti", "-200,00"],
+                ["03-10-2026", "Spesa", "spesa", "Contanti", "150,00"],
+            ]
+        )
+        self.assertTrue(response.data["summary"]["can_confirm"])
+        self.assertEqual(response.data["summary"]["covered_by_openings"], "0.00")
+        self.assertEqual(response.data["summary"]["available_total"], "300.00")
 
     def test_missing_opening_is_an_error(self):
         response = self.upload(
@@ -389,6 +405,8 @@ class ConfirmTests(ImportTestBase):
         self.assertEqual(data["created_transactions"], 2)
         self.assertEqual(data["openings_total"], "1000.00")
         self.assertEqual(data["expense_total"], "12.50")
+        self.assertEqual(data["available_total"], "1000.00")
+        self.assertEqual(data["covered_by_openings"], "12.50")
         self.assertEqual(data["net_total"], "987.50")
 
         account = Account.objects.get(name="Contanti")

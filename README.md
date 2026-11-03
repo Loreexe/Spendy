@@ -134,7 +134,7 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.2.1`: **92 test backend**, lint e build frontend,
+Stato verificato per `v0.2.3`: **93 test backend**, lint e build frontend,
 configurazione Compose valida e flusso UI completo.
 
 ## Importazione dei movimenti
@@ -155,7 +155,8 @@ data;descrizione;categoria;conto;importo
 - il formato della data, il separatore di colonna e il separatore decimale
   vengono **rilevati automaticamente** e si possono correggere dall'anteprima
   (es. `GG-MM-AAAA`, `AAAA-MM-GG`, `;` o `,`, virgola o punto decimale);
-- importi senza `€` e senza migliaia;
+- importi senza `€` e senza migliaia; gli interi sono accettati
+  (`150` equivale a `150,00`);
 - importo positivo = uscita, negativo = entrata;
 - la prima riga per data di un **nuovo conto** è la sua apertura e deve essere
   negativa; i conti esistenti ricevono solo movimenti;

@@ -733,3 +733,26 @@ button.danger:hover {
   width: 100%;
   margin: 0;
 }
+
+/* Keep the row action visible while the import table scrolls horizontally */
+.import-table th:last-child,
+.import-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  width: 6rem;
+  background: var(--surface);
+  box-shadow: -8px 0 8px -8px rgba(16, 24, 20, 0.25);
+}
+
+.import-table tr.row-error td:last-child {
+  background: var(--danger-soft);
+}
+
+.import-table td:nth-child(8) {
+  max-width: 20rem;
+}
+
+.import-table td:nth-child(3) input {
+  min-width: 10rem;
+}
