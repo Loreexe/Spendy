@@ -158,7 +158,6 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 - Gruppi, investimenti, automazioni periodiche, MCP e notifiche non sono inclusi.
 - Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
 - Deploy su Proxmox/NPM, verifica email, SSO e 2FA non sono completati.
-- Non è ancora stata scelta una licenza esplicita.
 
 ## Licenza
 
