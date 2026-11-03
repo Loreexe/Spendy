@@ -38,9 +38,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
       </header>
       <main className="app-main">{children}</main>
-      <footer className="app-footer">
-        Spendy · finanze personali
-      </footer>
+      <footer className="app-footer">Spendy · v{__APP_VERSION__}</footer>
     </div>
   );
 }

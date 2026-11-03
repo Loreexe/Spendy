@@ -281,6 +281,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+async function download(path: string, filename: string) {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    throw new ApiError(response.status, "Download non riuscito.", null);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   csrf: () => request("/api/auth/csrf/"),
 
@@ -424,22 +440,29 @@ export const api = {
   deleteTransaction: (id: number) =>
     request<void>(`/api/finance/transactions/${id}/`, { method: "DELETE" }),
 
-  downloadImportTemplate: async () => {
-    const response = await fetch("/api/finance/import/template/", {
-      credentials: "include",
-    });
-    if (!response.ok) {
-      throw new ApiError(response.status, "Download del modello non riuscito.", null);
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "spendy-modello-movimenti.csv";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+  downloadImportTemplate: () =>
+    download(
+      "/api/finance/import/template/",
+      "spendy-modello-movimenti.csv",
+    ),
+
+  exportTransactions: (params: {
+    account?: number;
+    savings?: number;
+    start?: string;
+    end?: string;
+  } = {}) => {
+    const query = new URLSearchParams();
+    if (params.account) query.set("account", String(params.account));
+    if (params.savings) query.set("savings", String(params.savings));
+    if (params.start) query.set("start", params.start);
+    if (params.end) query.set("end", params.end);
+    const suffix = query.toString();
+    const today = new Date().toISOString().slice(0, 10);
+    return download(
+      `/api/finance/export/${suffix ? `?${suffix}` : ""}`,
+      `spendy-movimenti-${today}.csv`,
+    );
   },
 
   analyzeImportFile: (file: File, format?: Partial<ImportFormat>) => {

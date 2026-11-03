@@ -134,7 +134,7 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.2.4`: **94 test backend**, lint e build frontend,
+Stato verificato per `v0.2.5`: **99 test backend**, lint e build frontend,
 configurazione Compose valida e flusso UI completo.
 
 ## Importazione dei movimenti
@@ -169,6 +169,15 @@ data;descrizione;categoria;conto;importo
 - righe identiche nel file o già presenti nell'app sono segnalate come
   duplicati (stesso segno: un'uscita e un'entrata dello stesso importo non lo
   sono); puoi scartarle oppure confermare singolarmente che non lo sono.
+
+### Esportazione
+
+Dal registro movimenti, **Esporta CSV** scarica i movimenti filtrati con le
+stesse colonne e la stessa convenzione di segno dell'importazione, così il file
+può essere aperto in un foglio di calcolo o reimportato. La colonna `categoria`
+contiene il tipo del movimento (Apertura, Entrata, Spesa, Trasferimento). I
+trasferimenti diventano una riga per conto; dei salvadanai viene esportata solo
+la parte che passa dal conto.
 
 ## Configurazione di produzione
 

@@ -481,3 +481,62 @@ class ConfirmTests(ImportTestBase):
         self.client.force_authenticate(user=admin)
         response = self.confirm_rows(self.json_rows(VALID_ROWS))
         self.assertEqual(response.status_code, 403)
+
+
+class ExportTests(FinanceTestBase):
+    def test_export_csv(self):
+        account = self.create_account(initial="100.00").data
+        today = self.today.strftime("%d-%m-%Y")
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Caffè",
+                "amount": "1.20",
+                "account": account["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "income",
+                "date": self.today.isoformat(),
+                "description": "Entrata",
+                "amount": "50.00",
+                "account": account["id"],
+            }
+        )
+        response = self.client.get(reverse("finance-export"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Type"].startswith("text/csv"))
+        self.assertIn("attachment", response["Content-Disposition"])
+        text = response.content.decode("utf-8-sig")
+        self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
+        lines = text.splitlines()
+        self.assertEqual(lines[0], "data;descrizione;categoria;conto;importo")
+        self.assertIn(f"{today};Caffè;Spesa;Contanti;1,20", lines)
+        self.assertIn(f"{today};Entrata;Entrata;Contanti;-50,00", lines)
+        self.assertTrue(any(";Apertura;Contanti;-100,00" in line for line in lines))
+
+    def test_export_respects_date_filter(self):
+        account = self.create_account(initial="100.00").data
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "1.00",
+                "account": account["id"],
+            }
+        )
+        future = (self.today + timedelta(days=1)).isoformat()
+        response = self.client.get(
+            reverse("finance-export"),
+            {"start": future, "end": future},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.content.decode("utf-8-sig").splitlines()), 1)
+
+    def test_export_requires_profile(self):
+        admin = User.objects.get(is_global_admin=True)
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(reverse("finance-export"))
+        self.assertEqual(response.status_code, 403)

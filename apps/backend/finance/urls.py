@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .export_views import ExportTransactionsView
 from .import_views import (
     ImportAnalyzeView,
     ImportConfirmView,
@@ -40,6 +41,11 @@ urlpatterns = [
         "transactions/<int:pk>/",
         TransactionDetailView.as_view(),
         name="finance-transaction-detail",
+    ),
+    path(
+        "export/",
+        ExportTransactionsView.as_view(),
+        name="finance-export",
     ),
     path(
         "import/template/",

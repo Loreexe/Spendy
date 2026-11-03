@@ -59,14 +59,14 @@ class DashboardView(FinanceView):
 
         total_balance = sum((account.balance for account in accounts), ZERO)
         total_savings = sum((savings_account.balance for savings_account in savings), ZERO)
+        # The period balance is the variation of the total balance, so the
+        # account openings inside the period count too (DC-012, REQ-DASH-05).
         period_balance = (
             Line.objects.filter(
                 account__profile=profile,
                 transaction__date__gte=start,
                 transaction__date__lte=end,
-            )
-            .exclude(transaction__kind=Transaction.Kind.OPENING)
-            .aggregate(total=Sum("amount"))["total"]
+            ).aggregate(total=Sum("amount"))["total"]
             or ZERO
         )
         income_total = (

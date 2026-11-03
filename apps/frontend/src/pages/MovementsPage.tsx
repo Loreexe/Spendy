@@ -200,6 +200,20 @@ export function MovementsPage() {
     return load(Math.max(200, transactions.length));
   }
 
+  async function exportCsv() {
+    setError(null);
+    try {
+      await api.exportTransactions({
+        account: filterAccount ? Number(filterAccount) : undefined,
+        savings: filterSavings ? Number(filterSavings) : undefined,
+        start: filterStart || undefined,
+        end: filterEnd || undefined,
+      });
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
   function buildPayload(): TransactionPayload | null {
     if (!amount || Number(amount) <= 0) {
       setError("Inserisci un importo maggiore di zero.");
@@ -717,13 +731,21 @@ export function MovementsPage() {
                 Mostra tutto
               </button>
             )}
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void exportCsv()}
+            >
+              Esporta CSV
+            </button>
           </div>
         </div>
         <p className="muted small">
           Un movimento appartiene a un conto oppure a un salvadanaio: scegliendo
           un filtro l&apos;altro viene azzerato. «Dal» e «Al» limitano il periodo
-          e possono essere usati da soli o insieme agli altri filtri. Il
-          registro mostra prima i movimenti più recenti.
+          e possono essere usati da soli o insieme agli altri filtri. «Esporta
+          CSV» scarica i movimenti filtrati. Il registro mostra prima i
+          movimenti più recenti.
         </p>
         {transactions.length === 0 ? (
           <p className="muted">

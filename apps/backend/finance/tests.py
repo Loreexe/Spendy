@@ -148,7 +148,7 @@ class TransactionTests(FinanceTestBase):
         self.assertEqual(Account.objects.get(pk=other["id"]).balance, 200)
 
         dashboard = self.client.get(reverse("finance-dashboard"))
-        self.assertEqual(dashboard.data["period_balance"], "0.00")
+        self.assertEqual(dashboard.data["period_balance"], "1000.00")
         self.assertEqual(dashboard.data["income_total"], "0.00")
         self.assertEqual(dashboard.data["expense_total"], "0.00")
 
@@ -289,7 +289,7 @@ class SavingsPaymentTests(FinanceTestBase):
 
         dashboard = self.client.get(reverse("finance-dashboard"))
         self.assertEqual(dashboard.data["expense_total"], "50.00")
-        self.assertEqual(dashboard.data["period_balance"], "-100.00")
+        self.assertEqual(dashboard.data["period_balance"], "0.00")
 
     def test_partial_savings_payment_requires_confirmation(self):
         self.deposit("30.00")
@@ -393,7 +393,34 @@ class DashboardAndIsolationTests(FinanceTestBase):
         self.assertEqual(response.data["total_balance"], "900.00")
         self.assertEqual(response.data["total_savings"], "200.00")
         self.assertEqual(response.data["total_patrimony"], "1100.00")
-        self.assertEqual(response.data["period_balance"], "-100.00")
+        self.assertEqual(response.data["period_balance"], "900.00")
+
+    def test_full_range_period_balance_equals_total_balance(self):
+        account = self.create_account(initial="1000.00").data
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "40.00",
+                "account": account["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "income",
+                "date": self.today.isoformat(),
+                "amount": "10.00",
+                "account": account["id"],
+            }
+        )
+        response = self.client.get(
+            reverse("finance-dashboard"),
+            {"start": "2000-01-01", "end": self.today.isoformat()},
+        )
+        self.assertEqual(
+            response.data["period_balance"], response.data["total_balance"]
+        )
+        self.assertEqual(response.data["period_balance"], "970.00")
 
     def test_month_filter(self):
         response = self.client.get(
