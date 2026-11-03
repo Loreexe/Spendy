@@ -1,70 +1,102 @@
 # Spendy
 
-Spendy è un'app self-hosted per la gestione delle finanze personali. Questo
-repository contiene le fondamenta tecniche e il **primo slice usabile**:
-dashboard, conti, movimenti, saldi, salvadanai e pagamento delle spese dai
-salvadanai. Gruppi, investimenti, automazioni, MCP e notifiche non sono ancora
-implementati.
+**Gestione delle finanze personali, self-hosted.**
+
+Spendy è un'app web per tenere sotto controllo conti, movimenti e salvadanai.
+Nasce per essere ospitata sul proprio server, senza servizi finanziari esterni e
+senza integrazioni bancarie.
+
+[![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
+
+> **Stato:** prima release usabile **`v0.1.0`**. Il progetto è in sviluppo attivo:
+> le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
+> MCP e notifiche non sono ancora implementati.
+
+## Funzionalità
+
+- **Dashboard** con saldo totale, patrimonio, saldo del periodo, entrate e uscite.
+- **Conti personali** con nome, tipo, saldo iniziale e archiviazione.
+- **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento.
+- **Salvadanai** con conto di appoggio, versamenti e prelievi.
+- **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura
+  parziale dal conto di appoggio.
+- **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
+- **Isolamento tra profili**: ogni account normale ha il proprio spazio
+  finanziario; l'admin globale non ha un profilo finanziario.
+- **Autenticazione** email/password, registrazione con approvazione e setup
+  iniziale protetto.
+
+## Stack
+
+| Componente | Tecnologia |
+| --- | --- |
+| Backend | Python, Django 6, Django REST Framework |
+| Database | PostgreSQL 16 |
+| Frontend | React 19, TypeScript, Vite |
+| Serving | Nginx |
+| Deployment | Docker Compose |
+| CI | GitHub Actions |
+
+I dati finanziari restano nel database PostgreSQL. Il repository contiene solo
+codice e configurazione, mai dati reali.
 
 ## Struttura
 
-- `apps/backend/` — Django 6 + DRF, autenticazione, admin e app `finance`.
-- `apps/frontend/` — React 19 + TypeScript + Vite, servito da Nginx.
-- `packages/` — spazio per contratti e codice condiviso (vuoto per ora).
-- `compose.yaml` — PostgreSQL, backend e frontend.
-- `.github/workflows/ci.yml` — controlli backend, frontend e Compose.
+```text
+apps/
+  backend/       Django + DRF, autenticazione e API finance
+  frontend/      React + TypeScript, build servita da Nginx
+packages/        spazio per contratti e codice condiviso
+compose.yaml     PostgreSQL, backend e frontend
+.env.example     variabili di ambiente di esempio
+VERSION          versione corrente
+```
 
-## Funzionalità disponibili
+## Avvio rapido con Docker
 
-- Registrazione con approvazione dell'admin e login email/password.
-- Admin globale `admin` senza profilo finanziario.
-- Dashboard con saldo totale, patrimonio, saldo del periodo, entrate e uscite.
-- Conti personali con nome, tipo, saldo iniziale e archiviazione.
-- Movimenti: entrate, spese e trasferimenti.
-- Salvadanai con conto di appoggio, versamenti e prelievi.
-- Pagamento di spese dal salvadanaio, con movimenti tecnici e copertura parziale
-  dal conto di appoggio.
-- Eliminazione dei salvadanai con trasferimento del saldo residuo.
-
-Non ancora disponibili: gruppi, investimenti, automazioni periodiche, notifiche
-push, MCP e deploy di produzione.
-
-## Avvio con Docker Compose
+Requisiti: Docker Engine e Docker Compose plugin.
 
 ```bash
+git clone https://github.com/Loreexe/Spendy.git
+cd Spendy
 cp .env.example .env
-# Cambiare DJANGO_SECRET_KEY, POSTGRES_PASSWORD e gli host prima dell'uso.
-docker compose up --build
+```
+
+Modifica `.env` prima dell'avvio:
+
+- `DJANGO_SECRET_KEY`: valore casuale lungo;
+- `POSTGRES_PASSWORD`: password robusta;
+- `DJANGO_ALLOWED_HOSTS`: host/IP usati per raggiungere l'app;
+- `CSRF_TRUSTED_ORIGINS`: origini complete, ad esempio `https://spendy.example.com`.
+
+Poi:
+
+```bash
+docker compose up -d --build
+docker compose ps
+curl http://localhost:8080/api/health/
 ```
 
 Il frontend risponde su `http://localhost:8080` e inoltra `/api` al backend.
-PostgreSQL non è pubblicato all'esterno. Il primo setup dell'admin `admin` è
-consentito **solo da localhost o Tailscale** (DC-052): in produzione accedere
-all'app tramite Tailscale e completare il setup prima di esporla con NPM.
+PostgreSQL non è pubblicato all'esterno.
 
-> Nota per il solo sviluppo locale con Docker: la richiesta dal browser arriva
-> al backend tramite il gateway Docker, che non è considerato localhost. Per
-> provare il setup in locale usare il backend e il frontend in modalità
-> sviluppo (sotto), oppure aggiungere temporaneamente la rete bridge Docker a
-> `SETUP_ALLOWED_CIDRS` nel proprio `.env`.
+### Primo setup dell'admin
 
-### Variabili da impostare in produzione
+Il primo setup è consentito solo da **localhost o Tailscale** (DC-052).
 
-- `DJANGO_SECRET_KEY`: valore casuale lungo e diverso da quello di esempio.
-- `POSTGRES_PASSWORD`: password robusta.
-- `DJANGO_ALLOWED_HOSTS`: hostname/IP Tailscale e dominio pubblico usati per
-  raggiungere l'app (separati da virgola).
-- `CSRF_TRUSTED_ORIGINS`: origini complete, ad esempio
-  `https://spendy.example.com`.
-- `SECURE_COOKIES=1` quando l'app è servita in HTTPS tramite NPM.
-- `SETUP_ALLOWED_CIDRS`: lasciare i valori predefiniti (localhost/Tailscale).
+1. Accedi a `http://<host>:8080`.
+2. Imposta la password dell'utente `admin`.
+3. Il setup si disabilita in modo permanente.
 
-NPM deve inoltrare `X-Forwarded-Proto: https`; il frontend Nginx lo propaga al
-backend.
+> In sviluppo locale con Docker il browser arriva al backend tramite il gateway
+> Docker, che non è considerato localhost. Usa il backend e il frontend in
+> modalità sviluppo, oppure aggiungi temporaneamente la rete bridge Docker a
+> `SETUP_ALLOWED_CIDRS` nel `.env`.
 
-## Sviluppo
+## Sviluppo locale
 
-Backend:
+### Backend
 
 ```bash
 python3 -m venv .venv
@@ -77,7 +109,9 @@ cd apps/backend
 Senza `POSTGRES_HOST` il backend usa SQLite solo come comodità locale; Docker e
 CI usano PostgreSQL.
 
-Frontend (in un altro terminale):
+### Frontend
+
+In un altro terminale:
 
 ```bash
 cd apps/frontend
@@ -87,7 +121,7 @@ npm run dev
 
 Vite serve `http://localhost:5173` e proxya `/api` su `http://localhost:8000`.
 
-## Verifiche
+## Test e controlli
 
 ```bash
 cd apps/backend && ../../.venv/bin/python manage.py test
@@ -95,25 +129,48 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **45 test backend**, lint e build frontend, configurazione
-Compose valida, immagini Docker costruite e flusso UI verificato.
+Stato verificato per `v0.1.0`: **45 test backend**, lint e build frontend,
+configurazione Compose valida e flusso UI completo.
+
+## Configurazione di produzione
+
+- Servire l'app tramite **HTTPS** con Nginx Proxy Manager.
+- Impostare `SECURE_COOKIES=1` quando HTTPS è attivo.
+- Impostare `DJANGO_ALLOWED_HOSTS` e `CSRF_TRUSTED_ORIGINS` con il dominio reale.
+- Non esporre PostgreSQL.
+- Conservare il volume PostgreSQL e includerlo nel backup.
+- Non mantenere `SETUP_ALLOWED_CIDRS` aperto alla LAN dopo il primo setup.
+
+Per l'accesso iniziale è consigliato **Tailscale**; l'esposizione pubblica
+richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 
 ## Versionamento
 
 Le versioni usano tre numeri: **`x.y.z`**.
 
-- `x` è deciso dall'utente;
+- `x` è deciso dal manutentore;
 - `y` aumenta per una nuova funzionalità importante;
 - `z` aumenta per correzioni di bug o funzionalità minori.
 
-Le release sono pubblicate su GitHub con tag `vX.Y.Z`. La prima release è
-**0.1.0**.
+Le release sono pubblicate su GitHub con tag `vX.Y.Z`.
+Consulta le [release](https://github.com/Loreexe/Spendy/releases).
 
-## Sicurezza
+## Sicurezza e privacy
 
-- `.env` non è versionato; i segnaposto in `.env.example` vanno sostituiti.
-- Nessun segreto o dato finanziario reale deve essere inserito nel repository.
-- La prima password dell'admin si imposta una sola volta e il setup viene
-  disabilitato in modo permanente.
-- La registrazione richiede l'approvazione dell'admin, salvo impostazione
-  esplicita di registrazione aperta.
+- Non inserire mai `.env`, dump del database, backup o dati finanziari reali nel
+  repository.
+- I segreti vanno conservati fuori dal repository e ruotati se esposti.
+- Il database è la fonte di verità: nessun saldo viene mantenuto solo in memoria.
+- La documentazione interna del progetto non è inclusa nel repository pubblico.
+
+## Limiti attuali
+
+- Gruppi, investimenti, automazioni periodiche, MCP e notifiche non sono inclusi.
+- Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
+- Deploy su Proxmox/NPM, verifica email, SSO e 2FA non sono completati.
+- Non è ancora stata scelta una licenza esplicita.
+
+## Licenza
+
+La licenza non è ancora stata definita. Il codice è pubblicato per consultazione;
+prima di riutilizzi esterni verrà aggiunta una licenza esplicita.
