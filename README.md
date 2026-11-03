@@ -144,17 +144,6 @@ configurazione Compose valida e flusso UI completo.
 Per l'accesso iniziale è consigliato **Tailscale**; l'esposizione pubblica
 richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 
-## Versionamento
-
-Le versioni usano tre numeri: **`x.y.z`**.
-
-- `x` è deciso dal manutentore;
-- `y` aumenta per una nuova funzionalità importante;
-- `z` aumenta per correzioni di bug o funzionalità minori.
-
-Le release sono pubblicate su GitHub con tag `vX.Y.Z`.
-Consulta le [release](https://github.com/Loreexe/Spendy/releases).
-
 ## Sicurezza e privacy
 
 - Non inserire mai `.env`, dump del database, backup o dati finanziari reali nel
