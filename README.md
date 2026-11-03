@@ -8,6 +8,7 @@ senza integrazioni bancarie.
 
 [![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 > **Stato:** prima release usabile **`v0.1.0`**. Il progetto è in sviluppo attivo:
 > le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
@@ -161,5 +162,7 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 
 ## Licenza
 
-La licenza non è ancora stata definita. Il codice è pubblicato per consultazione;
-prima di riutilizzi esterni verrà aggiunta una licenza esplicita.
+Spendy è distribuito sotto **GNU General Public License v3.0** (SPDX:
+`GPL-3.0-only`). Vedi il file [LICENSE](LICENSE).
+
+Copyright (C) 2026 Loreexe.
