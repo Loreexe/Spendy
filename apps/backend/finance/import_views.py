@@ -1,10 +1,13 @@
-"""HTTP endpoints for the movements import (DC-070)."""
+"""HTTP endpoints for the movements import (DC-070, DC-071)."""
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from .imports import (
+    DATE_FORMATS,
+    DECIMAL_SEPARATORS,
+    DELIMITERS,
     MAX_BYTES,
     MAX_ROWS,
     TEMPLATE_FILENAME,
@@ -35,6 +38,26 @@ def _rows_from_request(request) -> list[dict]:
     return cleaned
 
 
+def _format_options(request) -> tuple[str | None, str | None, str | None]:
+    delimiter = request.data.get("delimiter") or None
+    date_format = request.data.get("date_format") or None
+    decimal_separator = request.data.get("decimal_separator") or None
+    if delimiter is not None and delimiter not in DELIMITERS:
+        raise ValidationError(
+            {"delimiter": "Separatore di colonna non valido."}
+        )
+    if date_format is not None and date_format not in DATE_FORMATS:
+        raise ValidationError({"date_format": "Formato data non valido."})
+    if (
+        decimal_separator is not None
+        and decimal_separator not in DECIMAL_SEPARATORS
+    ):
+        raise ValidationError(
+            {"decimal_separator": "Separatore decimale non valido."}
+        )
+    return delimiter, date_format, decimal_separator
+
+
 class ImportTemplateView(FinanceView):
     def get(self, request):
         self.get_profile(request)
@@ -50,21 +73,41 @@ class ImportTemplateView(FinanceView):
 class ImportAnalyzeView(FinanceView):
     def post(self, request):
         profile = self.get_profile(request)
+        delimiter, date_format, decimal_separator = _format_options(request)
         upload = request.FILES.get("file")
         if upload is not None:
             if upload.size > MAX_BYTES:
                 raise ValidationError(
                     {"file": f"Il file supera {MAX_BYTES // (1024 * 1024)} MB."}
                 )
-            rows, file_errors = parse_csv(upload.read())
-            payload = analyze(rows, profile, file_errors)
+            rows, file_errors, used = parse_csv(upload.read(), delimiter)
+            payload = analyze(
+                rows,
+                profile,
+                file_errors,
+                delimiter=used,
+                date_format=date_format,
+                decimal_separator=decimal_separator,
+            )
         else:
-            payload = analyze(_rows_from_request(request), profile)
+            payload = analyze(
+                _rows_from_request(request),
+                profile,
+                delimiter=delimiter,
+                date_format=date_format,
+                decimal_separator=decimal_separator,
+            )
         return Response(payload)
 
 
 class ImportConfirmView(FinanceView):
     def post(self, request):
         profile = self.get_profile(request)
-        result = confirm(_rows_from_request(request), profile)
+        _, date_format, decimal_separator = _format_options(request)
+        result = confirm(
+            _rows_from_request(request),
+            profile,
+            date_format=date_format,
+            decimal_separator=decimal_separator,
+        )
         return Response(result, status=status.HTTP_201_CREATED)

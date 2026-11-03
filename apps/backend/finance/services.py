@@ -8,6 +8,10 @@ from rest_framework.exceptions import ValidationError
 from .models import ZERO, Account, Line, SavingsAccount
 
 
+def format_money(value: Decimal) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
 def account_balance(account: Account) -> Decimal:
     return account.lines.aggregate(total=Sum("amount"))["total"] or ZERO
 
@@ -103,13 +107,25 @@ def assert_accounts_non_negative(
             - proposed.get(account_id, {}).get(day, ZERO)
             + excluded.get(account_id, {}).get(day, ZERO)
         )
-        when = f" al {day:%d-%m-%Y}" if day else ""
+        if day is not None and available >= ZERO:
+            message = (
+                f"Saldo insufficiente sul conto {account.name}: disponibili "
+                f"{format_money(available)} al {day:%d-%m-%Y}."
+            )
+        elif day is not None:
+            message = (
+                f"Saldo insufficiente sul conto {account.name}: al "
+                f"{day:%d-%m-%Y} il saldo risultante è "
+                f"{format_money(available)}."
+            )
+        else:
+            message = (
+                f"Saldo insufficiente sul conto {account.name}: il saldo "
+                f"risultante è {format_money(available)}."
+            )
         raise ValidationError(
             {
-                "amount": (
-                    f"Saldo insufficiente sul conto {account.name}: "
-                    f"disponibili {available:.2f}{when}."
-                ),
+                "amount": message,
                 "code": "insufficient_account_balance",
                 "available": f"{available:.2f}",
                 "date": day.isoformat() if day else None,

@@ -131,6 +131,16 @@ export interface ImportAccount {
   similar_to: string | null;
   will_create: boolean;
   rows: number;
+  balance_before?: string;
+  start_date?: string;
+  first_movement?: string | null;
+}
+
+export interface ImportFormat {
+  delimiter: string;
+  date_format: string;
+  decimal_separator: string;
+  ambiguous: boolean;
 }
 
 export interface ImportOverlap {
@@ -142,6 +152,7 @@ export interface ImportOverlap {
 
 export interface ImportAnalysis {
   header: string[];
+  format: ImportFormat;
   rows: ImportRow[];
   accounts: ImportAccount[];
   overlaps: ImportOverlap[];
@@ -425,24 +436,37 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
-  analyzeImportFile: (file: File) => {
+  analyzeImportFile: (file: File, format?: Partial<ImportFormat>) => {
     const body = new FormData();
     body.append("file", file);
+    if (format?.delimiter) body.append("delimiter", format.delimiter);
+    if (format?.date_format) body.append("date_format", format.date_format);
+    if (format?.decimal_separator) {
+      body.append("decimal_separator", format.decimal_separator);
+    }
     return request<ImportAnalysis>("/api/finance/import/analyze/", {
       method: "POST",
       body,
     });
   },
 
-  analyzeImportRows: (rows: ImportRowInput[]) =>
+  analyzeImportRows: (rows: ImportRowInput[], format?: ImportFormat | null) =>
     request<ImportAnalysis>("/api/finance/import/analyze/", {
       method: "POST",
-      body: JSON.stringify({ rows }),
+      body: JSON.stringify({
+        rows,
+        date_format: format?.date_format,
+        decimal_separator: format?.decimal_separator,
+      }),
     }),
 
-  confirmImport: (rows: ImportRowInput[]) =>
+  confirmImport: (rows: ImportRowInput[], format?: ImportFormat | null) =>
     request<ImportResult>("/api/finance/import/confirm/", {
       method: "POST",
-      body: JSON.stringify({ rows }),
+      body: JSON.stringify({
+        rows,
+        date_format: format?.date_format,
+        decimal_separator: format?.decimal_separator,
+      }),
     }),
 };

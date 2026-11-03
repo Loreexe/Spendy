@@ -10,6 +10,7 @@ import {
   api,
   ApiError,
   type ImportAnalysis,
+  type ImportFormat,
   type ImportResult,
   type ImportRow,
   type ImportRowInput,
@@ -50,7 +51,10 @@ export function ImportPage() {
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [stale, setStale] = useState(false);
+  const [format, setFormat] = useState<ImportFormat | null>(null);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const pending = useRef(false);
+  const formatRef = useRef<ImportFormat | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const runAnalyze = useCallback(async (nextRows: ImportRowInput[]) => {
@@ -64,7 +68,7 @@ export function ImportPage() {
     setBusy(true);
     setError(null);
     try {
-      const data = await api.analyzeImportRows(nextRows);
+      const data = await api.analyzeImportRows(nextRows, formatRef.current);
       setAnalysis(data);
     } catch (err) {
       setError(errorMessage(err));
@@ -122,6 +126,9 @@ export function ImportPage() {
       const data = await api.analyzeImportFile(file);
       setAnalysis(data);
       setRows(data.rows.map(toInput));
+      setSourceFile(file);
+      setFormat(data.format);
+      formatRef.current = data.format;
       setStep("review");
       setStale(false);
       pending.current = false;
@@ -142,11 +149,38 @@ export function ImportPage() {
     }
   }
 
+  async function changeFormat(patch: Partial<ImportFormat>) {
+    if (!format) return;
+    const next = { ...format, ...patch };
+    setFormat(next);
+    formatRef.current = next;
+    setError(null);
+    if (patch.delimiter && sourceFile) {
+      setReading(true);
+      setStale(true);
+      try {
+        const data = await api.analyzeImportFile(sourceFile, next);
+        setAnalysis(data);
+        setRows(data.rows.map(toInput));
+        setFormat(data.format);
+        formatRef.current = data.format;
+        setStale(false);
+        pending.current = false;
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setReading(false);
+      }
+      return;
+    }
+    await runAnalyze(rows);
+  }
+
   async function confirmImport() {
     setBusy(true);
     setError(null);
     try {
-      const data = await api.confirmImport(rows);
+      const data = await api.confirmImport(rows, format);
       setResult(data);
       setStep("done");
     } catch (err) {
@@ -161,6 +195,9 @@ export function ImportPage() {
     setRows([]);
     setAnalysis(null);
     setResult(null);
+    setFormat(null);
+    setSourceFile(null);
+    formatRef.current = null;
     setError(null);
     setStale(false);
     pending.current = false;
@@ -193,8 +230,8 @@ export function ImportPage() {
             <p className="muted">
               Il file di esempio contiene l&apos;intestazione e due righe
               marcate <code>ESEMPIO</code>: cancellale e inserisci i tuoi
-              movimenti. Formato: <code>GG-MM-AAAA</code>, importo con la
-              virgola, separatore <code>;</code>.
+              movimenti. Il formato di data, separatore e decimali viene
+              rilevato automaticamente e puoi correggerlo nell&apos;anteprima.
             </p>
             <button type="button" onClick={downloadTemplate}>
               Scarica modello CSV
@@ -243,6 +280,67 @@ export function ImportPage() {
             {stale || busy ? (
               <p className="muted small">Verifica in corso…</p>
             ) : null}
+
+            {format && (
+              <div className="format-bar">
+                <label>
+                  <span className="small muted">Separatore colonne</span>
+                  <select
+                    value={format.delimiter}
+                    onChange={(event) =>
+                      void changeFormat({ delimiter: event.target.value })
+                    }
+                    disabled={busy || reading}
+                  >
+                    <option value=";">Punto e virgola (;)</option>
+                    <option value=",">Virgola (,)</option>
+                    <option value={"	"}>Tab</option>
+                    <option value="|">Barra verticale (|)</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="small muted">Formato data</span>
+                  <select
+                    value={format.date_format}
+                    onChange={(event) =>
+                      void changeFormat({ date_format: event.target.value })
+                    }
+                    disabled={busy || reading}
+                  >
+                    <option value="DD-MM-YYYY">GG-MM-AAAA</option>
+                    <option value="DD/MM/YYYY">GG/MM/AAAA</option>
+                    <option value="YYYY-MM-DD">AAAA-MM-GG</option>
+                    <option value="YYYY/MM/DD">AAAA/MM/GG</option>
+                    <option value="DD.MM.YYYY">GG.MM.AAAA</option>
+                    <option value="MM-DD-YYYY">MM-GG-AAAA</option>
+                    <option value="MM/DD/YYYY">MM/GG/AAAA</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="small muted">Separatore decimali</span>
+                  <select
+                    value={format.decimal_separator}
+                    onChange={(event) =>
+                      void changeFormat({ decimal_separator: event.target.value })
+                    }
+                    disabled={busy || reading}
+                  >
+                    <option value=",">Virgola (1234,56)</option>
+                    <option value=".">Punto (1234.56)</option>
+                  </select>
+                </label>
+                <p className="muted small">
+                  Formato rilevato automaticamente: correggilo se le date o gli
+                  importi sono letti male.
+                </p>
+                {format.ambiguous && (
+                  <p className="error-text">
+                    Date ambigue: giorno e mese sono entrambi ≤ 12. Verifica il
+                    formato della data prima di confermare.
+                  </p>
+                )}
+              </div>
+            )}
 
             {analysis.file_errors.length > 0 && (
               <div className="error">
@@ -394,6 +492,31 @@ export function ImportPage() {
                           conto
                         </span>
                       )}
+                      {account.state === "existing" &&
+                        account.balance_before !== undefined && (
+                          <span className="muted small">
+                            {" "}
+                            · saldo di partenza{" "}
+                            {money(account.balance_before)}
+                            {account.start_date
+                              ? ` al ${new Date(
+                                  `${account.start_date}T12:00:00`,
+                                ).toLocaleDateString("it-IT")}`
+                              : ""}
+                          </span>
+                        )}
+                      {account.state === "existing" &&
+                        account.first_movement &&
+                        account.start_date &&
+                        account.first_movement > account.start_date && (
+                          <span className="muted small">
+                            {" "}
+                            · il conto ha movimenti dal{" "}
+                            {new Date(
+                              `${account.first_movement}T12:00:00`,
+                            ).toLocaleDateString("it-IT")}
+                          </span>
+                        )}
                     </span>
                   </li>
                 ))}

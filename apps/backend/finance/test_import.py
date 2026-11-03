@@ -1,10 +1,18 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from accounts.models import User
-from .imports import parse_amount, parse_csv, parse_date
+from .imports import (
+    detect_date_format,
+    detect_decimal_separator,
+    detect_delimiter,
+    parse_amount,
+    parse_csv,
+    parse_date,
+)
 from .models import Account, Transaction
 from .tests import FinanceTestBase
 
@@ -81,19 +89,20 @@ class TemplateTests(ImportTestBase):
 
 class ParserTests(FinanceTestBase):
     def test_valid_file(self):
-        rows, errors = parse_csv(csv_file(VALID_ROWS))
+        rows, errors, delimiter = parse_csv(csv_file(VALID_ROWS))
         self.assertEqual(errors, [])
+        self.assertEqual(delimiter, ";")
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["date"], "01-10-2026")
         self.assertEqual(rows[0]["account"], "Contanti")
 
     def test_wrong_header(self):
-        rows, errors = parse_csv(csv_file(VALID_ROWS, header="data;importo"))
+        rows, errors, _ = parse_csv(csv_file(VALID_ROWS, header="data;importo"))
         self.assertEqual(rows, [])
         self.assertEqual(errors[0]["code"], "header")
 
     def test_wrong_column_count(self):
-        rows, errors = parse_csv(csv_file([["01-10-2026", "Solo due"]]))
+        rows, errors, _ = parse_csv(csv_file([["01-10-2026", "Solo due"]]))
         self.assertEqual(rows, [])
         self.assertEqual(errors[0]["code"], "columns")
 
@@ -102,29 +111,61 @@ class ParserTests(FinanceTestBase):
             "data;descrizione;categoria;conto;importo\r\n"
             '01-10-2026;"Caffè; cornetto";bar;Contanti;3,50\r\n'
         ).encode("utf-8-sig")
-        rows, errors = parse_csv(data)
+        rows, errors, _ = parse_csv(data)
         self.assertEqual(errors, [])
         self.assertEqual(rows[0]["description"], "Caffè; cornetto")
 
     def test_non_utf8_is_rejected(self):
-        rows, errors = parse_csv("caffè".encode("latin-1"))
+        rows, errors, _ = parse_csv("caffè".encode("latin-1"))
         self.assertEqual(rows, [])
         self.assertEqual(errors[0]["code"], "encoding")
+
+    def test_comma_delimiter_is_detected(self):
+        data = (
+            "data,descrizione,categoria,conto,importo\r\n"
+            "2026-10-01,Saldo,altro,Contanti,-1000.00\r\n"
+        ).encode("utf-8-sig")
+        rows, errors, delimiter = parse_csv(data)
+        self.assertEqual(errors, [])
+        self.assertEqual(delimiter, ",")
+        self.assertEqual(rows[0]["amount"], "-1000.00")
 
     def test_date_rules(self):
         self.assertEqual(parse_date("03-11-2026")[0].isoformat(), "2026-11-03")
         self.assertIsNotNone(parse_date("3-11-2026")[1])
         self.assertIsNotNone(parse_date("2026-11-03")[1])
         self.assertIsNotNone(parse_date("32-11-2026")[1])
+        self.assertEqual(
+            parse_date("2026-11-03", "YYYY-MM-DD")[0].isoformat(), "2026-11-03"
+        )
+        self.assertEqual(
+            parse_date("03/11/2026", "DD/MM/YYYY")[0].isoformat(), "2026-11-03"
+        )
 
     def test_amount_rules(self):
         self.assertEqual(parse_amount("12,50")[0], Decimal("12.50"))
         self.assertEqual(parse_amount("-100,00")[0], Decimal("-100.00"))
+        self.assertEqual(parse_amount("12.50", ".")[0], Decimal("12.50"))
         self.assertIsNotNone(parse_amount("12.50")[1])
         self.assertIsNotNone(parse_amount("1.234,56")[1])
         self.assertIsNotNone(parse_amount("€12,50")[1])
         self.assertIsNotNone(parse_amount("0,00")[1])
         self.assertIsNotNone(parse_amount("12")[1])
+
+
+class FormatDetectionTests(FinanceTestBase):
+    def test_delimiter(self):
+        self.assertEqual(detect_delimiter("a;b;c;d;e\n1;2;3;4;5"), ";")
+        self.assertEqual(detect_delimiter("a,b,c,d,e\n1,2,3,4,5"), ",")
+
+    def test_date_format(self):
+        self.assertEqual(detect_date_format(["2026-10-01", "2026-11-03"]), ("YYYY-MM-DD", False))
+        self.assertEqual(detect_date_format(["03/11/2026", "25/12/2026"]), ("DD/MM/YYYY", False))
+        self.assertEqual(detect_date_format(["03-11-2026", "04-12-2026"]), ("DD-MM-YYYY", True))
+
+    def test_decimal_separator(self):
+        self.assertEqual(detect_decimal_separator(["12,50", "-100,00"]), ",")
+        self.assertEqual(detect_decimal_separator(["12.50", "-100.00"]), ".")
 
 
 class AnalyzeTests(ImportTestBase):
@@ -180,6 +221,63 @@ class AnalyzeTests(ImportTestBase):
         ]
         self.assertIn("insufficient_balance", codes)
         self.assertFalse(response.data["summary"]["can_confirm"])
+
+    def test_insufficient_balance_message_uses_italian_amounts(self):
+        response = self.upload(
+            [
+                ["01-10-2026", "Saldo", "altro", "Contanti", "-10,00"],
+                ["02-10-2026", "Spesa", "spesa", "Contanti", "20,00"],
+            ]
+        )
+        message = response.data["rows"][1]["errors"][0]["message"]
+        self.assertIn("disponibili 10,00", message)
+        self.assertNotIn("10.00", message)
+
+    def test_moving_row_date_can_fix_the_balance(self):
+        base = [
+            ["01-01-2024", "Saldo", "altro", "Contanti", "-100,00"],
+            ["02-01-2024", "Spesa", "spesa", "Contanti", "120,00"],
+            ["03-01-2024", "Entrata", "altro", "Contanti", "-30,00"],
+        ]
+        first = self.upload(base)
+        codes = [e["code"] for item in first.data["rows"] for e in item["errors"]]
+        self.assertIn("insufficient_balance", codes)
+
+        fixed = [
+            ["01-01-2024", "Saldo", "altro", "Contanti", "-100,00"],
+            ["04-01-2024", "Spesa", "spesa", "Contanti", "120,00"],
+            ["03-01-2024", "Entrata", "altro", "Contanti", "-30,00"],
+        ]
+        second = self.upload(fixed)
+        codes = [e["code"] for item in second.data["rows"] for e in item["errors"]]
+        self.assertNotIn("insufficient_balance", codes)
+        self.assertTrue(second.data["summary"]["can_confirm"])
+
+    def test_existing_account_reports_starting_balance(self):
+        self.create_account(initial="100.00")
+        tomorrow = (self.today + timedelta(days=1)).strftime("%d-%m-%Y")
+        response = self.upload([[tomorrow, "Spesa", "spesa", "Contanti", "5,00"]])
+        account = response.data["accounts"][0]
+        self.assertEqual(account["balance_before"], "100.00")
+        self.assertEqual(account["start_date"], (self.today + timedelta(days=1)).isoformat())
+        self.assertEqual(account["state"], "existing")
+
+    def test_comma_delimiter_iso_dates_and_dot_decimals(self):
+        data = (
+            "data,descrizione,categoria,conto,importo\r\n"
+            "2026-01-10,Saldo,altro,Contanti,-1000.00\r\n"
+            "2026-02-10,Spesa,spesa,Contanti,12.50\r\n"
+        ).encode("utf-8-sig")
+        upload = SimpleUploadedFile("movimenti.csv", data, content_type="text/csv")
+        response = self.client.post(
+            reverse("finance-import-analyze"), {"file": upload}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["format"]["delimiter"], ",")
+        self.assertEqual(response.data["format"]["date_format"], "YYYY-MM-DD")
+        self.assertEqual(response.data["format"]["decimal_separator"], ".")
+        self.assertTrue(response.data["summary"]["can_confirm"])
+        self.assertEqual(response.data["rows"][0]["kind"], "opening")
 
     def test_duplicate_in_file(self):
         response = self.upload(
@@ -309,6 +407,22 @@ class ConfirmTests(ImportTestBase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(Account.objects.count(), 0)
         self.assertEqual(Transaction.objects.count(), 0)
+
+    def test_confirm_with_explicit_date_format(self):
+        rows = self.json_rows(
+            [
+                ["03/11/2026", "Saldo", "altro", "Contanti", "-100,00"],
+                ["04/11/2026", "Spesa", "spesa", "Contanti", "10,00"],
+            ]
+        )
+        response = self.client.post(
+            reverse("finance-import-confirm"),
+            {"rows": rows, "date_format": "MM/DD/YYYY", "decimal_separator": ","},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        expense = Transaction.objects.get(kind=Transaction.Kind.EXPENSE)
+        self.assertEqual(expense.date.isoformat(), "2026-04-11")
 
     def test_second_import_of_the_same_file_is_blocked(self):
         payload = self.json_rows(VALID_ROWS)

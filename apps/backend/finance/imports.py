@@ -1,4 +1,4 @@
-"""CSV import of historical movements (DC-070).
+"""CSV import of historical movements (DC-070, DC-071).
 
 The parser and the analyzer are pure enough to be tested without a request:
 ``parse_csv`` turns the uploaded bytes into raw rows, ``analyze`` validates
@@ -16,11 +16,17 @@ from decimal import Decimal
 from difflib import SequenceMatcher
 
 from django.db import transaction as db_transaction
+from django.db.models import Min, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from .models import ZERO, Account, Line, Profile, Transaction
-from .services import first_negative_point, running_minimum
+from .services import (
+    assert_accounts_non_negative,
+    first_negative_point,
+    format_money,
+    running_minimum,
+)
 
 HEADER = ("data", "descrizione", "categoria", "conto", "importo")
 SEPARATOR = ";"
@@ -29,8 +35,18 @@ MAX_BYTES = 5 * 1024 * 1024
 TEMPLATE_FILENAME = "spendy-modello-movimenti.csv"
 SIMILAR_RATIO = 0.85
 
-_DATE_RE = re.compile(r"^\d{2}-\d{2}-\d{4}$")
-_AMOUNT_RE = re.compile(r"^-?\d{1,10},\d{2}$")
+DATE_FORMATS = {
+    "DD-MM-YYYY": ("%d-%m-%Y", r"^\d{2}-\d{2}-\d{4}$"),
+    "DD/MM/YYYY": ("%d/%m/%Y", r"^\d{2}/\d{2}/\d{4}$"),
+    "YYYY-MM-DD": ("%Y-%m-%d", r"^\d{4}-\d{2}-\d{2}$"),
+    "YYYY/MM/DD": ("%Y/%m/%d", r"^\d{4}/\d{2}/\d{2}$"),
+    "DD.MM.YYYY": ("%d.%m.%Y", r"^\d{2}\.\d{2}\.\d{4}$"),
+    "MM-DD-YYYY": ("%m-%d-%Y", r"^\d{2}-\d{2}-\d{4}$"),
+    "MM/DD/YYYY": ("%m/%d/%Y", r"^\d{2}/\d{2}/\d{4}$"),
+}
+DEFAULT_DATE_FORMAT = "DD-MM-YYYY"
+DELIMITERS = (";", ",", "\t", "|")
+DECIMAL_SEPARATORS = (",", ".")
 
 
 # --------------------------------------------------------------------------- #
@@ -39,10 +55,12 @@ _AMOUNT_RE = re.compile(r"^-?\d{1,10},\d{2}$")
 
 
 def _example_rows():
-    today = timezone.localdate().strftime("%d-%m-%Y")
+    today = timezone.localdate()
+    # A day above 12 keeps spreadsheets from guessing the date order.
+    example = today.replace(day=25).strftime("%d-%m-%Y")
     return [
-        [today, "ESEMPIO — spesa di prova", "esempio", "Contanti", "12,50"],
-        [today, "ESEMPIO — entrata di prova", "esempio", "Contanti", "-100,00"],
+        [example, "ESEMPIO — spesa di prova", "esempio", "Contanti", "12,50"],
+        [example, "ESEMPIO — entrata di prova", "esempio", "Contanti", "-100,00"],
     ]
 
 
@@ -56,6 +74,74 @@ def build_template() -> bytes:
 
 
 # --------------------------------------------------------------------------- #
+# Format detection
+# --------------------------------------------------------------------------- #
+
+
+def detect_delimiter(text: str) -> str:
+    lines = [line for line in text.splitlines() if line.strip()][:30]
+    if not lines:
+        return SEPARATOR
+    best = SEPARATOR
+    best_score = (-1.0, False)
+    for candidate in DELIMITERS:
+        rows = list(csv.reader(lines, delimiter=candidate))
+        if not rows:
+            continue
+        filled = sum(1 for row in rows if len(row) == len(HEADER))
+        header_ok = tuple(
+            cell.strip().casefold() for cell in rows[0]
+        ) == HEADER
+        score = (filled / len(rows), header_ok)
+        if score > best_score:
+            best, best_score = candidate, score
+    return best
+
+
+def detect_date_format(values) -> tuple[str, bool]:
+    """Return (format, ambiguous). Ambiguous when DD and MM both fit."""
+    dates = [value for value in values if value]
+    if not dates:
+        return DEFAULT_DATE_FORMAT, False
+    candidates = []
+    for name, (fmt, pattern) in DATE_FORMATS.items():
+        matched = 0
+        for value in dates:
+            if not re.match(pattern, value):
+                continue
+            try:
+                datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+            matched += 1
+        if matched == len(dates):
+            candidates.append(name)
+    if not candidates:
+        return DEFAULT_DATE_FORMAT, False
+    preferred = next(
+        (
+            name
+            for name in DATE_FORMATS
+            if name in candidates and not name.startswith("MM")
+        ),
+        candidates[0],
+    )
+    return preferred, len(candidates) > 1
+
+
+def detect_decimal_separator(values) -> str:
+    comma = dot = 0
+    for value in values:
+        if re.match(r"^-?\d{1,10},\d{2}$", value):
+            comma += 1
+        elif re.match(r"^-?\d{1,10}\.\d{2}$", value):
+            dot += 1
+    if comma == dot:
+        return ","
+    return "," if comma > dot else "."
+
+
+# --------------------------------------------------------------------------- #
 # Parsing
 # --------------------------------------------------------------------------- #
 
@@ -64,8 +150,8 @@ def _file_error(row: int, code: str, message: str) -> dict:
     return {"row": row, "field": "file", "code": code, "message": message}
 
 
-def parse_csv(raw: bytes) -> tuple[list[dict], list[dict]]:
-    """Return (raw rows, file level errors). Row dicts keep the raw strings."""
+def parse_csv(raw: bytes, delimiter: str | None = None):
+    """Return (raw rows, file errors, delimiter used)."""
     errors: list[dict] = []
     try:
         text = raw.decode("utf-8-sig")
@@ -76,9 +162,10 @@ def parse_csv(raw: bytes) -> tuple[list[dict], list[dict]]:
                 "encoding",
                 "Il file non è in UTF-8. Salvalo come «CSV UTF-8».",
             )
-        ]
+        ], delimiter or SEPARATOR
 
-    reader = csv.reader(io.StringIO(text), delimiter=SEPARATOR)
+    used = delimiter or detect_delimiter(text)
+    reader = csv.reader(io.StringIO(text), delimiter=used)
     rows: list[dict] = []
     header = None
     for line_number, cells in enumerate(reader, start=1):
@@ -94,7 +181,7 @@ def parse_csv(raw: bytes) -> tuple[list[dict], list[dict]]:
                         "Intestazione non valida: usa il modello scaricato "
                         "(data;descrizione;categoria;conto;importo).",
                     )
-                ]
+                ], used
             continue
         if len(cells) != len(HEADER):
             errors.append(
@@ -129,25 +216,29 @@ def parse_csv(raw: bytes) -> tuple[list[dict], list[dict]]:
                 f"Troppe righe: il massimo è {MAX_ROWS} per file.",
             )
         )
-    return rows, errors
+    return rows, errors, used
 
 
-def parse_date(value: str) -> tuple[date | None, str | None]:
-    if not _DATE_RE.match(value):
-        return None, "La data deve essere nel formato GG-MM-AAAA."
+def parse_date(value: str, date_format: str = DEFAULT_DATE_FORMAT):
+    fmt, pattern = DATE_FORMATS.get(date_format, DATE_FORMATS[DEFAULT_DATE_FORMAT])
+    if not re.match(pattern, value):
+        return None, "La data non corrisponde al formato scelto."
     try:
-        return datetime.strptime(value, "%d-%m-%Y").date(), None
+        return datetime.strptime(value, fmt).date(), None
     except ValueError:
         return None, "La data non esiste."
 
 
-def parse_amount(value: str) -> tuple[Decimal | None, str | None]:
-    if not _AMOUNT_RE.match(value):
+def parse_amount(value: str, decimal_separator: str = ","):
+    separator = decimal_separator if decimal_separator in DECIMAL_SEPARATORS else ","
+    escaped = re.escape(separator)
+    if not re.match(rf"^-?\d{{1,10}}{escaped}\d{{2}}$", value):
+        label = "virgola" if separator == "," else "punto"
         return None, (
-            "L'importo deve essere nel formato 1234,56 "
-            "(virgola decimale, niente €, migliaia o punto)."
+            f"L'importo deve usare la {label} ({'1234,56' if separator == ',' else '1234.56'}), "
+            "senza € e senza migliaia."
         )
-    amount = Decimal(value.replace(",", "."))
+    amount = Decimal(value.replace(separator, "."))
     if amount == ZERO:
         return None, "L'importo non può essere zero."
     return amount, None
@@ -176,7 +267,7 @@ def _signed(row: dict) -> Decimal:
     return abs(row["amount_value"])
 
 
-def _prepare_row(index: int, source: dict) -> dict:
+def _prepare_row(index: int, source: dict, date_format: str, decimal_separator: str) -> dict:
     row = {
         "index": index,
         "row_number": int(source.get("row_number") or index + 2),
@@ -195,14 +286,14 @@ def _prepare_row(index: int, source: dict) -> dict:
         "account_key": "",
     }
 
-    parsed_date, message = parse_date(row["date"])
+    parsed_date, message = parse_date(row["date"], date_format)
     if message:
         _add_error(row, "invalid_date", "date", message)
         row["valid"] = False
     else:
         row["date_value"] = parsed_date
 
-    parsed_amount, message = parse_amount(row["amount"])
+    parsed_amount, message = parse_amount(row["amount"], decimal_separator)
     if message:
         _add_error(row, "invalid_amount", "amount", message)
         row["valid"] = False
@@ -284,8 +375,27 @@ def _database_keys(profile: Profile, start: date, end: date) -> set[tuple]:
     return keys
 
 
-def _analyze(rows: list[dict], profile: Profile, file_errors=()):
-    prepared = [_prepare_row(index, row) for index, row in enumerate(rows)]
+def _analyze(
+    rows: list[dict],
+    profile: Profile,
+    file_errors=(),
+    *,
+    delimiter: str | None = None,
+    date_format: str | None = None,
+    decimal_separator: str | None = None,
+):
+    date_values = [str(row.get("date", "")).strip() for row in rows]
+    amount_values = [str(row.get("amount", "")).strip() for row in rows]
+    detected_format, ambiguous = detect_date_format(date_values)
+    applied_date_format = date_format or detected_format
+    applied_decimal = decimal_separator or detect_decimal_separator(amount_values)
+    if applied_decimal not in DECIMAL_SEPARATORS:
+        applied_decimal = ","
+
+    prepared = [
+        _prepare_row(index, row, applied_date_format, applied_decimal)
+        for index, row in enumerate(rows)
+    ]
     accounts = list(Account.objects.filter(profile=profile))
     existing = {normalize_name(account.name): account for account in accounts}
 
@@ -301,22 +411,6 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
         else:
             similar = _similar_account(key, existing)
             states[key] = ("similar", similar) if similar else ("new", None)
-
-    account_entries = []
-    for key, name in names.items():
-        state, related = states[key]
-        count = sum(1 for row in prepared if row["account_key"] == key)
-        account_entries.append(
-            {
-                "name": related.name if state == "existing" else name,
-                "normalized": key,
-                "state": state,
-                "similar_to": related.name if state == "similar" else None,
-                "will_create": state != "existing",
-                "rows": count,
-            }
-        )
-    account_entries.sort(key=lambda entry: entry["name"].casefold())
 
     for row in prepared:
         if row["account_key"] in states and states[row["account_key"]][0] == "similar":
@@ -346,10 +440,6 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
         negatives = [row for row in first_day if row["amount_value"] < ZERO]
         if len(negatives) == 1:
             negatives[0]["kind"] = "opening"
-            for row in group:
-                if row is negatives[0]:
-                    continue
-                row["kind"] = "expense" if row["amount_value"] > ZERO else "income"
         elif not negatives:
             _add_error(
                 first_day[0],
@@ -369,6 +459,7 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
                 )
 
     # Chronological balance, including the movements already registered.
+    account_extra: dict[str, dict] = {}
     for key, group in by_account.items():
         if any(
             error["code"] in {"missing_opening", "ambiguous_opening"}
@@ -377,12 +468,26 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
         ):
             continue
         account = existing.get(key)
+        start = min(row["date_value"] for row in group)
         current_points: dict[date, Decimal] = defaultdict(lambda: ZERO)
+        balance_before = ZERO
+        first_movement = None
         if account is not None:
             for day, amount in Line.objects.filter(account=account).values_list(
                 "transaction__date", "amount"
             ):
                 current_points[day] += amount
+            balance_before = (
+                Line.objects.filter(
+                    account=account, transaction__date__lt=start
+                ).aggregate(total=Sum("amount"))["total"]
+                or ZERO
+            )
+            first_movement = (
+                Line.objects.filter(account=account).aggregate(
+                    first=Min("transaction__date")
+                )["first"]
+            )
         current_minimum = running_minimum(current_points)
 
         combined: dict[date, Decimal] = defaultdict(lambda: ZERO)
@@ -392,17 +497,35 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
             combined[row["date_value"]] += _signed(row)
 
         if running_minimum(combined) >= min(ZERO, current_minimum):
+            account_extra[key] = {
+                "balance_before": f"{balance_before:.2f}",
+                "start_date": start.isoformat(),
+                "first_movement": first_movement.isoformat() if first_movement else None,
+            }
             continue
-        first_day, available = first_negative_point(combined)
+        first_day, running = first_negative_point(combined)
+        imported_on_day = sum(
+            (_signed(row) for row in group if row["date_value"] == first_day), ZERO
+        )
+        available = running - imported_on_day
+        if available >= ZERO:
+            message = (
+                f"Saldo insufficiente: disponibili {format_money(available)} "
+                f"al {first_day:%d-%m-%Y}."
+            )
+        else:
+            message = (
+                f"Saldo insufficiente: al {first_day:%d-%m-%Y} il saldo "
+                f"risultante è {format_money(available)}."
+            )
         for row in group:
             if row["date_value"] == first_day:
-                _add_error(
-                    row,
-                    "insufficient_balance",
-                    "amount",
-                    f"Saldo insufficiente: disponibili {available:.2f} "
-                    f"al {first_day:%d-%m-%Y}.",
-                )
+                _add_error(row, "insufficient_balance", "amount", message)
+        account_extra[key] = {
+            "balance_before": f"{balance_before:.2f}",
+            "start_date": start.isoformat(),
+            "first_movement": first_movement.isoformat() if first_movement else None,
+        }
 
     # Duplicates inside the file.
     file_keys: dict[tuple, list[dict]] = defaultdict(list)
@@ -467,6 +590,22 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
                 }
             )
 
+    account_entries = []
+    for key, name in names.items():
+        state, related = states[key]
+        count = sum(1 for row in prepared if row["account_key"] == key)
+        entry = {
+            "name": related.name if state == "existing" else name,
+            "normalized": key,
+            "state": state,
+            "similar_to": related.name if state == "similar" else None,
+            "will_create": state != "existing",
+            "rows": count,
+        }
+        entry.update(account_extra.get(key, {}))
+        account_entries.append(entry)
+    account_entries.sort(key=lambda entry: entry["name"].casefold())
+
     income_total = sum(
         (
             abs(row["amount_value"])
@@ -509,6 +648,12 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
 
     payload = {
         "header": list(HEADER),
+        "format": {
+            "delimiter": delimiter or SEPARATOR,
+            "date_format": applied_date_format,
+            "decimal_separator": applied_decimal,
+            "ambiguous": ambiguous,
+        },
         "rows": [
             {
                 "index": row["index"],
@@ -558,13 +703,39 @@ def _analyze(rows: list[dict], profile: Profile, file_errors=()):
     return payload, plan
 
 
-def analyze(rows: list[dict], profile: Profile, file_errors=()) -> dict:
-    payload, _ = _analyze(rows, profile, file_errors)
+def analyze(
+    rows: list[dict],
+    profile: Profile,
+    file_errors=(),
+    *,
+    delimiter: str | None = None,
+    date_format: str | None = None,
+    decimal_separator: str | None = None,
+) -> dict:
+    payload, _ = _analyze(
+        rows,
+        profile,
+        file_errors,
+        delimiter=delimiter,
+        date_format=date_format,
+        decimal_separator=decimal_separator,
+    )
     return payload
 
 
-def confirm(rows: list[dict], profile: Profile) -> dict:
-    payload, plan = _analyze(rows, profile)
+def confirm(
+    rows: list[dict],
+    profile: Profile,
+    *,
+    date_format: str | None = None,
+    decimal_separator: str | None = None,
+) -> dict:
+    payload, plan = _analyze(
+        rows,
+        profile,
+        date_format=date_format,
+        decimal_separator=decimal_separator,
+    )
     if not payload["summary"]["can_confirm"]:
         raise ValidationError(
             {
@@ -575,7 +746,10 @@ def confirm(rows: list[dict], profile: Profile) -> dict:
             }
         )
 
-    accounts = {normalize_name(account.name): account for account in Account.objects.filter(profile=profile)}
+    accounts = {
+        normalize_name(account.name): account
+        for account in Account.objects.filter(profile=profile)
+    }
     created: list[str] = []
     with db_transaction.atomic():
         for entry in payload["accounts"]:
@@ -589,6 +763,12 @@ def confirm(rows: list[dict], profile: Profile) -> dict:
             )
             accounts[entry["normalized"]] = account
             created.append(account.name)
+
+        proposed = [
+            (accounts[item["account_key"]], item["amount"] * (-1 if item["kind"] == "expense" else 1), item["date"])
+            for item in plan
+        ]
+        assert_accounts_non_negative(proposed)
 
         for item in plan:
             operation = Transaction.objects.create(

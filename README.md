@@ -134,7 +134,7 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.2.0`: **83 test backend**, lint e build frontend,
+Stato verificato per `v0.2.1`: **92 test backend**, lint e build frontend,
 configurazione Compose valida e flusso UI completo.
 
 ## Importazione dei movimenti
@@ -144,15 +144,18 @@ storico. Il file viene analizzato **prima** di scrivere qualsiasi dato: le righe
 con errori si possono correggere o scartare, e solo dopo la conferma
 l'importazione avviene in modo atomico.
 
-Formato del file (separatore `;`, UTF-8):
+Il file deve essere un CSV UTF-8 con queste colonne:
 
 ```csv
 data;descrizione;categoria;conto;importo
-03-11-2026;Spesa di prova;esempio;Contanti;12,50
-03-11-2026;Entrata di prova;esempio;Contanti;-100,00
+25-11-2026;Spesa di prova;esempio;Contanti;12,50
+25-11-2026;Entrata di prova;esempio;Contanti;-100,00
 ```
 
-- date `GG-MM-AAAA`; importi con la virgola (`1234,56`), senza `€` né migliaia;
+- il formato della data, il separatore di colonna e il separatore decimale
+  vengono **rilevati automaticamente** e si possono correggere dall'anteprima
+  (es. `GG-MM-AAAA`, `AAAA-MM-GG`, `;` o `,`, virgola o punto decimale);
+- importi senza `€` e senza migliaia;
 - importo positivo = uscita, negativo = entrata;
 - la prima riga per data di un **nuovo conto** è la sua apertura e deve essere
   negativa; i conti esistenti ricevono solo movimenti;
