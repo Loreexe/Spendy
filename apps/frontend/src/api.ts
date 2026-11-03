@@ -394,6 +394,7 @@ export const api = {
     start?: string;
     end?: string;
     limit?: number;
+    offset?: number;
   } = {}) => {
     const query = new URLSearchParams();
     if (params.account) query.set("account", String(params.account));
@@ -401,8 +402,9 @@ export const api = {
     if (params.start) query.set("start", params.start);
     if (params.end) query.set("end", params.end);
     if (params.limit) query.set("limit", String(params.limit));
+    if (params.offset) query.set("offset", String(params.offset));
     const suffix = query.toString();
-    return request<{ transactions: Transaction[] }>(
+    return request<{ transactions: Transaction[]; count: number }>(
       `/api/finance/transactions/${suffix ? `?${suffix}` : ""}`,
     );
   },

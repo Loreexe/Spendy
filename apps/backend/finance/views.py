@@ -259,14 +259,20 @@ class TransactionListCreateView(FinanceView):
         if account_id or savings_id:
             queryset = queryset.distinct()
         try:
-            limit = min(int(request.query_params.get("limit", 100)), 500)
+            limit = min(max(int(request.query_params.get("limit", 100)), 1), 500)
         except (TypeError, ValueError):
             limit = 100
+        try:
+            offset = max(int(request.query_params.get("offset", 0)), 0)
+        except (TypeError, ValueError):
+            offset = 0
+        total = queryset.count()
         return Response(
             {
                 "transactions": TransactionSerializer(
-                    queryset[:limit], many=True
-                ).data
+                    queryset[offset : offset + limit], many=True
+                ).data,
+                "count": total,
             }
         )
 

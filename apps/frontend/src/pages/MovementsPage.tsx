@@ -124,20 +124,27 @@ export function MovementsPage() {
 
   const [filterAccount, setFilterAccount] = useState("");
   const [filterSavings, setFilterSavings] = useState("");
+  const [filterStart, setFilterStart] = useState("");
+  const [filterEnd, setFilterEnd] = useState("");
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (limit = 200) => {
     setLoading(true);
     try {
       const [transactionsData, accountsData, savingsData] = await Promise.all([
         api.transactions({
           account: filterAccount ? Number(filterAccount) : undefined,
           savings: filterSavings ? Number(filterSavings) : undefined,
-          limit: 200,
+          start: filterStart || undefined,
+          end: filterEnd || undefined,
+          limit,
         }),
         api.accounts(),
         api.savings(),
       ]);
       setTransactions(transactionsData.transactions);
+      setTotal(transactionsData.count);
       const activeAccounts = accountsData.accounts.filter((item) => !item.archived);
       setAccounts(activeAccounts);
       setSavings(savingsData.savings);
@@ -156,12 +163,42 @@ export function MovementsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterAccount, filterSavings]);
+  }, [filterAccount, filterSavings, filterStart, filterEnd]);
 
   useEffect(() => {
+    if (filterStart && filterEnd && filterStart > filterEnd) {
+      setError("La data iniziale supera quella finale.");
+      return;
+    }
+    setError(null);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterAccount, filterSavings]);
+  }, [filterAccount, filterSavings, filterStart, filterEnd]);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const data = await api.transactions({
+        account: filterAccount ? Number(filterAccount) : undefined,
+        savings: filterSavings ? Number(filterSavings) : undefined,
+        start: filterStart || undefined,
+        end: filterEnd || undefined,
+        limit: 200,
+        offset: transactions.length,
+      });
+      setTransactions((current) => [...current, ...data.transactions]);
+      setTotal(data.count);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  function reload() {
+    return load(Math.max(200, transactions.length));
+  }
 
   function buildPayload(): TransactionPayload | null {
     if (!amount || Number(amount) <= 0) {
@@ -264,7 +301,7 @@ export function MovementsPage() {
         setMessage("Movimento registrato.");
       }
       resetForm();
-      await load();
+      await reload();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -346,7 +383,7 @@ export function MovementsPage() {
       await api.deleteTransaction(transaction.id);
       if (editingId === transaction.id) resetForm();
       setMessage("Movimento eliminato.");
-      await load();
+      await reload();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -609,51 +646,118 @@ export function MovementsPage() {
 
       <section className="card">
         <div className="card-heading">
-          <h2>Registro ({transactions.length})</h2>
+          <h2>
+            Registro{" "}
+            {total > transactions.length
+              ? `(${transactions.length} di ${total})`
+              : `(${total})`}
+          </h2>
           <div className="inline-form">
-            <select
-              value={filterAccount}
-              onChange={(event) => {
-                setFilterAccount(event.target.value);
-                setFilterSavings("");
-              }}
-            >
-              <option value="">Tutti i conti</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filterSavings}
-              onChange={(event) => {
-                setFilterSavings(event.target.value);
-                setFilterAccount("");
-              }}
-            >
-              <option value="">Tutti i salvadanai</option>
-              {savings.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
+            <label>
+              <span className="small muted">Conto</span>
+              <select
+                value={filterAccount}
+                onChange={(event) => {
+                  setFilterAccount(event.target.value);
+                  setFilterSavings("");
+                }}
+              >
+                <option value="">Tutti i conti</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="small muted">Salvadanaio</span>
+              <select
+                value={filterSavings}
+                onChange={(event) => {
+                  setFilterSavings(event.target.value);
+                  setFilterAccount("");
+                }}
+              >
+                <option value="">Tutti i salvadanai</option>
+                {savings.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="small muted">Dal</span>
+              <input
+                type="date"
+                value={filterStart}
+                onChange={(event) => setFilterStart(event.target.value)}
+              />
+            </label>
+            <label>
+              <span className="small muted">Al</span>
+              <input
+                type="date"
+                value={filterEnd}
+                onChange={(event) => setFilterEnd(event.target.value)}
+              />
+            </label>
+            {(filterAccount || filterSavings || filterStart || filterEnd) && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setFilterAccount("");
+                  setFilterSavings("");
+                  setFilterStart("");
+                  setFilterEnd("");
+                }}
+              >
+                Mostra tutto
+              </button>
+            )}
           </div>
         </div>
+        <p className="muted small">
+          Un movimento appartiene a un conto oppure a un salvadanaio: scegliendo
+          un filtro l&apos;altro viene azzerato. «Dal» e «Al» limitano il periodo
+          e possono essere usati da soli o insieme agli altri filtri. Il
+          registro mostra prima i movimenti più recenti.
+        </p>
         {transactions.length === 0 ? (
-          <p className="muted">Nessun movimento registrato.</p>
+          <p className="muted">
+            {filterAccount || filterSavings
+              ? "Nessun movimento per questo filtro."
+              : "Nessun movimento registrato."}
+          </p>
         ) : (
-          <ul className="movement-list">
-            {transactions.map((transaction) => (
-              <MovementItem
-                key={transaction.id}
-                transaction={transaction}
-                onDelete={remove}
-                onEdit={startEdit}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="movement-list">
+              {transactions.map((transaction) => (
+                <MovementItem
+                  key={transaction.id}
+                  transaction={transaction}
+                  onDelete={remove}
+                  onEdit={startEdit}
+                />
+              ))}
+            </ul>
+            {transactions.length < total && (
+              <div className="actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore
+                    ? "Caricamento…"
+                    : `Carica altri (${total - transactions.length} rimanenti)`}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>

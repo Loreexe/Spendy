@@ -295,6 +295,19 @@ class AnalyzeTests(ImportTestBase):
         self.assertTrue(response.data["summary"]["can_confirm"])
         self.assertEqual(response.data["rows"][0]["kind"], "opening")
 
+    def test_same_day_rows_only_blame_the_row_that_goes_negative(self):
+        response = self.upload(
+            [
+                ["01-01-2025", "Saldo", "altro", "Contanti", "-10,00"],
+                ["02-01-2025", "Prima spesa", "spesa", "Contanti", "8,00"],
+                ["02-01-2025", "Seconda spesa", "spesa", "Contanti", "5,00"],
+            ]
+        )
+        first, second = response.data["rows"][1], response.data["rows"][2]
+        self.assertEqual(first["errors"], [])
+        self.assertEqual(second["errors"][0]["code"], "insufficient_balance")
+        self.assertIn("disponibili 2,00", second["errors"][0]["message"])
+
     def test_duplicate_in_file(self):
         response = self.upload(
             [
@@ -309,6 +322,19 @@ class AnalyzeTests(ImportTestBase):
             for error in item["errors"]
         ]
         self.assertEqual(codes.count("duplicate_in_file"), 2)
+
+    def test_opposite_signs_are_not_duplicates(self):
+        account = self.create_account(initial="100.00").data
+        today = self.today.strftime("%d-%m-%Y")
+        response = self.upload(
+            [
+                [today, "Scambio di soldi", "trasferimento", "Contanti", "10"],
+                [today, "Scambio di soldi", "trasferimento", "Contanti", "-10"],
+            ]
+        )
+        codes = [error["code"] for item in response.data["rows"] for error in item["errors"]]
+        self.assertNotIn("duplicate_in_file", codes)
+        self.assertTrue(response.data["summary"]["can_confirm"])
 
     def test_not_duplicate_ack_clears_the_error(self):
         rows = self.json_rows(

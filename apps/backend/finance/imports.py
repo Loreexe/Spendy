@@ -349,9 +349,10 @@ def _similar_account(key: str, existing: dict) -> Account | None:
 
 
 def _duplicate_key(row: dict) -> tuple:
+    """Signed amount: an outgoing and an incoming row are never duplicates."""
     return (
         row["date_value"].isoformat(),
-        f"{abs(row['amount_value']):.2f}",
+        f"{_signed(row):.2f}",
         normalize_name(row["description"]),
         row["account_key"],
     )
@@ -374,7 +375,7 @@ def _database_keys(profile: Profile, start: date, end: date) -> set[tuple]:
                 keys.add(
                     (
                         operation.date.isoformat(),
-                        f"{abs(line.amount):.2f}",
+                        f"{line.amount:.2f}",
                         normalize_name(operation.description),
                         normalize_name(line.account.name),
                     )
@@ -511,23 +512,28 @@ def _analyze(
             }
             continue
         first_day, running = first_negative_point(combined)
-        imported_on_day = sum(
-            (_signed(row) for row in group if row["date_value"] == first_day), ZERO
+        day_rows = sorted(
+            (row for row in group if row["date_value"] == first_day),
+            key=lambda row: row["index"],
         )
-        available = running - imported_on_day
-        if available >= ZERO:
-            message = (
-                f"Saldo insufficiente: disponibili {format_money(available)} "
-                f"al {first_day:%d-%m-%Y}."
-            )
-        else:
-            message = (
-                f"Saldo insufficiente: al {first_day:%d-%m-%Y} il saldo "
-                f"risultante è {format_money(available)}."
-            )
-        for row in group:
-            if row["date_value"] == first_day:
-                _add_error(row, "insufficient_balance", "amount", message)
+        balance = running - sum((_signed(row) for row in day_rows), ZERO)
+        for row in day_rows:
+            before = balance
+            balance += _signed(row)
+            if balance >= ZERO:
+                continue
+            if before >= ZERO:
+                message = (
+                    f"Saldo insufficiente: disponibili {format_money(before)} "
+                    f"al {first_day:%d-%m-%Y}."
+                )
+            else:
+                message = (
+                    f"Saldo insufficiente: al {first_day:%d-%m-%Y} il saldo "
+                    f"risultante è {format_money(balance)}."
+                )
+            _add_error(row, "insufficient_balance", "amount", message)
+            break
         account_extra[key] = {
             "balance_before": f"{balance_before:.2f}",
             "start_date": start.isoformat(),

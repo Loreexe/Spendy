@@ -134,7 +134,7 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.2.3`: **93 test backend**, lint e build frontend,
+Stato verificato per `v0.2.4`: **94 test backend**, lint e build frontend,
 configurazione Compose valida e flusso UI completo.
 
 ## Importazione dei movimenti
@@ -167,7 +167,8 @@ data;descrizione;categoria;conto;importo
 - ogni riga è indipendente: trasferimenti e salvadanai non sono importabili;
 - la colonna `categoria` è accettata ma ignorata, in attesa della funzionalità;
 - righe identiche nel file o già presenti nell'app sono segnalate come
-  duplicati; puoi scartarle oppure confermare singolarmente che non lo sono.
+  duplicati (stesso segno: un'uscita e un'entrata dello stesso importo non lo
+  sono); puoi scartarle oppure confermare singolarmente che non lo sono.
 
 ## Configurazione di produzione
 

@@ -357,7 +357,7 @@ export function ImportPage() {
               <table className="import-table">
                 <thead>
                   <tr>
-                    <th>Riga</th>
+                    <th>#</th>
                     <th>Data</th>
                     <th>Descrizione</th>
                     <th>Categoria</th>

@@ -683,18 +683,68 @@ button.danger:hover {
 }
 
 /* Import movements */
+.import-table {
+  table-layout: fixed;
+}
+
+.import-table th:nth-child(1) {
+  width: 4%;
+}
+
+.import-table th:nth-child(2) {
+  width: 12%;
+}
+
+.import-table th:nth-child(3) {
+  width: 18%;
+}
+
+.import-table th:nth-child(4) {
+  width: 11%;
+}
+
+.import-table th:nth-child(5) {
+  width: 13%;
+}
+
+.import-table th:nth-child(6) {
+  width: 8%;
+}
+
+.import-table th:nth-child(7) {
+  width: 9%;
+}
+
+.import-table th:nth-child(8) {
+  width: 16%;
+}
+
+.import-table th:nth-child(9) {
+  width: 9%;
+}
+
+.import-table th {
+  white-space: normal;
+  overflow-wrap: break-word;
+  font-size: 0.72rem;
+}
+
 .import-table td {
   vertical-align: top;
   white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .import-table input {
   width: 100%;
-  min-width: 6.5rem;
+  min-width: 0;
+  padding: 0.4rem 0.45rem;
+  font-size: 0.85rem;
 }
 
-.import-table td:nth-child(3) input {
-  min-width: 14rem;
+.import-table button {
+  padding: 0.45rem 0.55rem;
+  font-size: 0.82rem;
 }
 
 .import-table tr.row-error td {
@@ -710,6 +760,8 @@ button.danger:hover {
 .import-table .checkbox-row {
   margin-top: 0.35rem;
   white-space: normal;
+  overflow-wrap: normal;
+  font-size: 0.8rem;
 }
 
 .format-bar {
