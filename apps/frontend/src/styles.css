@@ -681,3 +681,33 @@ button.danger:hover {
     justify-content: flex-start;
   }
 }
+
+/* Import movements */
+.import-table td {
+  vertical-align: top;
+  white-space: normal;
+}
+
+.import-table input {
+  width: 100%;
+  min-width: 6.5rem;
+}
+
+.import-table td:nth-child(3) input {
+  min-width: 14rem;
+}
+
+.import-table tr.row-error td {
+  background: var(--danger-soft);
+}
+
+.error-text {
+  display: block;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+.import-table .checkbox-row {
+  margin-top: 0.35rem;
+  white-space: normal;
+}

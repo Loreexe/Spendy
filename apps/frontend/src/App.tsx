@@ -19,6 +19,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { AccountPage } from "./pages/AccountPage";
 import { AccountsPage } from "./pages/AccountsPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MovementsPage } from "./pages/MovementsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -94,6 +95,14 @@ export function App() {
                 element={
                   <ProfileRoute>
                     <MovementsPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/import"
+                element={
+                  <ProfileRoute>
+                    <ImportPage />
                   </ProfileRoute>
                 }
               />

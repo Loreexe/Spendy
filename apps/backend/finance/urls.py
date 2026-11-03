@@ -1,5 +1,10 @@
 from django.urls import path
 
+from .import_views import (
+    ImportAnalyzeView,
+    ImportConfirmView,
+    ImportTemplateView,
+)
 from .views import (
     AccountDetailView,
     AccountListCreateView,
@@ -35,5 +40,20 @@ urlpatterns = [
         "transactions/<int:pk>/",
         TransactionDetailView.as_view(),
         name="finance-transaction-detail",
+    ),
+    path(
+        "import/template/",
+        ImportTemplateView.as_view(),
+        name="finance-import-template",
+    ),
+    path(
+        "import/analyze/",
+        ImportAnalyzeView.as_view(),
+        name="finance-import-analyze",
+    ),
+    path(
+        "import/confirm/",
+        ImportConfirmView.as_view(),
+        name="finance-import-confirm",
     ),
 ]

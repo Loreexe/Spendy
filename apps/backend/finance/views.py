@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import ZERO, Account, Line, Profile, SavingsAccount, Transaction
+from .services import assert_accounts_non_negative
 from .serializers import (
     AccountCreateSerializer,
     AccountSerializer,
@@ -323,5 +324,13 @@ class TransactionDetailView(FinanceView):
                 {"detail": "Il movimento di apertura non è eliminabile."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        affected_accounts = [
+            line.account
+            for line in operation.lines.all()
+            if line.account_id is not None
+        ]
+        assert_accounts_non_negative(
+            accounts=affected_accounts, exclude_transaction=operation
+        )
         operation.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

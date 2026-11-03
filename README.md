@@ -10,7 +10,7 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** prima release usabile **`v0.1.0`**. Il progetto è in sviluppo attivo:
+> **Stato:** release **`v0.2.0`**. Il progetto è in sviluppo attivo:
 > le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
 > MCP e notifiche non sono ancora implementati.
 
@@ -23,6 +23,10 @@ senza integrazioni bancarie.
 - **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura
   parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
+- **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima
+  correggibile, controllo dei duplicati e riepilogo prima della conferma.
+- **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero
+  viene rifiutata con il saldo disponibile.
 - **Isolamento tra profili**: ogni account normale ha il proprio spazio
   finanziario; l'admin globale non ha un profilo finanziario.
 - **Autenticazione** email/password, registrazione con approvazione e setup
@@ -130,8 +134,36 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.1.0`: **45 test backend**, lint e build frontend,
+Stato verificato per `v0.2.0`: **83 test backend**, lint e build frontend,
 configurazione Compose valida e flusso UI completo.
+
+## Importazione dei movimenti
+
+Dal menu **Importa** puoi scaricare un modello CSV e caricare il tuo registro
+storico. Il file viene analizzato **prima** di scrivere qualsiasi dato: le righe
+con errori si possono correggere o scartare, e solo dopo la conferma
+l'importazione avviene in modo atomico.
+
+Formato del file (separatore `;`, UTF-8):
+
+```csv
+data;descrizione;categoria;conto;importo
+03-11-2026;Spesa di prova;esempio;Contanti;12,50
+03-11-2026;Entrata di prova;esempio;Contanti;-100,00
+```
+
+- date `GG-MM-AAAA`; importi con la virgola (`1234,56`), senza `€` né migliaia;
+- importo positivo = uscita, negativo = entrata;
+- la prima riga per data di un **nuovo conto** è la sua apertura e deve essere
+  negativa; i conti esistenti ricevono solo movimenti;
+- se importi in un conto già esistente, il suo saldo iniziale resta quello già
+  registrato: righe più vecchie dell'apertura possono risultare in un saldo
+  insufficiente nel passato. Per uno storico completo usa un conto nuovo, che
+  l'importazione crea con l'apertura presa dal file;
+- ogni riga è indipendente: trasferimenti e salvadanai non sono importabili;
+- la colonna `categoria` è accettata ma ignorata, in attesa della funzionalità;
+- righe identiche nel file o già presenti nell'app sono segnalate come
+  duplicati; puoi scartarle oppure confermare singolarmente che non lo sono.
 
 ## Configurazione di produzione
 

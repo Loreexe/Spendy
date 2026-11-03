@@ -70,10 +70,10 @@ class AccountTests(FinanceTestBase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(Transaction.objects.count(), 0)
 
-    def test_negative_initial_balance_is_supported(self):
+    def test_negative_initial_balance_is_rejected(self):
         response = self.create_account(initial="-25.50")
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["balance"], "-25.50")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("initial_balance", response.data)
 
     def test_account_with_movements_cannot_be_deleted(self):
         account = self.create_account(initial="10.00").data

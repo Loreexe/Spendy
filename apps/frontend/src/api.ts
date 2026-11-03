@@ -104,6 +104,81 @@ export interface TransactionPayload {
   confirm_coverage?: boolean;
 }
 
+export interface ImportIssue {
+  code: string;
+  field: string;
+  message: string;
+}
+
+export interface ImportRow {
+  index: number;
+  row_number: number;
+  date: string;
+  description: string;
+  category: string;
+  account: string;
+  amount: string;
+  kind: "opening" | "income" | "expense" | null;
+  errors: ImportIssue[];
+  warnings: ImportIssue[];
+  not_duplicate: boolean;
+}
+
+export interface ImportAccount {
+  name: string;
+  normalized: string;
+  state: "existing" | "new" | "similar";
+  similar_to: string | null;
+  will_create: boolean;
+  rows: number;
+}
+
+export interface ImportOverlap {
+  account: string;
+  movements: number;
+  from: string;
+  to: string;
+}
+
+export interface ImportAnalysis {
+  header: string[];
+  rows: ImportRow[];
+  accounts: ImportAccount[];
+  overlaps: ImportOverlap[];
+  file_errors: ImportIssue[];
+  summary: {
+    rows_total: number;
+    rows_ok: number;
+    rows_error: number;
+    accounts_to_create: number;
+    income_total: string;
+    expense_total: string;
+    openings_total: string;
+    net_total: string;
+    balances: { name: string; final_balance: string }[];
+    can_confirm: boolean;
+  };
+}
+
+export interface ImportRowInput {
+  date: string;
+  description: string;
+  category: string;
+  account: string;
+  amount: string;
+  not_duplicate: boolean;
+}
+
+export interface ImportResult {
+  created_accounts: string[];
+  created_transactions: number;
+  income_total: string;
+  expense_total: string;
+  openings_total: string;
+  net_total: string;
+  accounts: { name: string; balance: string }[];
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -149,7 +224,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
 
-  if (options.body && !headers.has("Content-Type")) {
+  if (
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
     headers.set("Content-Type", "application/json");
   }
   if (method !== "GET" && method !== "HEAD") {
@@ -327,4 +406,43 @@ export const api = {
 
   deleteTransaction: (id: number) =>
     request<void>(`/api/finance/transactions/${id}/`, { method: "DELETE" }),
+
+  downloadImportTemplate: async () => {
+    const response = await fetch("/api/finance/import/template/", {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      throw new ApiError(response.status, "Download del modello non riuscito.", null);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "spendy-modello-movimenti.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  analyzeImportFile: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ImportAnalysis>("/api/finance/import/analyze/", {
+      method: "POST",
+      body,
+    });
+  },
+
+  analyzeImportRows: (rows: ImportRowInput[]) =>
+    request<ImportAnalysis>("/api/finance/import/analyze/", {
+      method: "POST",
+      body: JSON.stringify({ rows }),
+    }),
+
+  confirmImport: (rows: ImportRowInput[]) =>
+    request<ImportResult>("/api/finance/import/confirm/", {
+      method: "POST",
+      body: JSON.stringify({ rows }),
+    }),
 };

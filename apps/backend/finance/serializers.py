@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import ZERO, Account, Line, Profile, SavingsAccount, Transaction
-from .services import savings_balance
+from .services import assert_accounts_non_negative, savings_balance
 
 
 def money(value: Decimal) -> str:
@@ -45,6 +45,13 @@ class AccountCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = ("name", "type", "initial_balance")
+
+    def validate_initial_balance(self, value: Decimal) -> Decimal:
+        if value < ZERO:
+            raise serializers.ValidationError(
+                "Il saldo iniziale non può essere negativo."
+            )
+        return value
 
     def create(self, validated_data):
         profile = self.context["profile"]
@@ -418,6 +425,15 @@ class TransactionWriteSerializer(serializers.Serializer):
                 )
 
         self._lines = lines
+
+        affected = [
+            (line["account"], line["amount"], attrs["date"])
+            for line in lines
+            if line.get("account") is not None
+        ]
+        assert_accounts_non_negative(
+            affected, exclude_transaction=self.context.get("exclude_transaction")
+        )
 
         if exclude is not None:
             affected: dict[int, Decimal] = {}
