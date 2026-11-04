@@ -9,6 +9,7 @@ from .archive import (
     MAX_ARCHIVE_BYTES,
     analyze_archive,
     build_archive,
+    build_investment_archive,
     restore_archive,
 )
 from .views import FinanceView
@@ -36,6 +37,16 @@ class ExportArchiveView(FinanceView):
         content = build_archive(profile)
         response = HttpResponse(content, content_type="application/zip")
         filename = f"spendy-archivio-{timezone.localdate().isoformat()}.zip"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class InvestmentExportView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        content = build_investment_archive(profile)
+        response = HttpResponse(content, content_type="application/zip")
+        filename = f"spendy-investimenti-{timezone.localdate().isoformat()}.zip"
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 

@@ -4,6 +4,7 @@ from .archive_views import (
     ExportArchiveView,
     ImportArchiveAnalyzeView,
     ImportArchiveConfirmView,
+    InvestmentExportView,
 )
 from .export_views import ExportTransactionsView
 from .import_views import (
@@ -69,6 +70,11 @@ urlpatterns = [
         "investments/account/",
         InvestmentAccountView.as_view(),
         name="finance-investment-account",
+    ),
+    path(
+        "investments/export/",
+        InvestmentExportView.as_view(),
+        name="finance-investment-export",
     ),
     path(
         "investments/operations/<int:pk>/",
