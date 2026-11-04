@@ -56,7 +56,8 @@ class AutomationTestBase(APITestCase):
             "savings": self.savings["id"],
             "source_account": self.account["id"],
             "amount": "100.00",
-            "frequency": "monthly",
+            "interval_count": 1,
+            "interval_unit": "month",
             "next_run_on": self.today.isoformat(),
         }
         payload.update(overrides)
@@ -157,7 +158,7 @@ class AutomationExecutionTests(AutomationTestBase):
 
     def test_single_missed_occurrence_is_recovered_automatically(self):
         automation = self.create_automation(
-            frequency="monthly",
+            interval_unit="month",
             next_run_on=(self.today - timedelta(days=1)).isoformat(),
         ).data
         response = self.run_automation(automation["id"])
@@ -168,7 +169,7 @@ class AutomationExecutionTests(AutomationTestBase):
 
     def test_multiple_missed_occurrences_require_an_explicit_choice(self):
         automation = self.create_automation(
-            frequency="daily",
+            interval_unit="day",
             next_run_on=(self.today - timedelta(days=2)).isoformat(),
         ).data
         response = self.run_automation(automation["id"])
@@ -211,7 +212,7 @@ class AutomationExecutionTests(AutomationTestBase):
 
     def test_pending_occurrence_keeps_the_original_snapshot(self):
         automation = self.create_automation(
-            frequency="daily",
+            interval_unit="day",
             next_run_on=(self.today - timedelta(days=1)).isoformat(),
         ).data
         self.run_automation(automation["id"])
@@ -472,7 +473,7 @@ class AutomationWorkerTests(AutomationTestBase):
 
     def test_notifications_can_be_marked_as_read(self):
         automation = self.create_automation(
-            frequency="daily",
+            interval_unit="day",
             next_run_on=(self.today - timedelta(days=1)).isoformat(),
         ).data
         self.run_automation(automation["id"])

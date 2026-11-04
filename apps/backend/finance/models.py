@@ -91,11 +91,11 @@ class Automation(models.Model):
         TRANSFER = "transfer", "Versamento su salvadanaio"
         EXPENSE = "expense", "Spesa ricorrente"
 
-    class Frequency(models.TextChoices):
-        DAILY = "daily", "Ogni giorno"
-        WEEKLY = "weekly", "Ogni settimana"
-        MONTHLY = "monthly", "Ogni mese"
-        YEARLY = "yearly", "Ogni anno"
+    class IntervalUnit(models.TextChoices):
+        DAY = "day", "Giorni"
+        WEEK = "week", "Settimane"
+        MONTH = "month", "Mesi"
+        YEAR = "year", "Anni"
 
     class Status(models.TextChoices):
         ACTIVE = "active", "Attiva"
@@ -124,9 +124,12 @@ class Automation(models.Model):
     )
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     description = models.CharField(max_length=255, blank=True)
-    frequency = models.CharField(
-        max_length=16, choices=Frequency.choices, default=Frequency.MONTHLY
+    interval_count = models.PositiveSmallIntegerField(default=1)
+    interval_unit = models.CharField(
+        max_length=8, choices=IntervalUnit.choices, default=IntervalUnit.MONTH
     )
+    anchor_day = models.PositiveSmallIntegerField(default=1)
+    advance_notice_days = models.PositiveSmallIntegerField(default=3)
     next_run_on = models.DateField()
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.ACTIVE
@@ -148,12 +151,43 @@ class Automation(models.Model):
                 ),
                 name="finance_automation_kind_target",
             ),
+            models.CheckConstraint(
+                condition=Q(interval_count__gte=1),
+                name="finance_automation_interval_count_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(anchor_day__gte=1, anchor_day__lte=31),
+                name="finance_automation_anchor_day_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(advance_notice_days__lte=30),
+                name="finance_automation_notice_days_valid",
+            ),
         ]
+
+    @property
+    def interval_label(self) -> str:
+        count = self.interval_count
+        singular = {
+            self.IntervalUnit.DAY: "giorno",
+            self.IntervalUnit.WEEK: "settimana",
+            self.IntervalUnit.MONTH: "mese",
+            self.IntervalUnit.YEAR: "anno",
+        }[self.interval_unit]
+        if count == 1:
+            return f"Ogni {singular}"
+        plural = {
+            self.IntervalUnit.DAY: "giorni",
+            self.IntervalUnit.WEEK: "settimane",
+            self.IntervalUnit.MONTH: "mesi",
+            self.IntervalUnit.YEAR: "anni",
+        }[self.interval_unit]
+        return f"Ogni {count} {plural}"
 
     def __str__(self) -> str:
         if self.kind == self.Kind.EXPENSE:
             return f"{self.amount} · {self.description or 'Spesa ricorrente'}"
-        return f"{self.amount} → {self.savings} ({self.get_frequency_display()})"
+        return f"{self.amount} → {self.savings} ({self.interval_label})"
 
     @property
     def is_active(self) -> bool:
@@ -346,6 +380,7 @@ class Notification(models.Model):
         AUTOMATION_PENDING = "automation_pending", "Scelta da fare"
         AUTOMATION_SKIPPED = "automation_skipped", "Occorrenza saltata"
         AUTOMATION_SUSPENDED = "automation_suspended", "Automazione sospesa"
+        AUTOMATION_LOW_BALANCE = "automation_low_balance", "Saldo previsto insufficiente"
 
     profile = models.ForeignKey(
         Profile, on_delete=models.CASCADE, related_name="notifications"
@@ -366,11 +401,19 @@ class Notification(models.Model):
     )
     kind = models.CharField(max_length=32, choices=Kind.choices)
     message = models.CharField(max_length=255)
+    occurrence_date = models.DateField(null=True, blank=True)
+    alert_date = models.DateField(null=True, blank=True)
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ("-created_at", "-id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("automation", "kind", "occurrence_date", "alert_date"),
+                name="finance_notification_alert_unique",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.message

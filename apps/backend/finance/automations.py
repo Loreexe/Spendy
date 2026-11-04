@@ -15,10 +15,12 @@ from datetime import date, datetime, timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from .models import (
+    ZERO,
     Account,
     Automation,
     AutomationExecution,
@@ -27,7 +29,7 @@ from .models import (
     Profile,
     Transaction,
 )
-from .services import assert_accounts_non_negative
+from .services import assert_accounts_non_negative, format_money
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +38,105 @@ class MissingAutomationData(Exception):
     """The rule points at an account or savings container that is not usable."""
 
 
-def next_occurrence(day: date, frequency: str) -> date:
-    if frequency == Automation.Frequency.DAILY:
-        return day + timedelta(days=1)
-    if frequency == Automation.Frequency.WEEKLY:
-        return day + timedelta(days=7)
-    months = 12 if frequency == Automation.Frequency.YEARLY else 1
+def next_occurrence(
+    day: date, interval_unit: str, interval_count: int, anchor_day: int
+) -> date:
+    if interval_unit == Automation.IntervalUnit.DAY:
+        return day + timedelta(days=interval_count)
+    if interval_unit == Automation.IntervalUnit.WEEK:
+        return day + timedelta(weeks=interval_count)
+    months = (
+        12 * interval_count
+        if interval_unit == Automation.IntervalUnit.YEAR
+        else interval_count
+    )
     year = day.year + (day.month - 1 + months) // 12
     month = (day.month - 1 + months) % 12 + 1
     last_day = monthrange(year, month)[1]
-    return date(year, month, min(day.day, last_day))
+    return date(year, month, min(anchor_day, last_day))
+
+
+def occurrences_up_to(
+    automation: Automation, start: date, end: date
+) -> list[date]:
+    """Future scheduled dates of a rule inside the inclusive window."""
+    cursor = automation.next_run_on
+    if cursor < start:
+        return []
+    dates: list[date] = []
+    while cursor <= end:
+        dates.append(cursor)
+        cursor = next_occurrence(
+            cursor,
+            automation.interval_unit,
+            automation.interval_count,
+            automation.anchor_day,
+        )
+    return dates
+
+
+def projected_account_balance(
+    account: Account, target_date: date, today: date
+) -> "Decimal":
+    total = (
+        Line.objects.filter(
+            account=account, transaction__date__lte=target_date
+        ).aggregate(total=Sum("amount"))["total"]
+        or ZERO
+    )
+    rules = Automation.objects.filter(
+        source_account=account, status=Automation.Status.ACTIVE
+    )
+    for rule in rules:
+        for _ in occurrences_up_to(rule, today, target_date):
+            total -= rule.amount
+    return total
+
+
+def check_low_balance_alert(
+    automation: Automation, today: date, now: datetime
+) -> bool:
+    """Create one low-balance warning per rule, occurrence and day."""
+    if automation.advance_notice_days <= 0:
+        return False
+    if automation.status != Automation.Status.ACTIVE:
+        return False
+    target = automation.next_run_on
+    days_until = (target - today).days
+    if days_until <= 0 or days_until > automation.advance_notice_days:
+        return False
+    if automation.executions.filter(
+        status=AutomationExecution.Status.PENDING
+    ).exists():
+        return False
+    source = automation.source_account
+    if source is None or source.archived:
+        return False
+
+    projected = projected_account_balance(source, target, today)
+    if projected >= ZERO:
+        return False
+
+    when = "Domani" if days_until == 1 else f"Tra {days_until} giorni"
+    verb = (
+        "addebitata"
+        if automation.kind == Automation.Kind.EXPENSE
+        else "eseguito"
+    )
+    message = (
+        f"{when} «{automation_label(automation)}» da "
+        f"{format_money(automation.amount)} € potrebbe non essere {verb}: "
+        f"saldo previsto {format_money(projected)} €."
+    )
+    _, created = Notification.objects.get_or_create(
+        profile=automation.profile,
+        automation=automation,
+        kind=Notification.Kind.AUTOMATION_LOW_BALANCE,
+        occurrence_date=target,
+        alert_date=today,
+        defaults={"message": message[:255]},
+    )
+    return created
 
 
 def automation_label(automation: Automation) -> str:
@@ -94,7 +185,12 @@ def materialize_occurrences(
         )
         if was_created:
             created.append(execution)
-        scheduled = next_occurrence(scheduled, automation.frequency)
+        scheduled = next_occurrence(
+            scheduled,
+            automation.interval_unit,
+            automation.interval_count,
+            automation.anchor_day,
+        )
 
     if automation.next_run_on != scheduled:
         automation.next_run_on = scheduled
@@ -391,7 +487,13 @@ def process_automation(
     """Materialise due occurrences and apply what the policy allows."""
     today = today or timezone.localdate()
     now = now or timezone.now()
-    result = {"created": 0, "executed": 0, "pending_choice": 0, "retried": 0}
+    result = {
+        "created": 0,
+        "executed": 0,
+        "pending_choice": 0,
+        "retried": 0,
+        "alerts": 0,
+    }
 
     automation_id = automation.pk
     with transaction.atomic():
@@ -402,6 +504,8 @@ def process_automation(
         )
         if automation is None or automation.status != Automation.Status.ACTIVE:
             return result
+        if check_low_balance_alert(automation, today, now):
+            result["alerts"] = 1
         created = materialize_occurrences(automation, today)
     result["created"] = len(created)
 
@@ -446,7 +550,14 @@ def run_for_profile(
     today: date | None = None,
     now: datetime | None = None,
 ) -> dict[str, int]:
-    totals = {"rules": 0, "created": 0, "executed": 0, "pending_choice": 0, "retried": 0}
+    totals = {
+        "rules": 0,
+        "created": 0,
+        "executed": 0,
+        "pending_choice": 0,
+        "retried": 0,
+        "alerts": 0,
+    }
     automations = Automation.objects.filter(
         profile=profile, status=Automation.Status.ACTIVE
     ).select_related("savings", "source_account")
@@ -457,7 +568,7 @@ def run_for_profile(
         except Exception:  # noqa: BLE001 - one broken rule must not stop the rest
             logger.exception("Automazione %s non elaborata", automation.pk)
             continue
-        for key in ("created", "executed", "pending_choice", "retried"):
+        for key in ("created", "executed", "pending_choice", "retried", "alerts"):
             totals[key] += outcome[key]
     return totals
 
@@ -465,7 +576,14 @@ def run_for_profile(
 def run_all(
     *, today: date | None = None, now: datetime | None = None
 ) -> dict[str, int]:
-    totals = {"rules": 0, "created": 0, "executed": 0, "pending_choice": 0, "retried": 0}
+    totals = {
+        "rules": 0,
+        "created": 0,
+        "executed": 0,
+        "pending_choice": 0,
+        "retried": 0,
+        "alerts": 0,
+    }
     automations = Automation.objects.filter(
         status=Automation.Status.ACTIVE
     ).select_related("savings", "source_account")
@@ -476,7 +594,7 @@ def run_all(
         except Exception:  # noqa: BLE001 - one broken rule must not stop the rest
             logger.exception("Automazione %s non elaborata", automation.pk)
             continue
-        for key in ("created", "executed", "pending_choice", "retried"):
+        for key in ("created", "executed", "pending_choice", "retried", "alerts"):
             totals[key] += outcome[key]
     return totals
 

@@ -141,8 +141,9 @@ class AutomationSerializer(serializers.ModelSerializer):
     savings_name = serializers.SerializerMethodField()
     source_account_name = serializers.SerializerMethodField()
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
-    frequency_label = serializers.CharField(
-        source="get_frequency_display", read_only=True
+    interval_label = serializers.CharField(read_only=True)
+    interval_unit_label = serializers.CharField(
+        source="get_interval_unit_display", read_only=True
     )
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     pending_count = serializers.SerializerMethodField()
@@ -159,8 +160,12 @@ class AutomationSerializer(serializers.ModelSerializer):
             "source_account_name",
             "amount",
             "description",
-            "frequency",
-            "frequency_label",
+            "interval_count",
+            "interval_unit",
+            "interval_unit_label",
+            "interval_label",
+            "anchor_day",
+            "advance_notice_days",
             "next_run_on",
             "status",
             "status_label",
@@ -191,6 +196,10 @@ class AutomationWriteSerializer(serializers.ModelSerializer):
     source_account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(), required=True
     )
+    interval_count = serializers.IntegerField(min_value=1, max_value=999)
+    advance_notice_days = serializers.IntegerField(
+        min_value=0, max_value=30, required=False
+    )
 
     class Meta:
         model = Automation
@@ -200,7 +209,9 @@ class AutomationWriteSerializer(serializers.ModelSerializer):
             "source_account",
             "amount",
             "description",
-            "frequency",
+            "interval_count",
+            "interval_unit",
+            "advance_notice_days",
             "next_run_on",
             "status",
         )
@@ -273,6 +284,17 @@ class AutomationWriteSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"savings": "Indica il salvadanaio di destinazione."}
                 )
+
+        next_run_on = attrs.get(
+            "next_run_on", getattr(self.instance, "next_run_on", None)
+        )
+        if (
+            self.instance is None
+            or "next_run_on" in attrs
+            or "interval_unit" in attrs
+        ):
+            if next_run_on is not None:
+                attrs["anchor_day"] = next_run_on.day
         return attrs
 
     def create(self, validated_data):
@@ -332,6 +354,8 @@ class NotificationSerializer(serializers.ModelSerializer):
             "message",
             "automation",
             "execution",
+            "occurrence_date",
+            "alert_date",
             "read_at",
             "is_read",
             "created_at",

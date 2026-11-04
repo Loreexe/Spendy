@@ -5,7 +5,7 @@ import {
   type AutomationExecution,
   type AutomationExecutionStatus,
   type Automation,
-  type AutomationFrequency,
+  type AutomationIntervalUnit,
   type AutomationKind,
   type FinanceNotification,
   type SavingsAccount,
@@ -36,13 +36,21 @@ function AutomationEditForm({
   onSave: (data: {
     amount: string;
     description: string;
-    frequency: AutomationFrequency;
+    interval_count: number;
+    interval_unit: AutomationIntervalUnit;
+    advance_notice_days: number;
     next_run_on: string;
   }) => void;
 }) {
   const [amount, setAmount] = useState(automation.amount);
   const [description, setDescription] = useState(automation.description);
-  const [frequency, setFrequency] = useState(automation.frequency);
+  const [intervalCount, setIntervalCount] = useState(
+    String(automation.interval_count),
+  );
+  const [intervalUnit, setIntervalUnit] = useState(automation.interval_unit);
+  const [noticeDays, setNoticeDays] = useState(
+    String(automation.advance_notice_days),
+  );
   const [nextRunOn, setNextRunOn] = useState(automation.next_run_on);
 
   return (
@@ -53,7 +61,9 @@ function AutomationEditForm({
         onSave({
           amount,
           description,
-          frequency,
+          interval_count: Number(intervalCount),
+          interval_unit: intervalUnit,
+          advance_notice_days: Number(noticeDays),
           next_run_on: nextRunOn,
         });
       }}
@@ -74,17 +84,35 @@ function AutomationEditForm({
         onChange={(event) => setAmount(event.target.value)}
         required
       />
+      <input
+        type="number"
+        min="1"
+        max="999"
+        value={intervalCount}
+        onChange={(event) => setIntervalCount(event.target.value)}
+        title="Ogni quanti..."
+        required
+      />
       <select
-        value={frequency}
+        value={intervalUnit}
         onChange={(event) =>
-          setFrequency(event.target.value as AutomationFrequency)
+          setIntervalUnit(event.target.value as AutomationIntervalUnit)
         }
       >
-        <option value="daily">Ogni giorno</option>
-        <option value="weekly">Ogni settimana</option>
-        <option value="monthly">Ogni mese</option>
-        <option value="yearly">Ogni anno</option>
+        <option value="day">giorni</option>
+        <option value="week">settimane</option>
+        <option value="month">mesi</option>
+        <option value="year">anni</option>
       </select>
+      <input
+        type="number"
+        min="0"
+        max="30"
+        value={noticeDays}
+        onChange={(event) => setNoticeDays(event.target.value)}
+        title="Giorni di preavviso (0 = disattivato)"
+        required
+      />
       <input
         type="date"
         value={nextRunOn}
@@ -113,7 +141,10 @@ export function AutomationsPage() {
   const [kind, setKind] = useState<AutomationKind>("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [frequency, setFrequency] = useState<AutomationFrequency>("monthly");
+  const [intervalCount, setIntervalCount] = useState("1");
+  const [intervalUnit, setIntervalUnit] =
+    useState<AutomationIntervalUnit>("month");
+  const [noticeDays, setNoticeDays] = useState("3");
   const [nextRunOn, setNextRunOn] = useState(todayISO());
   const [sourceAccount, setSourceAccount] = useState("");
   const [destination, setDestination] = useState("");
@@ -199,7 +230,9 @@ export function AutomationsPage() {
           source_account: Number(sourceAccount),
           amount,
           description: kind === "expense" ? description : "",
-          frequency,
+          interval_count: Number(intervalCount),
+          interval_unit: intervalUnit,
+          advance_notice_days: Number(noticeDays),
           next_run_on: nextRunOn,
           ...(kind === "transfer" ? { savings: Number(destination) } : {}),
         });
@@ -225,7 +258,8 @@ export function AutomationsPage() {
       const result = await api.runAutomation(automation.id);
       return (
         `Esecuzione: ${result.outcome.executed} eseguite, ` +
-        `${result.outcome.pending_choice} in attesa di scelta.`
+        `${result.outcome.pending_choice} in attesa, ` +
+        `${result.outcome.alerts} avvisi di saldo.`
       );
     }, "Automazione elaborata.");
   }
@@ -281,7 +315,8 @@ export function AutomationsPage() {
               const result = await api.runAutomations();
               return (
                 `Controllo completato: ${result.outcome.executed} eseguite, ` +
-                `${result.outcome.pending_choice} in attesa di scelta.`
+                `${result.outcome.pending_choice} in attesa, ` +
+                `${result.outcome.alerts} avvisi di saldo.`
               );
             }, "Controllo completato.")
           }
@@ -355,17 +390,46 @@ export function AutomationsPage() {
               </label>
               <label>
                 Periodicità
-                <select
-                  value={frequency}
-                  onChange={(event) =>
-                    setFrequency(event.target.value as AutomationFrequency)
-                  }
-                >
-                  <option value="weekly">Ogni settimana</option>
-                  <option value="monthly">Ogni mese</option>
-                  <option value="yearly">Ogni anno</option>
-                  <option value="daily">Ogni giorno</option>
-                </select>
+                <span className="inline-form">
+                  <span className="muted">Ogni</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="999"
+                    value={intervalCount}
+                    onChange={(event) => setIntervalCount(event.target.value)}
+                    required
+                  />
+                  <select
+                    value={intervalUnit}
+                    onChange={(event) =>
+                      setIntervalUnit(
+                        event.target.value as AutomationIntervalUnit,
+                      )
+                    }
+                  >
+                    <option value="day">giorni</option>
+                    <option value="week">settimane</option>
+                    <option value="month">mesi</option>
+                    <option value="year">anni</option>
+                  </select>
+                </span>
+              </label>
+              <label>
+                Avviso saldo insufficiente
+                <span className="inline-form">
+                  <input
+                    type="number"
+                    min="0"
+                    max="30"
+                    value={noticeDays}
+                    onChange={(event) => setNoticeDays(event.target.value)}
+                    required
+                  />
+                  <span className="muted">
+                    giorni prima (0 = disattivato)
+                  </span>
+                </span>
               </label>
               <label>
                 Prima esecuzione
@@ -425,7 +489,7 @@ export function AutomationsPage() {
                     <div className="entity-card-head">
                       <div>
                         <strong>
-                          {money(automation.amount)} · {automation.frequency_label}
+                          {money(automation.amount)} · {automation.interval_label}
                         </strong>
                         <span className="muted small">
                           {" "}
@@ -453,6 +517,9 @@ export function AutomationsPage() {
                     <p className="muted small">
                       Prossima esecuzione: {prettyDate(automation.next_run_on)}
                       {pending.length > 0 && ` · ${pending.length} in attesa`}
+                      {automation.advance_notice_days > 0
+                        ? ` · avviso ${automation.advance_notice_days} giorni prima`
+                        : " · avviso saldo disattivato"}
                     </p>
                     <div className="inline-form">
                       <button
@@ -496,8 +563,8 @@ export function AutomationsPage() {
 
                     <details>
                       <summary className="muted small">
-                        Modifica importo, descrizione, periodicità e prossima
-                        esecuzione
+                        Modifica importo, descrizione, periodicità, avviso e
+                        prossima esecuzione
                       </summary>
                       <AutomationEditForm
                         automation={automation}

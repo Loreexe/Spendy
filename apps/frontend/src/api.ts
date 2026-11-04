@@ -65,7 +65,7 @@ export interface SystemInfo {
 export type AccountType = "cash" | "checking" | "card" | "other";
 export type TransactionKind = "opening" | "income" | "expense" | "transfer";
 export type AutomationKind = "transfer" | "expense";
-export type AutomationFrequency = "daily" | "weekly" | "monthly" | "yearly";
+export type AutomationIntervalUnit = "day" | "week" | "month" | "year";
 export type AutomationStatus = "active" | "paused" | "suspended";
 export type AutomationExecutionStatus =
   | "pending"
@@ -108,8 +108,12 @@ export interface Automation {
   source_account_name: string | null;
   amount: string;
   description: string;
-  frequency: AutomationFrequency;
-  frequency_label: string;
+  interval_count: number;
+  interval_unit: AutomationIntervalUnit;
+  interval_unit_label: string;
+  interval_label: string;
+  anchor_day: number;
+  advance_notice_days: number;
   next_run_on: string;
   status: AutomationStatus;
   status_label: string;
@@ -150,11 +154,16 @@ export interface AutomationOutcome {
   executed: number;
   pending_choice: number;
   retried: number;
+  alerts: number;
 }
 
 export interface FinanceNotification {
   id: number;
-  kind: "automation_pending" | "automation_skipped" | "automation_suspended";
+  kind:
+    | "automation_pending"
+    | "automation_skipped"
+    | "automation_suspended"
+    | "automation_low_balance";
   kind_label: string;
   message: string;
   automation: number | null;
@@ -581,7 +590,9 @@ export const api = {
     source_account: number;
     amount: string;
     description?: string;
-    frequency: AutomationFrequency;
+    interval_count: number;
+    interval_unit: AutomationIntervalUnit;
+    advance_notice_days: number;
     next_run_on: string;
   }) =>
     request<Automation>("/api/finance/automations/", {
@@ -596,7 +607,9 @@ export const api = {
       source_account: number;
       amount: string;
       description: string;
-      frequency: AutomationFrequency;
+      interval_count: number;
+      interval_unit: AutomationIntervalUnit;
+      advance_notice_days: number;
       next_run_on: string;
       status: "active" | "paused";
     }>,

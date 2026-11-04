@@ -23,5 +23,6 @@ class Command(BaseCommand):
         self.stdout.write(
             "Automazioni: {rules} regole, {created} occorrenze create, "
             "{executed} eseguite, {retried} recuperate dopo errore, "
-            "{pending_choice} in attesa di scelta.".format(**outcome)
+            "{pending_choice} in attesa di scelta, {alerts} avvisi di saldo."
+            .format(**outcome)
         )

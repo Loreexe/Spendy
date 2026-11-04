@@ -10,8 +10,9 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.5.1`**, che include le automazioni per salvadanai e
-> spese ricorrenti. Il progetto è in sviluppo attivo: gruppi, investimenti, MCP
+> **Stato:** release **`v0.5.2`**, che include le automazioni per salvadanai e
+> spese ricorrenti, la periodicità personalizzata e l'avviso anticipato di
+> saldo insufficiente. Il progetto è in sviluppo attivo: gruppi, investimenti, MCP
 > e notifiche push/email non sono ancora implementati.
 
 ## Funzionalità
@@ -24,9 +25,12 @@ senza integrazioni bancarie.
   parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
 - **Automazioni periodiche**: trasferimenti ricorrenti verso i salvadanai e
-  spese ricorrenti come abbonamenti, affitto o palestra, con recupero delle
-  occorrenze perse, gestione dei fallimenti, storico delle esecuzioni e
-  notifiche in-app.
+  spese ricorrenti come abbonamenti, affitto o palestra, con periodicità
+  personalizzata, recupero delle occorrenze perse, gestione dei fallimenti,
+  storico delle esecuzioni e notifiche in-app.
+- **Avviso anticipato di saldo insufficiente**: qualche giorno prima della
+  scadenza Spendy calcola il saldo previsto e avvisa se l'addebito rischia di
+  non riuscire.
 - **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima
   correggibile, controllo dei duplicati e riepilogo prima della conferma.
 - **Backup personale del profilo**: archivio ZIP con conti, salvadanai,
@@ -150,12 +154,13 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **166 test backend**, **8 test** del controllo versioni,
+Stato verificato: **181 test backend**, **8 test** del controllo versioni,
 **5 test** dello script di backup, lint e build frontend, configurazione Compose
 valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
 aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
-La release `v0.5.1` include le automazioni per salvadanai e spese ricorrenti,
-verificate anche con PostgreSQL e con il worker Compose; la sezione Sistema, il
+La release `v0.5.2` include periodicità personalizzata e avvisi anticipati di
+saldo, oltre alle automazioni per salvadanai e spese ricorrenti, verificate
+anche con PostgreSQL e con il worker Compose; la sezione Sistema, il
 backup globale e l'hardening pre-esposizione restano inclusi dalle release
 precedenti. Backup reale su Backblaze B2, test di ripristino automatico e
 ripristino completo su host pulito eseguiti con successo.
@@ -168,8 +173,8 @@ Dalla pagina **Automazioni** puoi creare due tipi di regola:
 - una **spesa ricorrente** da un conto, ad esempio Netflix, l'affitto o la
   palestra.
 
-L'importo è fisso e la periodicità può essere giornaliera, settimanale, mensile
-o annuale. Il servizio `automation-worker` in `compose.yaml` controlla le
+L'importo è fisso. La periodicità è personalizzabile: ad esempio ogni 2
+settimane, ogni 45 giorni, ogni 3 mesi o ogni anno. Il servizio `automation-worker` in `compose.yaml` controlla le
 scadenze ogni minuto; puoi anche forzare il controllo dalla pagina o con:
 
 ```bash
@@ -194,7 +199,11 @@ Comportamento:
 - eliminare un salvadanaio rimuove i versamenti collegati ma non le spese
   ricorrenti; in entrambi i casi lo storico delle esecuzioni resta disponibile;
 - una spesa ricorrente genera un normale movimento di spesa, quindi entra nella
-  dashboard, nel registro e nelle esportazioni.
+  dashboard, nel registro e nelle esportazioni;
+- per ogni regola si possono scegliere quanti giorni prima avvisare (default 3,
+  `0` per disattivare). L'avviso considera i movimenti registrati e le altre
+  automazioni attive sullo stesso conto; viene ripetuto ogni giorno finché il
+  saldo previsto resta insufficiente, una sola volta al giorno per occorrenza.
 
 Le notifiche sono per ora **in-app**, nella pagina Automazioni. Canale e
 preferenze delle notifiche, parametri definitivi del retry e sorte dello storico
@@ -282,8 +291,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.5.1
-./scripts/update.sh v0.5.1
+./scripts/update.sh --dry-run v0.5.2
+./scripts/update.sh v0.5.2
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

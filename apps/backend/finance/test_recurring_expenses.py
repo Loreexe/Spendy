@@ -21,7 +21,7 @@ class RecurringExpenseTestBase(AutomationTestBase):
         self,
         *,
         next_run_on=None,
-        frequency="monthly",
+        interval_unit="month",
         amount="100.00",
         description="Netflix",
         source_account=None,
@@ -35,7 +35,8 @@ class RecurringExpenseTestBase(AutomationTestBase):
             "source_account": source_account or self.account["id"],
             "amount": amount,
             "description": description,
-            "frequency": frequency,
+            "interval_count": 1,
+            "interval_unit": interval_unit,
             "next_run_on": run_on,
         }
         payload.update(overrides)
@@ -180,7 +181,7 @@ class RecurringExpenseExecutionTests(RecurringExpenseTestBase):
 
     def test_multiple_missed_expenses_require_a_choice(self):
         rule = self.create_expense(
-            frequency="daily",
+            interval_unit="day",
             next_run_on=(self.today - timedelta(days=1)).isoformat(),
         ).data
         response = self.run_automation(rule["id"])
