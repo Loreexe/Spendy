@@ -167,7 +167,7 @@ fi
 
 if [ "$SKIP_BACKUP" -eq 0 ]; then
     echo "Backup locale del database ..."
-    ./scripts/backup.sh
+    ./scripts/backup.sh < /dev/null
 fi
 
 PREVIOUS_COMMIT="$(git rev-parse HEAD)"
@@ -177,9 +177,8 @@ MAINTENANCE_ARMED=0
 mkdir -p "$ROOT_DIR/maintenance"
 
 on_exit() {
-    local code=$?
-    if [ "$MAINTENANCE_ARMED" -eq 1 ] && [ "$code" -ne 0 ]; then
-        echo "Uscita imprevista: la modalità manutenzione resta attiva." >&2
+    if [ "$MAINTENANCE_ARMED" -eq 1 ]; then
+        echo "Attenzione: la modalità manutenzione è ancora attiva." >&2
         echo "Controlla l'errore, poi esegui 'rm maintenance/on' e riprova." >&2
     fi
 }
@@ -209,7 +208,8 @@ rollback() {
     if ! set_env_version "$PREVIOUS_VERSION"; then
         echo "Avviso: impossibile ripristinare SPENDY_VERSION nel .env; il container usa la variabile esportata." >&2
     fi
-    if "${COMPOSE[@]}" build && "${COMPOSE[@]}" up -d --remove-orphans; then
+    if "${COMPOSE[@]}" build < /dev/null &&
+        "${COMPOSE[@]}" up -d --remove-orphans < /dev/null; then
         if wait_for_backend && wait_for_version "$PREVIOUS_VERSION"; then
             rm -f "$MAINTENANCE_FILE"
             echo "Rollback completato: Spendy è di nuovo attivo con la versione precedente." >&2
@@ -239,7 +239,7 @@ wait_for_backend() {
     for ((attempt = 1; attempt <= HEALTH_ATTEMPTS; attempt++)); do
         if "${COMPOSE[@]}" exec -T backend python -c \
             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=3).read()" \
-            >/dev/null 2>&1; then
+            >/dev/null 2>&1 < /dev/null; then
             return 0
         fi
         sleep "$HEALTH_INTERVAL"
@@ -255,7 +255,7 @@ wait_for_version() {
         echo "Avviso: $expected non espone SPENDY_VERSION; salto il controllo di versione." >&2
         return 0
     fi
-    running="$("${COMPOSE[@]}" exec -T backend printenv SPENDY_VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+    running="$("${COMPOSE[@]}" exec -T backend printenv SPENDY_VERSION < /dev/null 2>/dev/null | tr -d '[:space:]' || true)"
     [ "$running" = "$expected" ]
 }
 
@@ -291,10 +291,10 @@ set_env_version "$VERSION" || rollback "scrittura di SPENDY_VERSION nel .env fal
 export SPENDY_VERSION="$VERSION"
 
 echo "Ricostruzione delle immagini ..."
-"${COMPOSE[@]}" build || rollback "build delle immagini fallita"
+"${COMPOSE[@]}" build < /dev/null || rollback "build delle immagini fallita"
 
 echo "Avvio dello stack ..."
-"${COMPOSE[@]}" up -d --remove-orphans || rollback "avvio dello stack fallito"
+"${COMPOSE[@]}" up -d --remove-orphans < /dev/null || rollback "avvio dello stack fallito"
 
 echo "Attendo l'health check del backend ..."
 wait_for_backend || rollback "il backend non risponde all'health check"

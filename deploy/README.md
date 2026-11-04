@@ -135,15 +135,22 @@ Sull'host LXC, dalla root del repository (`/opt/spendy`):
 working tree:
 
 ```bash
+VERSION=v0.4.2
 cd /opt/spendy
 export SPENDY_ROOT=/opt/spendy
 git fetch --tags origin
-git show v0.5.0:scripts/update.sh | bash -s -- v0.5.0
+git show "$VERSION:scripts/update.sh" > /tmp/spendy-update.sh
+bash /tmp/spendy-update.sh "$VERSION"
+rm -f /tmp/spendy-update.sh
 ```
+
+Non usare `git show ... | bash -s`: i comandi figli possono leggere lo stdin e
+consumare il resto dello script, facendolo terminare in anticipo. Il file
+temporaneo evita il problema.
 
 Il rollback parte dal commit attualmente estratto, quindi il bootstrap da una
 release precedente funziona come gli aggiornamenti successivi. `SPENDY_ROOT` è
-obbligatorio quando lo script viene letto da standard input.
+obbligatorio quando lo script viene eseguito da fuori dal repository.
 
 Lo script richiede un **working tree pulito** e un `.env` presente, poi:
 

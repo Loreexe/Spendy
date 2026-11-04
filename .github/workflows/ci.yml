@@ -16,6 +16,8 @@ jobs:
         run: python3 scripts/test_check_version.py
       - name: Update script syntax
         run: bash -n scripts/update.sh
+      - name: Update script tests
+        run: bash scripts/test_update.sh
 
   backend:
     runs-on: ubuntu-latest

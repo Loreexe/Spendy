@@ -10,7 +10,7 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.4.1`**. Il progetto è in sviluppo attivo:
+> **Stato:** release **`v0.4.2`**. Il progetto è in sviluppo attivo:
 > le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
 > MCP e notifiche non sono ancora implementati.
 
@@ -146,7 +146,7 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.4.1`: **129 test backend**, **8 test** del controllo
+Stato verificato per `v0.4.2`: **129 test backend**, **8 test** del controllo
 versioni, **5 test** dello script di backup, lint e build frontend,
 configurazione Compose valida, configurazione Nginx e pagina di manutenzione
 verificate, procedura di aggiornamento provata in dry-run e con Docker simulato
