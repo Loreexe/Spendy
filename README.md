@@ -10,7 +10,7 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.2.0`**. Il progetto è in sviluppo attivo:
+> **Stato:** release **`v0.3.0`**. Il progetto è in sviluppo attivo:
 > le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
 > MCP e notifiche non sono ancora implementati.
 
@@ -25,6 +25,9 @@ senza integrazioni bancarie.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
 - **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima
   correggibile, controllo dei duplicati e riepilogo prima della conferma.
+- **Backup personale del profilo**: archivio ZIP con conti, salvadanai,
+  movimenti e righe contabili in CSV, manifesto con checksum e ripristino
+  guidato su un profilo vuoto. Distinto dal backup globale del database.
 - **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero
   viene rifiutata con il saldo disponibile.
 - **Isolamento tra profili**: ogni account normale ha il proprio spazio
@@ -134,15 +137,15 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.2.5`: **99 test backend**, lint e build frontend,
+Stato verificato per `v0.3.0`: **113 test backend**, lint e build frontend,
 configurazione Compose valida e flusso UI completo.
 
 ## Importazione dei movimenti
 
-Dal menu **Importa** puoi scaricare un modello CSV e caricare il tuo registro
-storico. Il file viene analizzato **prima** di scrivere qualsiasi dato: le righe
-con errori si possono correggere o scartare, e solo dopo la conferma
-l'importazione avviene in modo atomico.
+Dalla pagina **Account → Import / Export** puoi scaricare un modello CSV e
+caricare il tuo registro storico. Il file viene analizzato **prima** di scrivere
+qualsiasi dato: le righe con errori si possono correggere o scartare, e solo dopo
+la conferma l'importazione avviene in modo atomico.
 
 Il file deve essere un CSV UTF-8 con queste colonne:
 
@@ -178,6 +181,20 @@ può essere aperto in un foglio di calcolo o reimportato. La colonna `categoria`
 contiene il tipo del movimento (Apertura, Entrata, Spesa, Trasferimento). I
 trasferimenti diventano una riga per conto; dei salvadanai viene esportata solo
 la parte che passa dal conto.
+
+### Backup personale del profilo
+
+Da **Account → Import / Export** puoi scaricare un archivio ZIP con tutti i dati
+del profilo:
+
+- `conti.csv`, `salvadanai.csv`, `movimenti.csv`, `righe.csv`;
+- `manifest.json` con data, versione, conteggi e checksum SHA-256.
+
+L'archivio conserva anche le due parti dei trasferimenti, le righe tecniche dei
+salvadanai e le coperture parziali. Può essere ricaricato con **Ripristina un
+archivio** su un profilo vuoto: Spendy valida il contenuto, mostra un'anteprima e
+scrive in modo atomico. Il ripristino è pensato per il passaggio a un altro
+server; non sostituisce il backup globale del database PostgreSQL.
 
 ## Configurazione di produzione
 

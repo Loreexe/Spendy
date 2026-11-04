@@ -1,5 +1,10 @@
 from django.urls import path
 
+from .archive_views import (
+    ExportArchiveView,
+    ImportArchiveAnalyzeView,
+    ImportArchiveConfirmView,
+)
 from .export_views import ExportTransactionsView
 from .import_views import (
     ImportAnalyzeView,
@@ -46,6 +51,21 @@ urlpatterns = [
         "export/",
         ExportTransactionsView.as_view(),
         name="finance-export",
+    ),
+    path(
+        "export/archive/",
+        ExportArchiveView.as_view(),
+        name="finance-export-archive",
+    ),
+    path(
+        "import/archive/analyze/",
+        ImportArchiveAnalyzeView.as_view(),
+        name="finance-import-archive-analyze",
+    ),
+    path(
+        "import/archive/confirm/",
+        ImportArchiveConfirmView.as_view(),
+        name="finance-import-archive-confirm",
     ),
     path(
         "import/template/",

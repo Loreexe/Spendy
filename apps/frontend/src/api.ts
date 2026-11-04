@@ -194,6 +194,59 @@ export interface ImportResult {
   accounts: { name: string; balance: string }[];
 }
 
+export interface ArchiveBalance {
+  name: string;
+  balance: string;
+}
+
+export interface ArchiveAnalysis {
+  can_restore: boolean;
+  blocked_reason: string | null;
+  manifest: {
+    schema: number;
+    generato_il: string;
+    versione_app: string;
+    profilo: string;
+    valuta: string;
+    conteggi: {
+      conti: number;
+      salvadanai: number;
+      movimenti: number;
+      righe: number;
+    };
+  };
+  summary: {
+    accounts: number;
+    savings: number;
+    transactions: number;
+    lines: number;
+    from: string | null;
+    to: string | null;
+    accounts_total: string;
+    savings_total: string;
+    patrimony_total: string;
+    balances: {
+      accounts: ArchiveBalance[];
+      savings: ArchiveBalance[];
+    };
+  };
+  warnings: string[];
+}
+
+export interface ArchiveRestoreResult {
+  accounts: number;
+  savings: number;
+  transactions: number;
+  lines: number;
+  accounts_total: string;
+  savings_total: string;
+  patrimony_total: string;
+  balances: {
+    accounts: ArchiveBalance[];
+    savings: ArchiveBalance[];
+  };
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -463,6 +516,32 @@ export const api = {
       `/api/finance/export/${suffix ? `?${suffix}` : ""}`,
       `spendy-movimenti-${today}.csv`,
     );
+  },
+
+  exportArchive: () => {
+    const today = new Date().toISOString().slice(0, 10);
+    return download(
+      "/api/finance/export/archive/",
+      `spendy-archivio-${today}.zip`,
+    );
+  },
+
+  analyzeArchive: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ArchiveAnalysis>("/api/finance/import/archive/analyze/", {
+      method: "POST",
+      body,
+    });
+  },
+
+  restoreArchive: (file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ArchiveRestoreResult>("/api/finance/import/archive/confirm/", {
+      method: "POST",
+      body,
+    });
   },
 
   analyzeImportFile: (file: File, format?: Partial<ImportFormat>) => {

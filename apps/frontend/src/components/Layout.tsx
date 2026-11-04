@@ -25,7 +25,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <Link to="/accounts">Conti</Link>
                   <Link to="/savings">Salvadanai</Link>
                   <Link to="/movements">Movimenti</Link>
-                  <Link to="/import">Importa</Link>
                 </>
               )}
               <Link to="/account">Account</Link>

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type UserStatus } from "../api";
 import { useAuth } from "../auth";
+import { ImportExportSection } from "../components/ImportExportSection";
 
 const STATUS_LABEL: Record<UserStatus, string> = {
   pending: "In attesa di approvazione",
@@ -40,7 +41,7 @@ export function AccountPage() {
       <section className="page-heading">
         <div>
           <p className="eyebrow">Account</p>
-          <h1>Impostazioni account</h1>
+          <h1>Impostazioni e account</h1>
         </div>
         {!user.is_global_admin && (
           <Link className="button secondary" to="/">
@@ -49,62 +50,73 @@ export function AccountPage() {
         )}
       </section>
 
-      <div className="two-columns">
-        <section className="card">
-          <h2>Profilo</h2>
-          <dl className="facts">
-            <div>
-              <dt>Identificativo</dt>
-              <dd>{user.email ?? user.username}</dd>
-            </div>
-            <div>
-              <dt>Stato</dt>
-              <dd>
-                <span className={`badge ${user.status}`}>
-                  {STATUS_LABEL[user.status]}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt>Ruolo</dt>
-              <dd>{user.is_global_admin ? "Amministratore globale" : "Utente"}</dd>
-            </div>
-          </dl>
-          <p className="muted small">
-            {user.is_global_admin
-              ? "L'amministratore globale non ha un profilo finanziario."
-              : "Un account corrisponde a un profilo personale."}
-          </p>
-          <button type="button" className="secondary" onClick={() => void logout()}>
-            Esci
-          </button>
-        </section>
-
-        <section className="card">
-          <h2>Email</h2>
-          <p className="muted">
-            {user.is_global_admin
-              ? "L'email dell'amministratore è opzionale."
-              : "L'email è il tuo identificativo di accesso."}
-          </p>
-          <form onSubmit={handleEmail} className="stack">
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required={!user.is_global_admin}
-              />
-            </label>
-            {message && <p className="notice success">{message}</p>}
-            {error && <p className="error">{error}</p>}
-            <button type="submit" disabled={busy}>
-              {busy ? "Salvataggio…" : "Salva email"}
+      <section className="stack">
+        <h2>Profilo e accesso</h2>
+        <div className="two-columns">
+          <section className="card">
+            <h2>Profilo</h2>
+            <dl className="facts">
+              <div>
+                <dt>Identificativo</dt>
+                <dd>{user.email ?? user.username}</dd>
+              </div>
+              <div>
+                <dt>Stato</dt>
+                <dd>
+                  <span className={`badge ${user.status}`}>
+                    {STATUS_LABEL[user.status]}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Ruolo</dt>
+                <dd>
+                  {user.is_global_admin ? "Amministratore globale" : "Utente"}
+                </dd>
+              </div>
+            </dl>
+            <p className="muted small">
+              {user.is_global_admin
+                ? "L'amministratore globale non ha un profilo finanziario."
+                : "Un account corrisponde a un profilo personale."}
+            </p>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void logout()}
+            >
+              Esci
             </button>
-          </form>
-        </section>
-      </div>
+          </section>
+
+          <section className="card">
+            <h2>Email</h2>
+            <p className="muted">
+              {user.is_global_admin
+                ? "L'email dell'amministratore è opzionale."
+                : "L'email è il tuo identificativo di accesso."}
+            </p>
+            <form onSubmit={handleEmail} className="stack">
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required={!user.is_global_admin}
+                />
+              </label>
+              {message && <p className="notice success">{message}</p>}
+              {error && <p className="error">{error}</p>}
+              <button type="submit" disabled={busy}>
+                {busy ? "Salvataggio…" : "Salva email"}
+              </button>
+            </form>
+          </section>
+        </div>
+      </section>
+
+      {!user.is_global_admin && <ImportExportSection />}
     </div>
   );
 }
