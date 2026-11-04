@@ -183,6 +183,19 @@ REST_FRAMEWORK = {
 LOGIN_MAX_ATTEMPTS = int(os.environ.get("SPENDY_LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_LOCKOUT_SECONDS = int(os.environ.get("SPENDY_LOGIN_LOCKOUT_SECONDS", "900"))
 
+# Savings automation retry policy. The first version uses a bounded retry with
+# growing waits; the values stay configurable because OQ-AUT-09 is not closed.
+AUTOMATION_MAX_ATTEMPTS = int(
+    os.environ.get("SPENDY_AUTOMATION_MAX_ATTEMPTS", "3")
+)
+AUTOMATION_RETRY_DELAYS = [
+    int(value)
+    for value in os.environ.get(
+        "SPENDY_AUTOMATION_RETRY_DELAYS", "60,300,900"
+    ).split(",")
+    if value.strip()
+]
+
 # Proxies whose X-Forwarded-For header is trusted (frontend container / NPM).
 TRUSTED_PROXY_CIDRS = env_list(
     "TRUSTED_PROXY_CIDRS",

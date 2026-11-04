@@ -18,6 +18,7 @@ import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
 import { AccountPage } from "./pages/AccountPage";
 import { AccountsPage } from "./pages/AccountsPage";
+import { AutomationsPage } from "./pages/AutomationsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -87,6 +88,14 @@ export function App() {
                 element={
                   <ProfileRoute>
                     <SavingsPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/automations"
+                element={
+                  <ProfileRoute>
+                    <AutomationsPage />
                   </ProfileRoute>
                 }
               />

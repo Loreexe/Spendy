@@ -11,6 +11,21 @@ Il pacchetto viene cifrato con **age** e caricato su Backblaze B2 con **rclone**
 La copia locale resta in `/var/backups/spendy`; il pannello admin legge lo stato
 da `backup-status/status.json`.
 
+## Automazioni periodiche
+
+`compose.yaml` avvia anche `automation-worker`, che esegue ogni minuto
+`python manage.py run_automations`. Non serve un cron sull'host: il worker usa
+la stessa immagine e lo stesso database del backend. Dopo un aggiornamento
+Compose lo ricrea automaticamente; per controllarlo:
+
+```bash
+docker compose ps automation-worker
+docker compose logs --tail=50 automation-worker
+```
+
+Le attese del retry si configurano in `.env` con
+`SPENDY_AUTOMATION_MAX_ATTEMPTS` e `SPENDY_AUTOMATION_RETRY_DELAYS`.
+
 ## Prerequisiti sull'host
 
 ```bash

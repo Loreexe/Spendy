@@ -4,7 +4,17 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import ZERO, Account, Line, Profile, SavingsAccount, Transaction
+from .models import (
+    ZERO,
+    Account,
+    AutomationExecution,
+    Line,
+    Notification,
+    Profile,
+    SavingsAccount,
+    SavingsAutomation,
+    Transaction,
+)
 from .services import assert_accounts_non_negative, savings_balance
 
 
@@ -127,6 +137,157 @@ class SavingsAccountUpdateSerializer(serializers.ModelSerializer):
         fields = ("name",)
 
 
+class SavingsAutomationSerializer(serializers.ModelSerializer):
+    savings_name = serializers.CharField(source="savings.name", read_only=True)
+    source_account_name = serializers.SerializerMethodField()
+    frequency_label = serializers.CharField(
+        source="get_frequency_display", read_only=True
+    )
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    pending_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SavingsAutomation
+        fields = (
+            "id",
+            "savings",
+            "savings_name",
+            "source_account",
+            "source_account_name",
+            "amount",
+            "frequency",
+            "frequency_label",
+            "next_run_on",
+            "status",
+            "status_label",
+            "pending_count",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_source_account_name(self, obj: SavingsAutomation):
+        return obj.source_account.name if obj.source_account_id else None
+
+    def get_pending_count(self, obj: SavingsAutomation) -> int:
+        return obj.executions.filter(
+            status=AutomationExecution.Status.PENDING
+        ).count()
+
+
+class SavingsAutomationWriteSerializer(serializers.ModelSerializer):
+    amount = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0.01")
+    )
+    savings = serializers.PrimaryKeyRelatedField(
+        queryset=SavingsAccount.objects.all()
+    )
+    source_account = serializers.PrimaryKeyRelatedField(
+        queryset=Account.objects.all(), required=True
+    )
+
+    class Meta:
+        model = SavingsAutomation
+        fields = (
+            "savings",
+            "source_account",
+            "amount",
+            "frequency",
+            "next_run_on",
+            "status",
+        )
+
+    def _check_owner(self, obj, label: str):
+        profile = self.context["profile"]
+        if obj is not None and obj.profile_id != profile.id:
+            raise serializers.ValidationError(
+                {label: "L'elemento non appartiene al profilo."}
+            )
+
+    def validate_savings(self, savings: SavingsAccount) -> SavingsAccount:
+        self._check_owner(savings, "savings")
+        return savings
+
+    def validate_source_account(self, account: Account) -> Account:
+        self._check_owner(account, "source_account")
+        if account.archived:
+            raise serializers.ValidationError(
+                { "source_account": "Il conto di partenza è archiviato." }
+            )
+        return account
+
+    def validate_status(self, value: str) -> str:
+        if value == SavingsAutomation.Status.SUSPENDED:
+            raise serializers.ValidationError(
+                {
+                    "status": (
+                        "La sospensione è decisa dal sistema dopo i tentativi "
+                        "falliti. Usa «In pausa» o «Attiva»."
+                    )
+                }
+            )
+        return value
+
+    def create(self, validated_data):
+        validated_data["profile"] = self.context["profile"]
+        return SavingsAutomation.objects.create(**validated_data)
+
+
+class AutomationExecutionSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    failure_label = serializers.CharField(
+        source="get_failure_code_display", read_only=True
+    )
+    amount = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AutomationExecution
+        fields = (
+            "id",
+            "automation",
+            "automation_ref",
+            "automation_name",
+            "scheduled_date",
+            "amount",
+            "source_account",
+            "source_account_name",
+            "savings",
+            "savings_name",
+            "status",
+            "status_label",
+            "attempts",
+            "next_retry_at",
+            "failure_code",
+            "failure_label",
+            "failure_message",
+            "corrected",
+            "transaction",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_amount(self, obj: AutomationExecution) -> str:
+        return money(obj.amount)
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+    is_read = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Notification
+        fields = (
+            "id",
+            "kind",
+            "kind_label",
+            "message",
+            "automation",
+            "execution",
+            "read_at",
+            "is_read",
+            "created_at",
+        )
+
+
 class LineSerializer(serializers.ModelSerializer):
     target_type = serializers.SerializerMethodField()
     account_name = serializers.SerializerMethodField()
@@ -163,6 +324,7 @@ class TransactionSerializer(serializers.ModelSerializer):
     lines = LineSerializer(many=True, read_only=True)
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
     amount = serializers.SerializerMethodField()
+    automation_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
@@ -173,6 +335,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             "date",
             "description",
             "amount",
+            "automation",
+            "automation_name",
             "lines",
             "created_at",
             "updated_at",
@@ -180,6 +344,11 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     def get_amount(self, obj: Transaction) -> str:
         return money(obj.amount)
+
+    def get_automation_name(self, obj: Transaction):
+        if obj.automation_id is None:
+            return None
+        return obj.automation.savings.name
 
 
 class TransactionWriteSerializer(serializers.Serializer):

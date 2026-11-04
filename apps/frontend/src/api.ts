@@ -64,6 +64,15 @@ export interface SystemInfo {
 
 export type AccountType = "cash" | "checking" | "card" | "other";
 export type TransactionKind = "opening" | "income" | "expense" | "transfer";
+export type AutomationFrequency = "daily" | "weekly" | "monthly" | "yearly";
+export type AutomationStatus = "active" | "paused" | "suspended";
+export type AutomationExecutionStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "cancelled";
 
 export interface Account {
   id: number;
@@ -88,6 +97,67 @@ export interface SavingsAccount {
   updated_at: string;
 }
 
+export interface SavingsAutomation {
+  id: number;
+  savings: number;
+  savings_name: string;
+  source_account: number | null;
+  source_account_name: string | null;
+  amount: string;
+  frequency: AutomationFrequency;
+  frequency_label: string;
+  next_run_on: string;
+  status: AutomationStatus;
+  status_label: string;
+  pending_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationExecution {
+  id: number;
+  automation: number | null;
+  automation_ref: number;
+  automation_name: string;
+  scheduled_date: string;
+  amount: string;
+  source_account: number | null;
+  source_account_name: string;
+  savings: number | null;
+  savings_name: string;
+  status: AutomationExecutionStatus;
+  status_label: string;
+  attempts: number;
+  next_retry_at: string | null;
+  failure_code: string;
+  failure_label: string;
+  failure_message: string;
+  corrected: boolean;
+  transaction: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationOutcome {
+  rules: number;
+  created: number;
+  executed: number;
+  pending_choice: number;
+  retried: number;
+}
+
+export interface FinanceNotification {
+  id: number;
+  kind: "automation_pending" | "automation_skipped" | "automation_suspended";
+  kind_label: string;
+  message: string;
+  automation: number | null;
+  execution: number | null;
+  read_at: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface Line {
   id: number;
   target_type: "account" | "savings";
@@ -106,6 +176,8 @@ export interface Transaction {
   date: string;
   description: string;
   amount: string;
+  automation: number | null;
+  automation_name: string | null;
   lines: Line[];
   created_at: string;
   updated_at: string;
@@ -493,6 +565,92 @@ export const api = {
 
   deleteSavings: (id: number) =>
     request<void>(`/api/finance/savings/${id}/`, { method: "DELETE" }),
+
+  automations: () =>
+    request<{ automations: SavingsAutomation[] }>("/api/finance/automations/"),
+
+  createAutomation: (data: {
+    savings: number;
+    source_account: number;
+    amount: string;
+    frequency: AutomationFrequency;
+    next_run_on: string;
+  }) =>
+    request<SavingsAutomation>("/api/finance/automations/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateAutomation: (
+    id: number,
+    data: Partial<{
+      savings: number;
+      source_account: number;
+      amount: string;
+      frequency: AutomationFrequency;
+      next_run_on: string;
+      status: "active" | "paused";
+    }>,
+  ) =>
+    request<SavingsAutomation>(`/api/finance/automations/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteAutomation: (id: number) =>
+    request<void>(`/api/finance/automations/${id}/`, { method: "DELETE" }),
+
+  runAutomation: (id: number) =>
+    request<{ outcome: AutomationOutcome; automation: SavingsAutomation }>(
+      `/api/finance/automations/${id}/run/`,
+      { method: "POST" },
+    ),
+
+  runAutomations: () =>
+    request<{ outcome: AutomationOutcome }>("/api/finance/automations/run/", {
+      method: "POST",
+    }),
+
+  resolveAutomation: (id: number, recover: number[]) =>
+    request<{ outcome: { recovered: number; skipped: number } }>(
+      `/api/finance/automations/${id}/resolve/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ recover }),
+      },
+    ),
+
+  automationExecutions: (params: {
+    automation?: number;
+    status?: AutomationExecutionStatus;
+    limit?: number;
+  } = {}) => {
+    const query = new URLSearchParams();
+    if (params.automation) query.set("automation", String(params.automation));
+    if (params.status) query.set("status", params.status);
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString();
+    return request<{ executions: AutomationExecution[]; count: number }>(
+      `/api/finance/automation-executions/${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+
+  notifications: (params: { unread?: boolean; limit?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.unread) query.set("unread", "1");
+    if (params.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString();
+    return request<{
+      notifications: FinanceNotification[];
+      unread_count: number;
+    }>(`/api/finance/notifications/${suffix ? `?${suffix}` : ""}`);
+  },
+
+  markNotificationsRead: (ids?: number[]) =>
+    request<{ unread_count: number }>("/api/finance/notifications/read/", {
+      method: "POST",
+      body: JSON.stringify(ids ? { ids } : {}),
+    }),
 
   transactions: (params: {
     account?: number;

@@ -852,3 +852,38 @@ button.danger:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Savings automations */
+.badge.ok {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.automation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.automation-card .entity-card-head {
+  align-items: flex-start;
+}
+
+.pending-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  background: var(--warning-soft);
+}
+
+.pending-box .entity-list > li {
+  border-bottom-color: rgba(138, 90, 18, 0.2);
+}
+
+.pending-box .entity-list > li:last-child {
+  border-bottom: none;
+}

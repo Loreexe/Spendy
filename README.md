@@ -10,9 +10,9 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.4.2`**. Il progetto è in sviluppo attivo:
-> le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
-> MCP e notifiche non sono ancora implementati.
+> **Stato:** release **`v0.5.0`**, che include le automazioni periodiche dei
+> salvadanai. Il progetto è in sviluppo attivo: gruppi, investimenti, MCP e
+> notifiche push/email non sono ancora implementati.
 
 ## Funzionalità
 
@@ -23,6 +23,9 @@ senza integrazioni bancarie.
 - **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura
   parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
+- **Automazioni periodiche dei salvadanai**: trasferimenti ricorrenti dal conto
+  al salvadanaio, con recupero delle occorrenze perse, gestione dei fallimenti,
+  storico delle esecuzioni e notifiche in-app.
 - **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima
   correggibile, controllo dei duplicati e riepilogo prima della conferma.
 - **Backup personale del profilo**: archivio ZIP con conti, salvadanai,
@@ -64,7 +67,7 @@ apps/
 packages/        spazio per contratti e codice condiviso
 scripts/         backup globale e test di ripristino
 deploy/          unità systemd, backup e configurazione NPM
-compose.yaml     PostgreSQL, backend e frontend
+compose.yaml     PostgreSQL, backend, worker delle automazioni e frontend
 .env.example     variabili di ambiente di esempio
 VERSION          versione corrente
 ```
@@ -99,7 +102,7 @@ PostgreSQL non è pubblicato all'esterno.
 
 ### Primo setup dell'admin
 
-Il primo setup è consentito solo da **localhost o Tailscale** (DC-052).
+Il primo setup è consentito solo da **localhost o Tailscale**.
 
 1. Accedi a `http://<host>:8080`.
 2. Imposta la password dell'utente `admin`.
@@ -146,14 +149,47 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.4.2`: **129 test backend**, **8 test** del controllo
-versioni, **5 test** dello script di backup, lint e build frontend,
-configurazione Compose valida, configurazione Nginx e pagina di manutenzione
-verificate, procedura di aggiornamento provata in dry-run e con Docker simulato
-(successo e rollback). La sezione Sistema, il backup globale e l'hardening
-pre-esposizione sono inclusi nella release. Backup reale su Backblaze B2, test
-di ripristino automatico e ripristino completo su host pulito eseguiti con
-successo.
+Stato verificato: **149 test backend**, **8 test** del controllo versioni,
+**5 test** dello script di backup, lint e build frontend, configurazione Compose
+valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
+aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
+La release `v0.5.0` include le automazioni periodiche, verificate anche con
+PostgreSQL e con il worker Compose; la sezione Sistema, il backup globale e
+l'hardening pre-esposizione restano inclusi dalle release precedenti. Backup
+reale su Backblaze B2, test di ripristino automatico e ripristino completo su
+host pulito eseguiti con successo.
+
+## Automazioni periodiche
+
+Dalla pagina **Automazioni** puoi creare una regola che trasferisce un importo
+fisso da un conto a un salvadanaio con periodicità giornaliera, settimanale,
+mensile o annuale. Il servizio `automation-worker` in `compose.yaml` controlla
+le scadenze ogni minuto; puoi anche forzare il controllo dalla pagina o con:
+
+```bash
+docker compose exec backend python manage.py run_automations
+```
+
+Comportamento:
+
+- ogni occorrenza ha una chiave univoca (regola + data prevista), quindi un
+  riavvio o un doppio controllo non crea movimenti duplicati;
+- una sola occorrenza persa viene recuperata automaticamente con la **data
+  originale**; con due o più occorrenze perse l'app chiede quali recuperare e
+  salta le altre;
+- saldo insufficiente o dati mancanti: l'occorrenza viene saltata con una
+  notifica e la regola resta attiva;
+- errore tecnico: fino a 3 tentativi con attese crescenti (60, 300 e 900
+  secondi, configurabili con `SPENDY_AUTOMATION_MAX_ATTEMPTS` e
+  `SPENDY_AUTOMATION_RETRY_DELAYS`); esauriti i tentativi la regola viene
+  sospesa e l'utente avvisato;
+- modificare o annullare un movimento generato aggiorna lo stato
+  dell'occorrenza e non la riesegue; eliminare un salvadanaio rimuove le regole
+  collegate ma conserva lo storico delle esecuzioni.
+
+Le notifiche sono per ora **in-app**, nella pagina Automazioni. Canale e
+preferenze delle notifiche, parametri definitivi del retry e sorte dello storico
+alla cancellazione della regola restano da confermare.
 
 ## Importazione dei movimenti
 
@@ -208,8 +244,10 @@ del profilo:
 L'archivio conserva anche le due parti dei trasferimenti, le righe tecniche dei
 salvadanai e le coperture parziali. Può essere ricaricato con **Ripristina un
 archivio** su un profilo vuoto: Spendy valida il contenuto, mostra un'anteprima e
-scrive in modo atomico. Il ripristino è pensato per il passaggio a un altro
-server; non sostituisce il backup globale del database PostgreSQL.
+scrive in modo atomico. Le regole di automazione e il loro storico non sono
+ancora incluse in questo archivio CSV: sono protette dal backup globale del
+database PostgreSQL. Il ripristino è pensato per il passaggio a un altro server;
+non sostituisce il backup globale.
 
 ## Configurazione di produzione
 
@@ -271,11 +309,10 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 - Login e registrazione hanno rate limiting; dopo 5 tentativi falliti per lo
   stesso IP e identificativo, l'accesso resta bloccato per 15 minuti.
 - Il database è la fonte di verità: nessun saldo viene mantenuto solo in memoria.
-- La documentazione interna del progetto non è inclusa nel repository pubblico.
 
 ## Limiti attuali
 
-- Gruppi, investimenti, automazioni periodiche, MCP e notifiche non sono inclusi.
+- Gruppi, investimenti, MCP e notifiche push/email non sono inclusi.
 - Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
 - L'LXC su Proxmox è già stato creato e ospita l'app; configurazione NPM, verifica email, SSO e 2FA non sono completati.
 

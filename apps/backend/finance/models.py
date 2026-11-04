@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.db.models import Q, Sum
+from django.utils import timezone
 
 ZERO = Decimal("0.00")
 
@@ -78,6 +79,66 @@ class SavingsAccount(models.Model):
         return self.lines.aggregate(total=Sum("amount"))["total"] or ZERO
 
 
+class SavingsAutomation(models.Model):
+    """Periodic transfer from an account into a savings container (DC-014).
+
+    Only temporal, periodic rules are implemented in this version. The model is
+    deliberately small so that conditional triggers can be added later without
+    changing how occurrences and their snapshots are stored.
+    """
+
+    class Frequency(models.TextChoices):
+        DAILY = "daily", "Ogni giorno"
+        WEEKLY = "weekly", "Ogni settimana"
+        MONTHLY = "monthly", "Ogni mese"
+        YEARLY = "yearly", "Ogni anno"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Attiva"
+        PAUSED = "paused", "In pausa"
+        SUSPENDED = "suspended", "Sospesa"
+
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="savings_automations"
+    )
+    savings = models.ForeignKey(
+        SavingsAccount, on_delete=models.CASCADE, related_name="automations"
+    )
+    source_account = models.ForeignKey(
+        Account,
+        on_delete=models.SET_NULL,
+        related_name="savings_automations",
+        null=True,
+        blank=True,
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    frequency = models.CharField(
+        max_length=16, choices=Frequency.choices, default=Frequency.MONTHLY
+    )
+    next_run_on = models.DateField()
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.ACTIVE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("next_run_on", "id")
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(amount__gt=0),
+                name="finance_automation_amount_positive",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.amount} → {self.savings} ({self.get_frequency_display()})"
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == self.Status.ACTIVE
+
+
 class Transaction(models.Model):
     class Kind(models.TextChoices):
         OPENING = "opening", "Apertura"
@@ -87,6 +148,13 @@ class Transaction(models.Model):
 
     profile = models.ForeignKey(
         Profile, on_delete=models.CASCADE, related_name="transactions"
+    )
+    automation = models.ForeignKey(
+        SavingsAutomation,
+        on_delete=models.SET_NULL,
+        related_name="transactions",
+        null=True,
+        blank=True,
     )
     kind = models.CharField(max_length=16, choices=Kind.choices)
     date = models.DateField()
@@ -154,3 +222,137 @@ class Line(models.Model):
     def __str__(self) -> str:
         target = self.account or self.savings
         return f"{target} {self.amount}"
+
+
+class AutomationExecution(models.Model):
+    """One scheduled occurrence of a savings automation (DC-019/DC-020).
+
+    The occurrence key is the rule id plus the original scheduled date. The
+    rule reference is copied into ``automation_ref`` and the display fields are
+    snapshots, so the execution history survives when the rule or the savings
+    container is deleted (DC-017, OQ-AUT-10).
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Prevista"
+        RUNNING = "running", "In corso"
+        SUCCEEDED = "succeeded", "Riuscita"
+        FAILED = "failed", "Fallita"
+        SKIPPED = "skipped", "Saltata"
+        CANCELLED = "cancelled", "Annullata"
+
+    class FailureCode(models.TextChoices):
+        INSUFFICIENT_BALANCE = "insufficient_balance", "Saldo insufficiente"
+        MISSING_DATA = "missing_data", "Dato mancante"
+        TECHNICAL_ERROR = "technical_error", "Errore tecnico"
+        NOT_SELECTED = "not_selected", "Non selezionata"
+        RULE_DELETED = "rule_deleted", "Regola eliminata"
+        CANCELLED = "cancelled", "Annullata"
+
+    automation = models.ForeignKey(
+        SavingsAutomation,
+        on_delete=models.SET_NULL,
+        related_name="executions",
+        null=True,
+        blank=True,
+    )
+    automation_ref = models.PositiveBigIntegerField(db_index=True)
+    automation_name = models.CharField(max_length=255)
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="automation_executions"
+    )
+    scheduled_date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    source_account = models.ForeignKey(
+        Account,
+        on_delete=models.SET_NULL,
+        related_name="automation_executions",
+        null=True,
+        blank=True,
+    )
+    source_account_name = models.CharField(max_length=100, blank=True)
+    savings = models.ForeignKey(
+        SavingsAccount,
+        on_delete=models.SET_NULL,
+        related_name="automation_executions",
+        null=True,
+        blank=True,
+    )
+    savings_name = models.CharField(max_length=100, blank=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_retry_at = models.DateTimeField(null=True, blank=True)
+    failure_code = models.CharField(
+        max_length=32, choices=FailureCode.choices, blank=True
+    )
+    failure_message = models.CharField(max_length=255, blank=True)
+    corrected = models.BooleanField(default=False)
+    transaction = models.OneToOneField(
+        Transaction,
+        on_delete=models.SET_NULL,
+        related_name="automation_execution",
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("scheduled_date", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("automation_ref", "scheduled_date"),
+                name="finance_automation_occurrence_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.automation_name} {self.scheduled_date} ({self.status})"
+
+
+class Notification(models.Model):
+    """In-app notification, used first for savings automation events."""
+
+    class Kind(models.TextChoices):
+        AUTOMATION_PENDING = "automation_pending", "Scelta da fare"
+        AUTOMATION_SKIPPED = "automation_skipped", "Occorrenza saltata"
+        AUTOMATION_SUSPENDED = "automation_suspended", "Automazione sospesa"
+
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="notifications"
+    )
+    automation = models.ForeignKey(
+        SavingsAutomation,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    execution = models.ForeignKey(
+        AutomationExecution,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    kind = models.CharField(max_length=32, choices=Kind.choices)
+    message = models.CharField(max_length=255)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+
+    def __str__(self) -> str:
+        return self.message
+
+    @property
+    def is_read(self) -> bool:
+        return self.read_at is not None
+
+    def mark_read(self) -> None:
+        if self.read_at is None:
+            self.read_at = timezone.now()
+            self.save(update_fields=("read_at",))

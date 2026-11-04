@@ -9,16 +9,36 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import ZERO, Account, Line, Profile, SavingsAccount, Transaction
+from .automations import (
+    cancel_open_executions,
+    process_automation,
+    resolve_pending,
+    run_for_profile,
+)
+from .models import (
+    ZERO,
+    Account,
+    AutomationExecution,
+    Line,
+    Notification,
+    Profile,
+    SavingsAccount,
+    SavingsAutomation,
+    Transaction,
+)
 from .services import assert_accounts_non_negative
 from .serializers import (
     AccountCreateSerializer,
     AccountSerializer,
     AccountUpdateSerializer,
+    AutomationExecutionSerializer,
+    NotificationSerializer,
     ProfileSerializer,
     SavingsAccountCreateSerializer,
     SavingsAccountSerializer,
     SavingsAccountUpdateSerializer,
+    SavingsAutomationSerializer,
+    SavingsAutomationWriteSerializer,
     TransactionSerializer,
     TransactionWriteSerializer,
 )
@@ -161,6 +181,11 @@ class AccountDetailView(FinanceView):
                 {"detail": "Il conto è usato come appoggio di un salvadanaio."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if account.savings_automations.exists():
+            return Response(
+                {"detail": "Il conto è usato da un'automazione periodica."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if account.lines.exists():
             return Response(
                 {"detail": "Il conto ha movimenti: puoi solo archiviarlo."},
@@ -216,6 +241,16 @@ class SavingsAccountDetailView(FinanceView):
         savings = self.get_object(request, pk)
         balance = savings.balance
         with transaction.atomic():
+            for automation in savings.automations.all():
+                cancel_open_executions(
+                    automation, AutomationExecution.FailureCode.RULE_DELETED
+                )
+                Notification.objects.filter(
+                    profile=savings.profile,
+                    automation=automation,
+                    kind=Notification.Kind.AUTOMATION_PENDING,
+                    read_at__isnull=True,
+                ).update(read_at=timezone.now())
             if balance != ZERO:
                 transfer = Transaction.objects.create(
                     profile=savings.profile,
@@ -321,6 +356,9 @@ class TransactionDetailView(FinanceView):
         operation = Transaction.objects.prefetch_related(
             "lines__account", "lines__savings"
         ).get(pk=operation.pk)
+        AutomationExecution.objects.filter(transaction=operation).update(
+            corrected=True, updated_at=timezone.now()
+        )
         return Response(TransactionSerializer(operation).data)
 
     def delete(self, request, pk: int):
@@ -338,5 +376,248 @@ class TransactionDetailView(FinanceView):
         assert_accounts_non_negative(
             accounts=affected_accounts, exclude_transaction=operation
         )
-        operation.delete()
+        with transaction.atomic():
+            execution = AutomationExecution.objects.filter(
+                transaction=operation
+            ).first()
+            if execution is not None:
+                execution.transaction = None
+                execution.status = AutomationExecution.Status.CANCELLED
+                execution.failure_code = AutomationExecution.FailureCode.CANCELLED
+                execution.failure_message = "Movimento annullato manualmente."
+                execution.next_retry_at = None
+                execution.save(
+                    update_fields=(
+                        "transaction",
+                        "status",
+                        "failure_code",
+                        "failure_message",
+                        "next_retry_at",
+                        "updated_at",
+                    )
+                )
+            operation.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AutomationListCreateView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        automations = SavingsAutomation.objects.filter(
+            profile=profile
+        ).select_related("savings", "source_account")
+        return Response(
+            {
+                "automations": SavingsAutomationSerializer(
+                    automations, many=True
+                ).data
+            }
+        )
+
+    def post(self, request):
+        profile = self.get_profile(request)
+        serializer = SavingsAutomationWriteSerializer(
+            data=request.data, context={"profile": profile}
+        )
+        serializer.is_valid(raise_exception=True)
+        automation = serializer.save()
+        automation = SavingsAutomation.objects.select_related(
+            "savings", "source_account"
+        ).get(pk=automation.pk)
+        return Response(
+            SavingsAutomationSerializer(automation).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AutomationDetailView(FinanceView):
+    def get_object(self, request, pk: int) -> SavingsAutomation:
+        profile = self.get_profile(request)
+        try:
+            return SavingsAutomation.objects.select_related(
+                "savings", "source_account"
+            ).get(pk=pk, profile=profile)
+        except SavingsAutomation.DoesNotExist as exc:
+            raise ValidationError({"detail": "Automazione non trovata."}) from exc
+
+    def get(self, request, pk: int):
+        return Response(
+            SavingsAutomationSerializer(self.get_object(request, pk)).data
+        )
+
+    def patch(self, request, pk: int):
+        automation = self.get_object(request, pk)
+        serializer = SavingsAutomationWriteSerializer(
+            automation,
+            data=request.data,
+            partial=True,
+            context={"profile": automation.profile},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        automation.refresh_from_db()
+        return Response(SavingsAutomationSerializer(automation).data)
+
+    def delete(self, request, pk: int):
+        automation = self.get_object(request, pk)
+        with transaction.atomic():
+            cancel_open_executions(
+                automation, AutomationExecution.FailureCode.RULE_DELETED
+            )
+            Notification.objects.filter(
+                profile=automation.profile,
+                automation=automation,
+                kind=Notification.Kind.AUTOMATION_PENDING,
+                read_at__isnull=True,
+            ).update(read_at=timezone.now())
+            automation.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AutomationRunView(FinanceView):
+    def post(self, request, pk: int):
+        profile = self.get_profile(request)
+        try:
+            automation = SavingsAutomation.objects.get(pk=pk, profile=profile)
+        except SavingsAutomation.DoesNotExist as exc:
+            raise ValidationError({"detail": "Automazione non trovata."}) from exc
+        outcome = process_automation(automation)
+        automation.refresh_from_db()
+        return Response(
+            {
+                "outcome": outcome,
+                "automation": SavingsAutomationSerializer(automation).data,
+            }
+        )
+
+
+class AutomationRunAllView(FinanceView):
+    def post(self, request):
+        profile = self.get_profile(request)
+        outcome = run_for_profile(profile)
+        return Response({"outcome": outcome})
+
+
+class AutomationResolveView(FinanceView):
+    def post(self, request, pk: int):
+        profile = self.get_profile(request)
+        try:
+            automation = SavingsAutomation.objects.get(pk=pk, profile=profile)
+        except SavingsAutomation.DoesNotExist as exc:
+            raise ValidationError({"detail": "Automazione non trovata."}) from exc
+        if automation.status != SavingsAutomation.Status.ACTIVE:
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Riattiva l'automazione prima di recuperare le "
+                        "occorrenze perse."
+                    )
+                }
+            )
+        recover = request.data.get("recover")
+        if not isinstance(recover, list):
+            raise ValidationError(
+                {"recover": "Indica la lista delle occorrenze da recuperare."}
+            )
+        try:
+            recover_ids = {int(value) for value in recover}
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                {"recover": "Gli identificatori devono essere numeri."}
+            ) from exc
+
+        pending_ids = set(
+            automation.executions.filter(
+                status=AutomationExecution.Status.PENDING
+            ).values_list("id", flat=True)
+        )
+        unknown = recover_ids - pending_ids
+        if unknown:
+            raise ValidationError(
+                {
+                    "recover": (
+                        "Alcune occorrenze non sono in attesa: "
+                        + ", ".join(str(value) for value in sorted(unknown))
+                    )
+                }
+            )
+        outcome = resolve_pending(automation, recover_ids)
+        automation.refresh_from_db()
+        return Response(
+            {
+                "outcome": outcome,
+                "automation": SavingsAutomationSerializer(automation).data,
+            }
+        )
+
+
+class AutomationExecutionListView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        queryset = AutomationExecution.objects.filter(profile=profile)
+        automation_id = request.query_params.get("automation")
+        status_filter = request.query_params.get("status")
+        if automation_id:
+            queryset = queryset.filter(automation_ref=automation_id)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        try:
+            limit = min(max(int(request.query_params.get("limit", 100)), 1), 500)
+        except (TypeError, ValueError):
+            limit = 100
+        total = queryset.count()
+        return Response(
+            {
+                "executions": AutomationExecutionSerializer(
+                    queryset[:limit], many=True
+                ).data,
+                "count": total,
+            }
+        )
+
+
+class NotificationListView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        queryset = Notification.objects.filter(profile=profile)
+        if request.query_params.get("unread") in {"1", "true", "yes"}:
+            queryset = queryset.filter(read_at__isnull=True)
+        unread_count = Notification.objects.filter(
+            profile=profile, read_at__isnull=True
+        ).count()
+        try:
+            limit = min(max(int(request.query_params.get("limit", 50)), 1), 200)
+        except (TypeError, ValueError):
+            limit = 50
+        return Response(
+            {
+                "notifications": NotificationSerializer(
+                    queryset[:limit], many=True
+                ).data,
+                "unread_count": unread_count,
+            }
+        )
+
+
+class NotificationReadView(FinanceView):
+    def post(self, request):
+        profile = self.get_profile(request)
+        queryset = Notification.objects.filter(
+            profile=profile, read_at__isnull=True
+        )
+        ids = request.data.get("ids")
+        if ids is not None:
+            if not isinstance(ids, list):
+                raise ValidationError({"ids": "Indica una lista di notifiche."})
+            try:
+                ids = [int(value) for value in ids]
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    {"ids": "Gli identificatori devono essere numeri."}
+                ) from exc
+            queryset = queryset.filter(pk__in=ids)
+        queryset.update(read_at=timezone.now())
+        unread_count = Notification.objects.filter(
+            profile=profile, read_at__isnull=True
+        ).count()
+        return Response({"unread_count": unread_count})

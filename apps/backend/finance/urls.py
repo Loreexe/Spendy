@@ -14,7 +14,15 @@ from .import_views import (
 from .views import (
     AccountDetailView,
     AccountListCreateView,
+    AutomationDetailView,
+    AutomationExecutionListView,
+    AutomationListCreateView,
+    AutomationResolveView,
+    AutomationRunAllView,
+    AutomationRunView,
     DashboardView,
+    NotificationListView,
+    NotificationReadView,
     ProfileView,
     SavingsAccountDetailView,
     SavingsAccountListCreateView,
@@ -46,6 +54,46 @@ urlpatterns = [
         "transactions/<int:pk>/",
         TransactionDetailView.as_view(),
         name="finance-transaction-detail",
+    ),
+    path(
+        "automations/",
+        AutomationListCreateView.as_view(),
+        name="finance-automations",
+    ),
+    path(
+        "automations/run/",
+        AutomationRunAllView.as_view(),
+        name="finance-automations-run",
+    ),
+    path(
+        "automations/<int:pk>/",
+        AutomationDetailView.as_view(),
+        name="finance-automation-detail",
+    ),
+    path(
+        "automations/<int:pk>/run/",
+        AutomationRunView.as_view(),
+        name="finance-automation-run",
+    ),
+    path(
+        "automations/<int:pk>/resolve/",
+        AutomationResolveView.as_view(),
+        name="finance-automation-resolve",
+    ),
+    path(
+        "automation-executions/",
+        AutomationExecutionListView.as_view(),
+        name="finance-automation-executions",
+    ),
+    path(
+        "notifications/",
+        NotificationListView.as_view(),
+        name="finance-notifications",
+    ),
+    path(
+        "notifications/read/",
+        NotificationReadView.as_view(),
+        name="finance-notifications-read",
     ),
     path(
         "export/",
