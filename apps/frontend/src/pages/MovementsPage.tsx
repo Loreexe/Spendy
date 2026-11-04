@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import {
   api,
   ApiError,
@@ -418,6 +419,13 @@ export function MovementsPage() {
 
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
+
+      <p className="muted small">
+        Le operazioni di investimento (aperture, acquisti, vendite, dividendi)
+        non compaiono in questo registro: le trovi nella{" "}
+        <Link to="/investments">pagina Investimenti</Link>. Gli effetti su saldo
+        e patrimonio sono inclusi nella dashboard.
+      </p>
 
       <section className="card">
         <div className="card-heading">
