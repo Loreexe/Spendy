@@ -6,6 +6,8 @@ development, CI and the Docker Compose deployment.
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -20,9 +22,19 @@ def env_list(name: str, default: str = "") -> list[str]:
     return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
 
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-change-me")
-DEBUG = env_bool("DJANGO_DEBUG", True)
+DEBUG = env_bool("DJANGO_DEBUG", False)
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "dev-insecure-change-me"
+    else:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY non impostata: è obbligatoria quando DJANGO_DEBUG=0."
+        )
 SPENDY_VERSION = os.environ.get("SPENDY_VERSION", "0.3.0")
+BACKUP_STATUS_FILE = os.environ.get(
+    "SPENDY_BACKUP_STATUS_FILE", str(BASE_DIR / "backup-status" / "status.json")
+)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list(
     "CSRF_TRUSTED_ORIGINS", "http://localhost:5173,http://localhost:8080"
@@ -114,10 +126,21 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
-SECURE_COOKIES = env_bool("SECURE_COOKIES", False)
+# Secure by default outside development; set SECURE_COOKIES=0 only for local HTTP.
+SECURE_COOKIES = env_bool("SECURE_COOKIES", not DEBUG)
 SESSION_COOKIE_SECURE = SECURE_COOKIES
 CSRF_COOKIE_SECURE = SECURE_COOKIES
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", False)
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS", False
+)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
@@ -129,7 +152,16 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/min",
+        "register": "5/hour",
+    },
 }
+
+# Per-IP and per-identifier failed-login lockout. This complements DRF's
+# request throttling and is kept in the cache.
+LOGIN_MAX_ATTEMPTS = int(os.environ.get("SPENDY_LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.environ.get("SPENDY_LOGIN_LOCKOUT_SECONDS", "900"))
 
 # Proxies whose X-Forwarded-For header is trusted (frontend container / NPM).
 TRUSTED_PROXY_CIDRS = env_list(

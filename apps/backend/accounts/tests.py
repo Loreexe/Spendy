@@ -1,6 +1,17 @@
+import io
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
+
 from django.contrib.auth.hashers import make_password
+from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
+
+from core.system import is_newer, parse_version
 
 from .models import GlobalSettings, User
 
@@ -108,6 +119,7 @@ class SetupTests(APITestCase):
 
 class RegistrationTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.admin = complete_setup()
 
     def register(self, email="utente@example.com", password=VALID_PASSWORD):
@@ -144,6 +156,14 @@ class RegistrationTests(APITestCase):
         response = self.register(password="12345678")
         self.assertEqual(response.status_code, 400)
         self.assertIn("password", response.data)
+
+    def test_registration_is_rate_limited(self):
+        for index in range(5):
+            response = self.register(email=f"utente{index}@example.com")
+            self.assertEqual(response.status_code, 201)
+
+        response = self.register(email="utente-blocco@example.com")
+        self.assertEqual(response.status_code, 429)
 
     def test_admin_approves_pending_user(self):
         self.register()
@@ -209,10 +229,204 @@ class RegistrationTests(APITestCase):
 
         self.assertEqual(self.client.get(reverse("admin-users")).status_code, 403)
         self.assertEqual(self.client.get(reverse("admin-settings")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("admin-system")).status_code, 403)
+
+
+class AdminSystemTests(APITestCase):
+    def setUp(self):
+        self.admin = complete_setup()
+        self.client.force_authenticate(user=self.admin)
+
+    @override_settings(SPENDY_VERSION="0.3.0")
+    def test_system_returns_version_and_database_without_network(self):
+        with patch("core.system.urllib.request.urlopen") as urlopen:
+            response = self.client.get(reverse("admin-system"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["current_version"], "0.3.0")
+        self.assertEqual(response.data["database"], "ok")
+        self.assertIsNone(response.data["checked_at"])
+        self.assertIsNone(response.data["latest"])
+        self.assertFalse(response.data["update_available"])
+        self.assertIsNone(response.data["backup"])
+        urlopen.assert_not_called()
+
+    @override_settings(SPENDY_VERSION="0.3.0")
+    def test_system_reads_backup_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status_path = Path(directory) / "status.json"
+            status_path.write_text(
+                json.dumps(
+                    {
+                        "last_run": "2026-11-04T12:00:00+00:00",
+                        "last_success": "2026-11-04T12:00:00+00:00",
+                        "status": "ok",
+                        "offsite": "ok",
+                        "last_error": None,
+                        "restore_test": {
+                            "last_run": "2026-11-01T03:00:00+00:00",
+                            "last_success": "2026-11-01T03:00:00+00:00",
+                            "status": "ok",
+                            "error": None,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with override_settings(BACKUP_STATUS_FILE=str(status_path)):
+                response = self.client.get(reverse("admin-system"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["backup"]["status"], "ok")
+        self.assertEqual(response.data["backup"]["offsite"], "ok")
+        self.assertEqual(
+            response.data["backup"]["restore_test"]["status"], "ok"
+        )
+
+    @override_settings(SPENDY_VERSION="0.3.0")
+    @patch("core.system.urllib.request.urlopen")
+    def test_check_reports_newer_release(self, urlopen):
+        urlopen.return_value = io.BytesIO(
+            json.dumps(
+                {
+                    "tag_name": "v0.4.0",
+                    "html_url": (
+                        "https://github.com/Loreexe/Spendy/releases/tag/v0.4.0"
+                    ),
+                    "published_at": "2026-11-05T10:00:00Z",
+                    "body": "Novità della release",
+                    "prerelease": False,
+                    "draft": False,
+                }
+            ).encode()
+        )
+
+        response = self.client.get(reverse("admin-system"), {"check": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["update_available"])
+        self.assertEqual(response.data["latest"]["version"], "0.4.0")
+        self.assertEqual(response.data["latest"]["tag"], "v0.4.0")
+        self.assertEqual(response.data["latest"]["notes"], "Novità della release")
+        self.assertIsNotNone(response.data["checked_at"])
+        self.assertIsNone(response.data["error"])
+
+    @override_settings(SPENDY_VERSION="0.4.0")
+    @patch("core.system.urllib.request.urlopen")
+    def test_check_reports_no_update_when_versions_match(self, urlopen):
+        urlopen.return_value = io.BytesIO(
+            json.dumps(
+                {
+                    "tag_name": "v0.4.0",
+                    "html_url": (
+                        "https://github.com/Loreexe/Spendy/releases/tag/v0.4.0"
+                    ),
+                    "published_at": "2026-11-05T10:00:00Z",
+                    "body": "",
+                    "prerelease": False,
+                    "draft": False,
+                }
+            ).encode()
+        )
+
+        response = self.client.get(reverse("admin-system"), {"check": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["update_available"])
+        self.assertEqual(response.data["latest"]["version"], "0.4.0")
+
+    @patch("core.system.urllib.request.urlopen")
+    def test_check_handles_network_error(self, urlopen):
+        urlopen.side_effect = URLError("offline")
+
+        response = self.client.get(reverse("admin-system"), {"check": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["latest"])
+        self.assertIn("non raggiungibile", response.data["error"])
+        self.assertIsNotNone(response.data["checked_at"])
+
+    @patch("core.system.urllib.request.urlopen")
+    def test_check_handles_missing_release(self, urlopen):
+        urlopen.side_effect = HTTPError(
+            "https://api.github.com/", 404, "Not Found", {}, None
+        )
+
+        response = self.client.get(reverse("admin-system"), {"check": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["latest"])
+        self.assertIn("Nessuna release", response.data["error"])
+
+    @patch("core.system.urllib.request.urlopen")
+    def test_check_ignores_prerelease_payload(self, urlopen):
+        urlopen.return_value = io.BytesIO(
+            json.dumps(
+                {
+                    "tag_name": "v0.4.0-rc1",
+                    "prerelease": True,
+                    "draft": False,
+                }
+            ).encode()
+        )
+
+        response = self.client.get(reverse("admin-system"), {"check": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["latest"])
+        self.assertIn("prerelease", response.data["error"])
+
+    def test_version_comparison(self):
+        self.assertTrue(is_newer("0.3.0", "0.4.0"))
+        self.assertFalse(is_newer("0.3.0", "0.3.0"))
+        self.assertFalse(is_newer("0.3.0", "0.2.9"))
+        self.assertIsNone(parse_version("not-a-version"))
+        self.assertIsNone(parse_version("v0.4.0-rc1"))
+
+
+class LoginLockoutTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            email="lockout@example.com", password=VALID_PASSWORD
+        )
+        self.user.status = User.Status.ACTIVE
+        self.user.save()
+
+    def tearDown(self):
+        cache.clear()
+
+    def login(self, password: str):
+        return self.client.post(
+            reverse("auth-login"),
+            {"identifier": "lockout@example.com", "password": password},
+        )
+
+    @override_settings(LOGIN_MAX_ATTEMPTS=3, LOGIN_LOCKOUT_SECONDS=60)
+    def test_lockout_after_repeated_failures(self):
+        for _ in range(3):
+            self.assertEqual(self.login("wrong-password").status_code, 400)
+
+        response = self.login(VALID_PASSWORD)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.data["code"], "too_many_attempts")
+        self.assertEqual(response["Retry-After"], "60")
+
+    @override_settings(LOGIN_MAX_ATTEMPTS=3, LOGIN_LOCKOUT_SECONDS=60)
+    def test_successful_login_clears_failures(self):
+        for _ in range(2):
+            self.assertEqual(self.login("wrong-password").status_code, 400)
+
+        self.assertEqual(self.login(VALID_PASSWORD).status_code, 200)
+
+        for _ in range(3):
+            self.assertEqual(self.login("wrong-password").status_code, 400)
+        self.assertEqual(self.login(VALID_PASSWORD).status_code, 429)
 
 
 class AuthTests(APITestCase):
     def setUp(self):
+        cache.clear()
         self.admin = complete_setup()
         self.user = User.objects.create_user(
             email="persona@example.com",

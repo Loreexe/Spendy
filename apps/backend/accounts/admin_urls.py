@@ -1,5 +1,7 @@
 from django.urls import path
 
+from core.views import AdminSystemView
+
 from .views import AdminSettingsView, AdminUserDecisionView, AdminUserListView
 
 urlpatterns = [
@@ -10,4 +12,5 @@ urlpatterns = [
         name="admin-user-decision",
     ),
     path("settings/", AdminSettingsView.as_view(), name="admin-settings"),
+    path("system/", AdminSystemView.as_view(), name="admin-system"),
 ]

@@ -28,6 +28,41 @@ export interface Settings {
   setup_completed: boolean;
 }
 
+export interface SystemRelease {
+  version: string;
+  tag: string;
+  url: string;
+  published_at: string | null;
+  notes: string;
+}
+
+export interface BackupRestoreTest {
+  last_run?: string | null;
+  last_success?: string | null;
+  status?: string;
+  error?: string | null;
+}
+
+export interface BackupStatus {
+  last_run?: string | null;
+  last_success?: string | null;
+  status?: string;
+  offsite?: string;
+  last_error?: string | null;
+  restore_test?: BackupRestoreTest | null;
+  error?: string | null;
+}
+
+export interface SystemInfo {
+  current_version: string;
+  database: "ok" | "unavailable";
+  checked_at: string | null;
+  latest: SystemRelease | null;
+  update_available: boolean;
+  error: string | null;
+  backup: BackupStatus | null;
+}
+
 export type AccountType = "cash" | "checking" | "card" | "other";
 export type TransactionKind = "opening" | "income" | "expense" | "transfer";
 
@@ -405,6 +440,9 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ registration_mode: registrationMode }),
     }),
+
+  adminSystem: (check = false) =>
+    request<SystemInfo>(`/api/admin/system/${check ? "?check=1" : ""}`),
 
   dashboard: (start?: string, end?: string) => {
     const params = new URLSearchParams();

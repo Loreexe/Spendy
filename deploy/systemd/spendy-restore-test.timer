@@ -1,0 +1,11 @@
+[Unit]
+Description=Spendy - test di ripristino mensile
+
+[Timer]
+OnCalendar=*-*-01 04:00:00
+Persistent=true
+RandomizedDelaySec=1h
+Unit=spendy-restore-test.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=Spendy - test di ripristino del backup globale
+Documentation=file:///opt/spendy/deploy/README.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/spendy-backup.env
+Environment=XDG_CACHE_HOME=/tmp/spendy-backup-cache
+ExecStart=/usr/bin/python3 /opt/spendy/scripts/backup_global.py restore-test
+User=root
+Group=root
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+TimeoutStartSec=30min

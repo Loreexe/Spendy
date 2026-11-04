@@ -1,0 +1,11 @@
+[Unit]
+Description=Spendy - backup globale ogni 15 minuti
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+RandomizedDelaySec=30
+Unit=spendy-backup.service
+
+[Install]
+WantedBy=timers.target

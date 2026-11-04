@@ -10,7 +10,7 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.3.0`**. Il progetto è in sviluppo attivo:
+> **Stato:** release **`v0.4.0`**. Il progetto è in sviluppo attivo:
 > le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
 > MCP e notifiche non sono ancora implementati.
 
@@ -34,6 +34,12 @@ senza integrazioni bancarie.
   finanziario; l'admin globale non ha un profilo finanziario.
 - **Autenticazione** email/password, registrazione con approvazione e setup
   iniziale protetto.
+- **Sistema (admin)**: controllo manuale delle release GitHub, versione
+  backend/frontend, stato del database e stato del backup globale, in sola
+  lettura.
+- **Backup globale automatico**: dump PostgreSQL ogni 15 minuti, configurazione
+  cifrata con age, copia su Backblaze B2 tramite rclone e test di ripristino
+  mensile. La procedura è in [deploy/README.md](deploy/README.md).
 
 ## Stack
 
@@ -56,6 +62,8 @@ apps/
   backend/       Django + DRF, autenticazione e API finance
   frontend/      React + TypeScript, build servita da Nginx
 packages/        spazio per contratti e codice condiviso
+scripts/         backup globale e test di ripristino
+deploy/          unità systemd, backup e configurazione NPM
 compose.yaml     PostgreSQL, backend e frontend
 .env.example     variabili di ambiente di esempio
 VERSION          versione corrente
@@ -109,6 +117,7 @@ Il primo setup è consentito solo da **localhost o Tailscale** (DC-052).
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r apps/backend/requirements.txt
+export DJANGO_DEBUG=1
 cd apps/backend
 ../../.venv/bin/python manage.py migrate
 ../../.venv/bin/python manage.py runserver
@@ -132,13 +141,16 @@ Vite serve `http://localhost:5173` e proxya `/api` su `http://localhost:8000`.
 ## Test e controlli
 
 ```bash
-cd apps/backend && ../../.venv/bin/python manage.py test
+cd apps/backend && DJANGO_DEBUG=1 ../../.venv/bin/python manage.py test
 cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.3.0`: **113 test backend**, lint e build frontend,
-configurazione Compose valida e flusso UI completo.
+Stato verificato per `v0.4.0`: **124 test backend**, **5 test dello script di
+backup**, lint e build frontend, configurazione Compose valida e flusso UI
+completo; la sezione Sistema e il backup globale sono nel workspace e non sono
+ancora inclusi in una release. Backup reale su Backblaze B2, test di ripristino
+automatico e ripristino completo su host pulito eseguiti con successo.
 
 ## Importazione dei movimenti
 
@@ -198,12 +210,41 @@ server; non sostituisce il backup globale del database PostgreSQL.
 
 ## Configurazione di produzione
 
-- Servire l'app tramite **HTTPS** con Nginx Proxy Manager.
+- Servire l'app tramite **HTTPS** con Nginx Proxy Manager: procedura e header
+  in [deploy/npm/README.md](deploy/npm/README.md).
 - Impostare `SECURE_COOKIES=1` quando HTTPS è attivo.
+- Impostare `SECURE_SSL_REDIRECT=1` se NPM non forza già HTTPS.
+- Impostare `DJANGO_SECRET_KEY` con un valore casuale lungo: senza questa
+  variabile il backend non parte quando `DJANGO_DEBUG=0`.
 - Impostare `DJANGO_ALLOWED_HOSTS` e `CSRF_TRUSTED_ORIGINS` con il dominio reale.
 - Non esporre PostgreSQL.
 - Conservare il volume PostgreSQL e includerlo nel backup.
 - Non mantenere `SETUP_ALLOWED_CIDRS` aperto alla LAN dopo il primo setup.
+
+Il frontend Nginx invia già `Content-Security-Policy`, `X-Content-Type-Options`,
+`X-Frame-Options`, `Referrer-Policy` e `Permissions-Policy`. HSTS va gestito da
+NPM per evitare header duplicati.
+
+### Backup prima di un aggiornamento
+
+Usa lo script incluso, che scrive in `backups/` (escluso da Git), imposta i
+permessi a `600` e genera un checksum SHA-256:
+
+```bash
+./scripts/backup.sh
+```
+
+Non lanciare `git add .` con dump o backup presenti nella directory del
+progetto: `*.sql`, `*.dump` e `backups/` sono esclusi, ma i file già tracciati
+restano nella storia del repository.
+
+### Backup globale automatico
+
+Il backup globale del database e della configurazione, cifrato con age e
+caricato su Backblaze B2 tramite rclone, è descritto in
+[deploy/README.md](deploy/README.md). Include dump PostgreSQL, `.env`,
+`compose.yaml`, manifesto con checksum e un test di ripristino mensile.
+Lo stato è visibile nella sezione **Sistema** del pannello admin.
 
 Per l'accesso iniziale è consigliato **Tailscale**; l'esposizione pubblica
 richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
@@ -213,6 +254,8 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 - Non inserire mai `.env`, dump del database, backup o dati finanziari reali nel
   repository.
 - I segreti vanno conservati fuori dal repository e ruotati se esposti.
+- Login e registrazione hanno rate limiting; dopo 5 tentativi falliti per lo
+  stesso IP e identificativo, l'accesso resta bloccato per 15 minuti.
 - Il database è la fonte di verità: nessun saldo viene mantenuto solo in memoria.
 - La documentazione interna del progetto non è inclusa nel repository pubblico.
 
@@ -220,7 +263,7 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 
 - Gruppi, investimenti, automazioni periodiche, MCP e notifiche non sono inclusi.
 - Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
-- Deploy su Proxmox/NPM, verifica email, SSO e 2FA non sono completati.
+- L'LXC su Proxmox è già stato creato e ospita l'app; configurazione NPM, verifica email, SSO e 2FA non sono completati.
 
 ## Licenza
 

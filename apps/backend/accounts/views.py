@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.contrib.auth import login, logout
 from django.contrib.auth.password_validation import validate_password
+from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -8,6 +10,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.net import get_client_ip, is_setup_address_allowed
@@ -22,6 +25,29 @@ from .serializers import (
     SetupSerializer,
     UserSerializer,
 )
+
+
+def _login_lockout_key(request, identifier: str) -> str:
+    client = get_client_ip(request)
+    return f"login-lockout:{client or 'unknown'}:{identifier.strip().lower()}"
+
+
+def _record_login_failure(key: str, attempts: int) -> int:
+    attempts += 1
+    cache.set(key, attempts, timeout=settings.LOGIN_LOCKOUT_SECONDS)
+    return attempts
+
+
+def _too_many_attempts_response() -> Response:
+    response = Response(
+        {
+            "detail": "Troppi tentativi di accesso. Riprova più tardi.",
+            "code": "too_many_attempts",
+        },
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+    response["Retry-After"] = str(settings.LOGIN_LOCKOUT_SECONDS)
+    return response
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -108,6 +134,8 @@ class SetupView(APIView):
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -115,22 +143,30 @@ class LoginView(APIView):
         identifier = serializer.validated_data["identifier"].strip()
         password = serializer.validated_data["password"]
 
+        lockout_key = _login_lockout_key(request, identifier)
+        attempts = cache.get(lockout_key, 0)
+        if attempts >= settings.LOGIN_MAX_ATTEMPTS:
+            return _too_many_attempts_response()
+
         user = (
             User.objects.filter(email__iexact=identifier).first()
             or User.objects.filter(username__iexact=identifier).first()
         )
         if user is None:
             User().set_password(password)  # mitigate timing attacks
+            _record_login_failure(lockout_key, attempts)
             return Response(
                 {"detail": "Credenziali non valide.", "code": "invalid_credentials"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not user.check_password(password):
+            _record_login_failure(lockout_key, attempts)
             return Response(
                 {"detail": "Credenziali non valide.", "code": "invalid_credentials"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if user.status != User.Status.ACTIVE:
+            _record_login_failure(lockout_key, attempts)
             messages = {
                 User.Status.PENDING: (
                     "Account in attesa di approvazione da parte dell'amministratore.",
@@ -144,6 +180,7 @@ class LoginView(APIView):
             )
             return Response({"detail": detail, "code": code}, status=status.HTTP_403_FORBIDDEN)
 
+        cache.delete(lockout_key)
         login(request, user, backend="accounts.backends.EmailOrUsernameBackend")
         return Response({"user": UserSerializer(user).data})
 
@@ -188,6 +225,8 @@ class MeView(APIView):
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "register"
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
