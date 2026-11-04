@@ -211,6 +211,126 @@ export interface Dashboard {
   recent_transactions: Transaction[];
 }
 
+export type InvestmentCategory =
+  | "stock"
+  | "etf"
+  | "bond"
+  | "fund"
+  | "crypto"
+  | "real_estate"
+  | "other";
+export type InvestmentOperationKind = "opening" | "buy" | "sell" | "dividend";
+
+export interface InvestmentPosition {
+  id: number;
+  name: string;
+  category: InvestmentCategory | "";
+  category_label: string;
+  identifier: string;
+  current_price: string | null;
+  price_updated_on: string | null;
+  archived: boolean;
+  quantity: string;
+  average_cost: string;
+  cost: string;
+  current_value: string | null;
+  unrealized_gain: string | null;
+  realized_gain: string;
+  dividends: string;
+  has_price: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvestmentSummary {
+  total_cost: string;
+  total_value: string;
+  total_unrealized: string;
+  positions_without_price: number;
+  realized_gain: string;
+  dividends: string;
+}
+
+export interface InvestmentPositionSummary {
+  quantity: string;
+  average_cost: string;
+  cost: string;
+  current_value: string | null;
+  unrealized_gain: string | null;
+  realized_gain: string;
+  dividends: string;
+  has_price: boolean;
+}
+
+export interface InvestmentOperation {
+  id: number;
+  position: number;
+  kind: InvestmentOperationKind;
+  kind_label: string;
+  date: string;
+  quantity: string | null;
+  unit_price: string | null;
+  gross_amount: string | null;
+  commission: string;
+  cash_amount: string;
+  description: string;
+  transaction: number | null;
+  account: number | null;
+  account_name: string | null;
+  cost_removed: string;
+  realized_gain: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvestmentPortfolio {
+  investment_account: Account | null;
+  summary: InvestmentSummary;
+  positions: InvestmentPosition[];
+}
+
+export interface InvestmentPositionDetail {
+  position: InvestmentPosition;
+  summary: InvestmentPositionSummary;
+  operations: InvestmentOperation[];
+}
+
+export interface InvestmentOpeningPayload {
+  date: string;
+  quantity: string;
+  unit_price?: string;
+  total_cost?: string;
+  total_amount?: string;
+  description?: string;
+}
+
+export interface InvestmentPositionPayload {
+  name: string;
+  category?: InvestmentCategory | "";
+  identifier?: string;
+  current_price?: string;
+  opening?: InvestmentOpeningPayload;
+}
+
+export interface InvestmentPositionUpdatePayload {
+  name?: string;
+  category?: InvestmentCategory | "";
+  identifier?: string;
+  current_price?: string | null;
+  archived?: boolean;
+}
+
+export interface InvestmentOperationPayload {
+  kind: InvestmentOperationKind;
+  date: string;
+  quantity?: string;
+  unit_price?: string;
+  total_amount?: string;
+  commission?: string;
+  amount?: string;
+  description?: string;
+}
+
 export interface TransactionPayload {
   kind: "income" | "expense" | "transfer";
   date: string;
@@ -580,6 +700,68 @@ export const api = {
 
   deleteSavings: (id: number) =>
     request<void>(`/api/finance/savings/${id}/`, { method: "DELETE" }),
+
+  investments: () =>
+    request<InvestmentPortfolio>("/api/finance/investments/"),
+
+  createInvestmentPosition: (data: InvestmentPositionPayload) =>
+    request<InvestmentPosition>("/api/finance/investments/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  investmentPosition: (id: number) =>
+    request<InvestmentPositionDetail>(`/api/finance/investments/${id}/`),
+
+  updateInvestmentPosition: (
+    id: number,
+    data: InvestmentPositionUpdatePayload,
+  ) =>
+    request<InvestmentPosition>(`/api/finance/investments/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteInvestmentPosition: (id: number) =>
+    request<void>(`/api/finance/investments/${id}/`, { method: "DELETE" }),
+
+  setInvestmentAccount: (account: number | null) =>
+    request<{ investment_account: Account | null }>(
+      "/api/finance/investments/account/",
+      {
+        method: "PUT",
+        body: JSON.stringify({ account }),
+      },
+    ),
+
+  createInvestmentOperation: (
+    positionId: number,
+    data: InvestmentOperationPayload,
+  ) =>
+    request<InvestmentOperation>(
+      `/api/finance/investments/${positionId}/operations/`,
+      { method: "POST", body: JSON.stringify(data) },
+    ),
+
+  updateInvestmentOperation: (
+    id: number,
+    data: Omit<InvestmentOperationPayload, "kind">,
+  ) =>
+    request<InvestmentOperation>(`/api/finance/investments/operations/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteInvestmentOperation: (id: number) =>
+    request<void>(`/api/finance/investments/operations/${id}/`, {
+      method: "DELETE",
+    }),
+
+  exportInvestments: () =>
+    download(
+      "/api/finance/investments/export/",
+      `spendy-investimenti-${new Date().toISOString().slice(0, 10)}.zip`,
+    ),
 
   automations: () =>
     request<{ automations: Automation[] }>("/api/finance/automations/"),

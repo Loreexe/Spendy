@@ -887,3 +887,72 @@ button.danger:hover {
 .pending-box .entity-list > li:last-child {
   border-bottom: none;
 }
+
+/* Investments */
+.notice.warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.investment-account {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.investment-account label {
+  flex: 1 1 260px;
+}
+
+.detail-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+
+.detail-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
+.detail-facts dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detail-facts dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.operation-preview {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--accent-soft);
+  border-radius: 10px;
+}
+
+.position-table td {
+  vertical-align: middle;
+}
+
+.position-table tr.selected td {
+  background: var(--accent-soft);
+}

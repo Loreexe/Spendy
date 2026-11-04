@@ -21,6 +21,7 @@ import { AccountsPage } from "./pages/AccountsPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ImportPage } from "./pages/ImportPage";
+import { InvestmentsPage } from "./pages/InvestmentsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MovementsPage } from "./pages/MovementsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -88,6 +89,14 @@ export function App() {
                 element={
                   <ProfileRoute>
                     <SavingsPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
+                path="/investments"
+                element={
+                  <ProfileRoute>
+                    <InvestmentsPage />
                   </ProfileRoute>
                 }
               />
