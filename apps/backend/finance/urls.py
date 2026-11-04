@@ -21,6 +21,11 @@ from .views import (
     AutomationRunAllView,
     AutomationRunView,
     DashboardView,
+    InvestmentAccountView,
+    InvestmentDetailView,
+    InvestmentListCreateView,
+    InvestmentOperationCreateView,
+    InvestmentOperationDetailView,
     NotificationListView,
     NotificationReadView,
     ProfileView,
@@ -54,6 +59,31 @@ urlpatterns = [
         "transactions/<int:pk>/",
         TransactionDetailView.as_view(),
         name="finance-transaction-detail",
+    ),
+    path(
+        "investments/",
+        InvestmentListCreateView.as_view(),
+        name="finance-investments",
+    ),
+    path(
+        "investments/account/",
+        InvestmentAccountView.as_view(),
+        name="finance-investment-account",
+    ),
+    path(
+        "investments/operations/<int:pk>/",
+        InvestmentOperationDetailView.as_view(),
+        name="finance-investment-operation-detail",
+    ),
+    path(
+        "investments/<int:pk>/",
+        InvestmentDetailView.as_view(),
+        name="finance-investment-detail",
+    ),
+    path(
+        "investments/<int:pk>/operations/",
+        InvestmentOperationCreateView.as_view(),
+        name="finance-investment-operations",
     ),
     path(
         "automations/",
