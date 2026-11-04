@@ -20,11 +20,11 @@ from rest_framework.exceptions import ValidationError
 
 from .models import (
     Account,
+    Automation,
     AutomationExecution,
     Line,
     Notification,
     Profile,
-    SavingsAutomation,
     Transaction,
 )
 from .services import assert_accounts_non_negative
@@ -37,24 +37,32 @@ class MissingAutomationData(Exception):
 
 
 def next_occurrence(day: date, frequency: str) -> date:
-    if frequency == SavingsAutomation.Frequency.DAILY:
+    if frequency == Automation.Frequency.DAILY:
         return day + timedelta(days=1)
-    if frequency == SavingsAutomation.Frequency.WEEKLY:
+    if frequency == Automation.Frequency.WEEKLY:
         return day + timedelta(days=7)
-    months = 12 if frequency == SavingsAutomation.Frequency.YEARLY else 1
+    months = 12 if frequency == Automation.Frequency.YEARLY else 1
     year = day.year + (day.month - 1 + months) // 12
     month = (day.month - 1 + months) % 12 + 1
     last_day = monthrange(year, month)[1]
     return date(year, month, min(day.day, last_day))
 
 
-def automation_name(automation: SavingsAutomation) -> str:
+def automation_label(automation: Automation) -> str:
+    if automation.kind == Automation.Kind.EXPENSE:
+        return automation.description or "Spesa ricorrente"
     savings = automation.savings.name if automation.savings_id else "salvadanaio"
     return f"Versamento automatico su {savings}"
 
 
+def execution_label(execution: AutomationExecution) -> str:
+    if execution.kind == Automation.Kind.EXPENSE:
+        return execution.description or "Spesa ricorrente"
+    return execution.savings_name or "Salvadanaio"
+
+
 def materialize_occurrences(
-    automation: SavingsAutomation, today: date | None = None
+    automation: Automation, today: date | None = None
 ) -> list[AutomationExecution]:
     """Create a pending execution for every scheduled date up to ``today``."""
     today = today or timezone.localdate()
@@ -64,7 +72,7 @@ def materialize_occurrences(
         automation.source_account.name if automation.source_account_id else ""
     )
     savings_name = automation.savings.name if automation.savings_id else ""
-    label = automation_name(automation)
+    label = automation_label(automation)
 
     while scheduled <= today:
         execution, was_created = AutomationExecution.objects.get_or_create(
@@ -73,6 +81,8 @@ def materialize_occurrences(
             defaults={
                 "automation": automation,
                 "automation_name": label,
+                "kind": automation.kind,
+                "description": automation.description,
                 "profile": automation.profile,
                 "amount": automation.amount,
                 "source_account": automation.source_account,
@@ -97,7 +107,7 @@ def notify(
     kind: str,
     message: str,
     *,
-    automation: SavingsAutomation | None = None,
+    automation: Automation | None = None,
     execution: AutomationExecution | None = None,
 ) -> Notification:
     return Notification.objects.create(
@@ -110,7 +120,7 @@ def notify(
 
 
 def notify_pending_choice(
-    automation: SavingsAutomation, pending: list[AutomationExecution]
+    automation: Automation, pending: list[AutomationExecution]
 ) -> None:
     already = Notification.objects.filter(
         profile=automation.profile,
@@ -125,7 +135,7 @@ def notify_pending_choice(
         automation.profile,
         Notification.Kind.AUTOMATION_PENDING,
         (
-            f"{len(pending)} occorrenze perse per «{automation.savings.name}» "
+            f"{len(pending)} occorrenze perse per «{automation_label(automation)}» "
             f"({dates}): scegli quali recuperare."
         ),
         automation=automation,
@@ -179,13 +189,13 @@ def _fail_technically(
         execution.next_retry_at = None
         automation = execution.automation
         if automation is not None:
-            automation.status = SavingsAutomation.Status.SUSPENDED
+            automation.status = Automation.Status.SUSPENDED
             automation.save(update_fields=("status", "updated_at"))
             notify(
                 execution.profile,
                 Notification.Kind.AUTOMATION_SUSPENDED,
                 (
-                    f"Automazione su «{execution.savings_name}» sospesa dopo "
+                    f"Automazione su «{execution_label(execution)}» sospesa dopo "
                     f"{execution.attempts} tentativi: {message}"
                 ),
                 automation=automation,
@@ -210,19 +220,38 @@ def _fail_technically(
     return execution
 
 
-def _apply_transfer(
-    automation: SavingsAutomation, execution: AutomationExecution
+def _apply_effect(
+    automation: Automation, execution: AutomationExecution
 ) -> Transaction:
     source: Account | None = execution.source_account
-    savings = execution.savings
-    if source is None or savings is None:
-        raise MissingAutomationData(
-            "Il conto di partenza o il salvadanaio non esistono più."
-        )
+    if source is None:
+        raise MissingAutomationData("Il conto di partenza non esiste più.")
     if source.archived:
         raise MissingAutomationData("Il conto di partenza è archiviato.")
 
     amount = execution.amount
+
+    if execution.kind == Automation.Kind.EXPENSE:
+        assert_accounts_non_negative([(source, -amount, execution.scheduled_date)])
+        operation = Transaction.objects.create(
+            profile=execution.profile,
+            automation=automation,
+            kind=Transaction.Kind.EXPENSE,
+            date=execution.scheduled_date,
+            description=execution.description or "Spesa ricorrente",
+            amount=amount,
+        )
+        Line.objects.create(
+            transaction=operation,
+            account=source,
+            amount=-amount,
+            role=Line.Role.PRINCIPAL,
+        )
+        return operation
+
+    savings = execution.savings
+    if savings is None:
+        raise MissingAutomationData("Il salvadanaio di destinazione non esiste più.")
     assert_accounts_non_negative([(source, -amount, execution.scheduled_date)])
 
     operation = Transaction.objects.create(
@@ -272,7 +301,7 @@ def execute_occurrence(
     try:
         with transaction.atomic():
             automation = (
-                SavingsAutomation.objects.select_for_update()
+                Automation.objects.select_for_update()
                 .filter(pk=execution.automation_ref)
                 .first()
             )
@@ -290,7 +319,7 @@ def execute_occurrence(
                     AutomationExecution.FailureCode.RULE_DELETED,
                     "La regola dell'automazione non esiste più.",
                 )
-            if automation.status != SavingsAutomation.Status.ACTIVE:
+            if automation.status != Automation.Status.ACTIVE:
                 return execution
             if (
                 execution.status == AutomationExecution.Status.FAILED
@@ -301,7 +330,7 @@ def execute_occurrence(
 
             execution.status = AutomationExecution.Status.RUNNING
             execution.save(update_fields=("status", "updated_at"))
-            operation = _apply_transfer(automation, execution)
+            operation = _apply_effect(automation, execution)
             execution.attempts += 1
             execution.status = AutomationExecution.Status.SUCCEEDED
             execution.transaction = operation
@@ -354,7 +383,7 @@ def execute_occurrence(
 
 
 def process_automation(
-    automation: SavingsAutomation,
+    automation: Automation,
     *,
     today: date | None = None,
     now: datetime | None = None,
@@ -367,11 +396,11 @@ def process_automation(
     automation_id = automation.pk
     with transaction.atomic():
         automation = (
-            SavingsAutomation.objects.select_for_update()
+            Automation.objects.select_for_update()
             .filter(pk=automation_id)
             .first()
         )
-        if automation is None or automation.status != SavingsAutomation.Status.ACTIVE:
+        if automation is None or automation.status != Automation.Status.ACTIVE:
             return result
         created = materialize_occurrences(automation, today)
     result["created"] = len(created)
@@ -384,14 +413,14 @@ def process_automation(
     )
     for execution in retries:
         automation.refresh_from_db()
-        if automation.status != SavingsAutomation.Status.ACTIVE:
+        if automation.status != Automation.Status.ACTIVE:
             break
         executed = execute_occurrence(execution, now=now)
         if executed.status == AutomationExecution.Status.SUCCEEDED:
             result["retried"] += 1
 
     automation.refresh_from_db()
-    if automation.status != SavingsAutomation.Status.ACTIVE:
+    if automation.status != Automation.Status.ACTIVE:
         return result
 
     pending = list(
@@ -418,8 +447,8 @@ def run_for_profile(
     now: datetime | None = None,
 ) -> dict[str, int]:
     totals = {"rules": 0, "created": 0, "executed": 0, "pending_choice": 0, "retried": 0}
-    automations = SavingsAutomation.objects.filter(
-        profile=profile, status=SavingsAutomation.Status.ACTIVE
+    automations = Automation.objects.filter(
+        profile=profile, status=Automation.Status.ACTIVE
     ).select_related("savings", "source_account")
     for automation in automations:
         totals["rules"] += 1
@@ -437,8 +466,8 @@ def run_all(
     *, today: date | None = None, now: datetime | None = None
 ) -> dict[str, int]:
     totals = {"rules": 0, "created": 0, "executed": 0, "pending_choice": 0, "retried": 0}
-    automations = SavingsAutomation.objects.filter(
-        status=SavingsAutomation.Status.ACTIVE
+    automations = Automation.objects.filter(
+        status=Automation.Status.ACTIVE
     ).select_related("savings", "source_account")
     for automation in automations:
         totals["rules"] += 1
@@ -453,7 +482,7 @@ def run_all(
 
 
 def resolve_pending(
-    automation: SavingsAutomation,
+    automation: Automation,
     recover_ids: set[int],
     *,
     now: datetime | None = None,
@@ -501,7 +530,7 @@ def resolve_pending(
 
 
 def cancel_open_executions(
-    automation: SavingsAutomation, code: str
+    automation: Automation, code: str
 ) -> int:
     return automation.executions.filter(
         status__in=(

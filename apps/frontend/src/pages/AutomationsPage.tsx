@@ -4,10 +4,11 @@ import {
   type Account,
   type AutomationExecution,
   type AutomationExecutionStatus,
+  type Automation,
   type AutomationFrequency,
+  type AutomationKind,
   type FinanceNotification,
   type SavingsAccount,
-  type SavingsAutomation,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
 import { money, todayISO } from "../format";
@@ -30,15 +31,17 @@ function AutomationEditForm({
   busy,
   onSave,
 }: {
-  automation: SavingsAutomation;
+  automation: Automation;
   busy: boolean;
   onSave: (data: {
     amount: string;
+    description: string;
     frequency: AutomationFrequency;
     next_run_on: string;
   }) => void;
 }) {
   const [amount, setAmount] = useState(automation.amount);
+  const [description, setDescription] = useState(automation.description);
   const [frequency, setFrequency] = useState(automation.frequency);
   const [nextRunOn, setNextRunOn] = useState(automation.next_run_on);
 
@@ -47,9 +50,22 @@ function AutomationEditForm({
       className="inline-form"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ amount, frequency, next_run_on: nextRunOn });
+        onSave({
+          amount,
+          description,
+          frequency,
+          next_run_on: nextRunOn,
+        });
       }}
     >
+      {automation.kind === "expense" && (
+        <input
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          placeholder="Descrizione spesa"
+          required
+        />
+      )}
       <input
         type="number"
         step="0.01"
@@ -83,7 +99,7 @@ function AutomationEditForm({
 }
 
 export function AutomationsPage() {
-  const [automations, setAutomations] = useState<SavingsAutomation[]>([]);
+  const [automations, setAutomations] = useState<Automation[]>([]);
   const [executions, setExecutions] = useState<AutomationExecution[]>([]);
   const [notifications, setNotifications] = useState<FinanceNotification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -94,7 +110,9 @@ export function AutomationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const [kind, setKind] = useState<AutomationKind>("expense");
   const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
   const [frequency, setFrequency] = useState<AutomationFrequency>("monthly");
   const [nextRunOn, setNextRunOn] = useState(todayISO());
   const [sourceAccount, setSourceAccount] = useState("");
@@ -162,26 +180,37 @@ export function AutomationsPage() {
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
-    if (!sourceAccount || !destination) {
-      setError("Servono un conto di partenza e un salvadanaio di destinazione.");
+    if (!sourceAccount) {
+      setError("Serve un conto di partenza.");
+      return;
+    }
+    if (kind === "transfer" && !destination) {
+      setError("Serve un salvadanaio di destinazione.");
+      return;
+    }
+    if (kind === "expense" && !description.trim()) {
+      setError("Indica la descrizione della spesa.");
       return;
     }
     await runAction(
       async () => {
         await api.createAutomation({
-          savings: Number(destination),
+          kind,
           source_account: Number(sourceAccount),
           amount,
+          description: kind === "expense" ? description : "",
           frequency,
           next_run_on: nextRunOn,
+          ...(kind === "transfer" ? { savings: Number(destination) } : {}),
         });
         setAmount("");
+        setDescription("");
       },
       "Automazione creata.",
     );
   }
 
-  async function toggleStatus(automation: SavingsAutomation) {
+  async function toggleStatus(automation: Automation) {
     const next = automation.status === "active" ? "paused" : "active";
     await runAction(
       async () => {
@@ -191,7 +220,7 @@ export function AutomationsPage() {
     );
   }
 
-  async function runOne(automation: SavingsAutomation) {
+  async function runOne(automation: Automation) {
     await runAction(async () => {
       const result = await api.runAutomation(automation.id);
       return (
@@ -202,7 +231,7 @@ export function AutomationsPage() {
   }
 
   async function resolve(
-    automation: SavingsAutomation,
+    automation: Automation,
     recover: number[],
   ) {
     await runAction(async () => {
@@ -239,8 +268,8 @@ export function AutomationsPage() {
           <p className="eyebrow">Accantonamenti ricorrenti</p>
           <h1>Automazioni</h1>
           <p className="muted">
-            Trasferimenti periodici dal conto al salvadanaio, con recupero delle
-            occorrenze perse e storico delle esecuzioni.
+            Spese ricorrenti e versamenti periodici verso i salvadanai, con
+            recupero delle occorrenze perse e storico delle esecuzioni.
           </p>
         </div>
         <button
@@ -267,13 +296,51 @@ export function AutomationsPage() {
       <div className="two-columns">
         <section className="card">
           <h2>Nuova automazione</h2>
-          {activeAccounts.length === 0 || !hasDestinations ? (
+          {activeAccounts.length === 0 ? (
             <p className="muted">
-              Serve almeno un conto attivo e un salvadanaio: creali prima di
-              impostare un'automazione.
+              Serve almeno un conto attivo: crealo prima di impostare
+              un'automazione.
             </p>
           ) : (
             <form onSubmit={handleCreate} className="stack">
+              <label>
+                Tipo
+                <select
+                  value={kind}
+                  onChange={(event) =>
+                    setKind(event.target.value as AutomationKind)
+                  }
+                >
+                  <option value="expense">Spesa ricorrente</option>
+                  <option value="transfer">Versamento su salvadanaio</option>
+                </select>
+              </label>
+              {kind === "expense" ? (
+                <label>
+                  Descrizione
+                  <input
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="Netflix, affitto, palestra…"
+                    required
+                  />
+                </label>
+              ) : (
+                <label>
+                  Salvadanaio di destinazione
+                  <select
+                    value={destination}
+                    onChange={(event) => setDestination(event.target.value)}
+                    required
+                  >
+                    {savings.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {money(item.balance)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Importo
                 <input
@@ -310,7 +377,7 @@ export function AutomationsPage() {
                 />
               </label>
               <label>
-                Conto di partenza
+                {kind === "expense" ? "Conto di addebito" : "Conto di partenza"}
                 <select
                   value={sourceAccount}
                   onChange={(event) => setSourceAccount(event.target.value)}
@@ -323,21 +390,15 @@ export function AutomationsPage() {
                   ))}
                 </select>
               </label>
-              <label>
-                Salvadanaio di destinazione
-                <select
-                  value={destination}
-                  onChange={(event) => setDestination(event.target.value)}
-                  required
-                >
-                  {savings.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} · {money(item.balance)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="submit" disabled={busy}>
+              {kind === "transfer" && !hasDestinations && (
+                <p className="error">
+                  Crea prima un salvadanaio per il versamento.
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={busy || (kind === "transfer" && !hasDestinations)}
+              >
                 {busy ? "Creazione…" : "Crea automazione"}
               </button>
             </form>
@@ -355,6 +416,10 @@ export function AutomationsPage() {
                   (execution) => execution.automation_ref === automation.id,
                 );
                 const chosen = selected[automation.id] ?? [];
+                const ruleLabel =
+                  automation.kind === "expense"
+                    ? automation.description
+                    : automation.savings_name;
                 return (
                   <li className="automation-card" key={automation.id}>
                     <div className="entity-card-head">
@@ -364,21 +429,26 @@ export function AutomationsPage() {
                         </strong>
                         <span className="muted small">
                           {" "}
-                          · {automation.source_account_name ?? "conto mancante"} →{" "}
-                          {automation.savings_name}
+                          · {automation.source_account_name ?? "conto mancante"}
+                          {automation.kind === "expense"
+                            ? ` · ${automation.description}`
+                            : ` → ${automation.savings_name}`}
                         </span>
                       </div>
-                      <span
-                        className={`badge ${
-                          automation.status === "active"
-                            ? "ok"
-                            : automation.status === "suspended"
-                              ? "rejected"
-                              : "pending"
-                        }`}
-                      >
-                        {automation.status_label}
-                      </span>
+                      <div className="entity-side">
+                        <span className="badge">{automation.kind_label}</span>
+                        <span
+                          className={`badge ${
+                            automation.status === "active"
+                              ? "ok"
+                              : automation.status === "suspended"
+                                ? "rejected"
+                                : "pending"
+                          }`}
+                        >
+                          {automation.status_label}
+                        </span>
+                      </div>
                     </div>
                     <p className="muted small">
                       Prossima esecuzione: {prettyDate(automation.next_run_on)}
@@ -408,7 +478,7 @@ export function AutomationsPage() {
                         onClick={() => {
                           if (
                             !window.confirm(
-                              `Eliminare l'automazione su "${automation.savings_name}"? ` +
+                              `Eliminare l'automazione "${ruleLabel ?? ""}"? ` +
                                 "Lo storico delle esecuzioni resta disponibile.",
                             )
                           ) {
@@ -426,7 +496,8 @@ export function AutomationsPage() {
 
                     <details>
                       <summary className="muted small">
-                        Modifica importo, periodicità e prossima esecuzione
+                        Modifica importo, descrizione, periodicità e prossima
+                        esecuzione
                       </summary>
                       <AutomationEditForm
                         automation={automation}

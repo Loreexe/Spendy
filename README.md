@@ -10,9 +10,9 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.5.0`**, che include le automazioni periodiche dei
-> salvadanai. Il progetto è in sviluppo attivo: gruppi, investimenti, MCP e
-> notifiche push/email non sono ancora implementati.
+> **Stato:** release **`v0.5.1`**, che include le automazioni per salvadanai e
+> spese ricorrenti. Il progetto è in sviluppo attivo: gruppi, investimenti, MCP
+> e notifiche push/email non sono ancora implementati.
 
 ## Funzionalità
 
@@ -23,9 +23,10 @@ senza integrazioni bancarie.
 - **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura
   parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
-- **Automazioni periodiche dei salvadanai**: trasferimenti ricorrenti dal conto
-  al salvadanaio, con recupero delle occorrenze perse, gestione dei fallimenti,
-  storico delle esecuzioni e notifiche in-app.
+- **Automazioni periodiche**: trasferimenti ricorrenti verso i salvadanai e
+  spese ricorrenti come abbonamenti, affitto o palestra, con recupero delle
+  occorrenze perse, gestione dei fallimenti, storico delle esecuzioni e
+  notifiche in-app.
 - **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima
   correggibile, controllo dei duplicati e riepilogo prima della conferma.
 - **Backup personale del profilo**: archivio ZIP con conti, salvadanai,
@@ -149,22 +150,27 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **149 test backend**, **8 test** del controllo versioni,
+Stato verificato: **166 test backend**, **8 test** del controllo versioni,
 **5 test** dello script di backup, lint e build frontend, configurazione Compose
 valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
 aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
-La release `v0.5.0` include le automazioni periodiche, verificate anche con
-PostgreSQL e con il worker Compose; la sezione Sistema, il backup globale e
-l'hardening pre-esposizione restano inclusi dalle release precedenti. Backup
-reale su Backblaze B2, test di ripristino automatico e ripristino completo su
-host pulito eseguiti con successo.
+La release `v0.5.1` include le automazioni per salvadanai e spese ricorrenti,
+verificate anche con PostgreSQL e con il worker Compose; la sezione Sistema, il
+backup globale e l'hardening pre-esposizione restano inclusi dalle release
+precedenti. Backup reale su Backblaze B2, test di ripristino automatico e
+ripristino completo su host pulito eseguiti con successo.
 
 ## Automazioni periodiche
 
-Dalla pagina **Automazioni** puoi creare una regola che trasferisce un importo
-fisso da un conto a un salvadanaio con periodicità giornaliera, settimanale,
-mensile o annuale. Il servizio `automation-worker` in `compose.yaml` controlla
-le scadenze ogni minuto; puoi anche forzare il controllo dalla pagina o con:
+Dalla pagina **Automazioni** puoi creare due tipi di regola:
+
+- un **versamento periodico** da un conto a un salvadanaio;
+- una **spesa ricorrente** da un conto, ad esempio Netflix, l'affitto o la
+  palestra.
+
+L'importo è fisso e la periodicità può essere giornaliera, settimanale, mensile
+o annuale. Il servizio `automation-worker` in `compose.yaml` controlla le
+scadenze ogni minuto; puoi anche forzare il controllo dalla pagina o con:
 
 ```bash
 docker compose exec backend python manage.py run_automations
@@ -184,8 +190,11 @@ Comportamento:
   `SPENDY_AUTOMATION_RETRY_DELAYS`); esauriti i tentativi la regola viene
   sospesa e l'utente avvisato;
 - modificare o annullare un movimento generato aggiorna lo stato
-  dell'occorrenza e non la riesegue; eliminare un salvadanaio rimuove le regole
-  collegate ma conserva lo storico delle esecuzioni.
+  dell'occorrenza e non la riesegue;
+- eliminare un salvadanaio rimuove i versamenti collegati ma non le spese
+  ricorrenti; in entrambi i casi lo storico delle esecuzioni resta disponibile;
+- una spesa ricorrente genera un normale movimento di spesa, quindi entra nella
+  dashboard, nel registro e nelle esportazioni.
 
 Le notifiche sono per ora **in-app**, nella pagina Automazioni. Canale e
 preferenze delle notifiche, parametri definitivi del retry e sorte dello storico
@@ -273,8 +282,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.5.0
-./scripts/update.sh v0.5.0
+./scripts/update.sh --dry-run v0.5.1
+./scripts/update.sh v0.5.1
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).
@@ -313,6 +322,9 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 ## Limiti attuali
 
 - Gruppi, investimenti, MCP e notifiche push/email non sono inclusi.
+- Le spese ricorrenti usano solo un conto, non un salvadanaio come metodo di
+  pagamento; gli importi variabili e le categorie automatiche non sono ancora
+  disponibili.
 - Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
 - L'LXC su Proxmox è già stato creato e ospita l'app; configurazione NPM, verifica email, SSO e 2FA non sono completati.
 

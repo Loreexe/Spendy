@@ -64,6 +64,7 @@ export interface SystemInfo {
 
 export type AccountType = "cash" | "checking" | "card" | "other";
 export type TransactionKind = "opening" | "income" | "expense" | "transfer";
+export type AutomationKind = "transfer" | "expense";
 export type AutomationFrequency = "daily" | "weekly" | "monthly" | "yearly";
 export type AutomationStatus = "active" | "paused" | "suspended";
 export type AutomationExecutionStatus =
@@ -97,13 +98,16 @@ export interface SavingsAccount {
   updated_at: string;
 }
 
-export interface SavingsAutomation {
+export interface Automation {
   id: number;
-  savings: number;
-  savings_name: string;
+  kind: AutomationKind;
+  kind_label: string;
+  savings: number | null;
+  savings_name: string | null;
   source_account: number | null;
   source_account_name: string | null;
   amount: string;
+  description: string;
   frequency: AutomationFrequency;
   frequency_label: string;
   next_run_on: string;
@@ -119,6 +123,8 @@ export interface AutomationExecution {
   automation: number | null;
   automation_ref: number;
   automation_name: string;
+  kind: AutomationKind;
+  description: string;
   scheduled_date: string;
   amount: string;
   source_account: number | null;
@@ -567,16 +573,18 @@ export const api = {
     request<void>(`/api/finance/savings/${id}/`, { method: "DELETE" }),
 
   automations: () =>
-    request<{ automations: SavingsAutomation[] }>("/api/finance/automations/"),
+    request<{ automations: Automation[] }>("/api/finance/automations/"),
 
   createAutomation: (data: {
-    savings: number;
+    kind: AutomationKind;
+    savings?: number | null;
     source_account: number;
     amount: string;
+    description?: string;
     frequency: AutomationFrequency;
     next_run_on: string;
   }) =>
-    request<SavingsAutomation>("/api/finance/automations/", {
+    request<Automation>("/api/finance/automations/", {
       method: "POST",
       body: JSON.stringify(data),
     }),
@@ -584,15 +592,16 @@ export const api = {
   updateAutomation: (
     id: number,
     data: Partial<{
-      savings: number;
+      savings: number | null;
       source_account: number;
       amount: string;
+      description: string;
       frequency: AutomationFrequency;
       next_run_on: string;
       status: "active" | "paused";
     }>,
   ) =>
-    request<SavingsAutomation>(`/api/finance/automations/${id}/`, {
+    request<Automation>(`/api/finance/automations/${id}/`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
@@ -601,7 +610,7 @@ export const api = {
     request<void>(`/api/finance/automations/${id}/`, { method: "DELETE" }),
 
   runAutomation: (id: number) =>
-    request<{ outcome: AutomationOutcome; automation: SavingsAutomation }>(
+    request<{ outcome: AutomationOutcome; automation: Automation }>(
       `/api/finance/automations/${id}/run/`,
       { method: "POST" },
     ),

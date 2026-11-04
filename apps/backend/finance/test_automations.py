@@ -14,7 +14,7 @@ from .models import (
     AutomationExecution,
     Notification,
     Profile,
-    SavingsAutomation,
+    Automation,
     Transaction,
 )
 
@@ -251,8 +251,8 @@ class AutomationExecutionTests(AutomationTestBase):
             AutomationExecution.FailureCode.INSUFFICIENT_BALANCE,
         )
         self.assertEqual(
-            SavingsAutomation.objects.get(pk=automation["id"]).status,
-            SavingsAutomation.Status.ACTIVE,
+            Automation.objects.get(pk=automation["id"]).status,
+            Automation.Status.ACTIVE,
         )
         self.assertTrue(
             Notification.objects.filter(
@@ -279,14 +279,14 @@ class AutomationExecutionTests(AutomationTestBase):
             execution.failure_code, AutomationExecution.FailureCode.MISSING_DATA
         )
         self.assertEqual(
-            SavingsAutomation.objects.get(pk=automation["id"]).status,
-            SavingsAutomation.Status.ACTIVE,
+            Automation.objects.get(pk=automation["id"]).status,
+            Automation.Status.ACTIVE,
         )
 
     @override_settings(AUTOMATION_MAX_ATTEMPTS=3, AUTOMATION_RETRY_DELAYS=[0, 0, 0])
     def test_technical_error_retries_with_the_original_date(self):
         automation = self.create_automation().data
-        original = automations._apply_transfer
+        original = automations._apply_effect
         calls = {"count": 0}
 
         def flaky(*args, **kwargs):
@@ -295,7 +295,7 @@ class AutomationExecutionTests(AutomationTestBase):
                 raise RuntimeError("errore temporaneo")
             return original(*args, **kwargs)
 
-        with mock.patch("finance.automations._apply_transfer", side_effect=flaky):
+        with mock.patch("finance.automations._apply_effect", side_effect=flaky):
             first = self.run_automation(automation["id"])
             self.assertEqual(first.status_code, 200)
             execution = AutomationExecution.objects.get(
@@ -324,7 +324,7 @@ class AutomationExecutionTests(AutomationTestBase):
     def test_technical_error_suspends_the_rule_after_max_attempts(self):
         automation = self.create_automation().data
         with mock.patch(
-            "finance.automations._apply_transfer",
+            "finance.automations._apply_effect",
             side_effect=RuntimeError("sempre rotto"),
         ):
             self.run_automation(automation["id"])
@@ -334,8 +334,8 @@ class AutomationExecutionTests(AutomationTestBase):
         self.assertEqual(execution.status, AutomationExecution.Status.FAILED)
         self.assertEqual(execution.attempts, 2)
         self.assertIsNone(execution.next_retry_at)
-        rule = SavingsAutomation.objects.get(pk=automation["id"])
-        self.assertEqual(rule.status, SavingsAutomation.Status.SUSPENDED)
+        rule = Automation.objects.get(pk=automation["id"])
+        self.assertEqual(rule.status, Automation.Status.SUSPENDED)
         self.assertTrue(
             Notification.objects.filter(
                 profile=self.profile,
@@ -397,8 +397,8 @@ class AutomationEffectsTests(AutomationTestBase):
         self.assertEqual(execution.status, AutomationExecution.Status.SUCCEEDED)
         self.assertTrue(execution.corrected)
         self.assertEqual(
-            SavingsAutomation.objects.get(pk=automation["id"]).status,
-            SavingsAutomation.Status.ACTIVE,
+            Automation.objects.get(pk=automation["id"]).status,
+            Automation.Status.ACTIVE,
         )
 
     def test_deleting_the_generated_movement_cancels_the_occurrence(self):
@@ -425,7 +425,7 @@ class AutomationEffectsTests(AutomationTestBase):
         )
         self.assertEqual(response.status_code, 204)
         self.assertFalse(
-            SavingsAutomation.objects.filter(pk=automation["id"]).exists()
+            Automation.objects.filter(pk=automation["id"]).exists()
         )
         execution = AutomationExecution.objects.get(automation_ref=automation["id"])
         self.assertIsNone(execution.automation_id)
@@ -445,7 +445,7 @@ class AutomationEffectsTests(AutomationTestBase):
         )
         self.assertEqual(response.status_code, 204)
         self.assertFalse(
-            SavingsAutomation.objects.filter(pk=automation["id"]).exists()
+            Automation.objects.filter(pk=automation["id"]).exists()
         )
         execution = AutomationExecution.objects.get(automation_ref=automation["id"])
         self.assertIsNone(execution.automation_id)

@@ -79,13 +79,17 @@ class SavingsAccount(models.Model):
         return self.lines.aggregate(total=Sum("amount"))["total"] or ZERO
 
 
-class SavingsAutomation(models.Model):
-    """Periodic transfer from an account into a savings container (DC-014).
+class Automation(models.Model):
+    """Recurring rule: a savings transfer or an expense (DC-014, DC-080).
 
-    Only temporal, periodic rules are implemented in this version. The model is
-    deliberately small so that conditional triggers can be added later without
-    changing how occurrences and their snapshots are stored.
+    Only temporal, periodic rules are implemented. The model stays generic so
+    that conditional triggers can be added later without changing how
+    occurrences and their snapshots are stored.
     """
+
+    class Kind(models.TextChoices):
+        TRANSFER = "transfer", "Versamento su salvadanaio"
+        EXPENSE = "expense", "Spesa ricorrente"
 
     class Frequency(models.TextChoices):
         DAILY = "daily", "Ogni giorno"
@@ -99,19 +103,27 @@ class SavingsAutomation(models.Model):
         SUSPENDED = "suspended", "Sospesa"
 
     profile = models.ForeignKey(
-        Profile, on_delete=models.CASCADE, related_name="savings_automations"
+        Profile, on_delete=models.CASCADE, related_name="automations"
+    )
+    kind = models.CharField(
+        max_length=16, choices=Kind.choices, default=Kind.TRANSFER
     )
     savings = models.ForeignKey(
-        SavingsAccount, on_delete=models.CASCADE, related_name="automations"
+        SavingsAccount,
+        on_delete=models.CASCADE,
+        related_name="automations",
+        null=True,
+        blank=True,
     )
     source_account = models.ForeignKey(
         Account,
         on_delete=models.SET_NULL,
-        related_name="savings_automations",
+        related_name="automations",
         null=True,
         blank=True,
     )
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
     frequency = models.CharField(
         max_length=16, choices=Frequency.choices, default=Frequency.MONTHLY
     )
@@ -129,9 +141,18 @@ class SavingsAutomation(models.Model):
                 condition=Q(amount__gt=0),
                 name="finance_automation_amount_positive",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(kind="transfer", savings__isnull=False)
+                    | Q(kind="expense", savings__isnull=True)
+                ),
+                name="finance_automation_kind_target",
+            ),
         ]
 
     def __str__(self) -> str:
+        if self.kind == self.Kind.EXPENSE:
+            return f"{self.amount} · {self.description or 'Spesa ricorrente'}"
         return f"{self.amount} → {self.savings} ({self.get_frequency_display()})"
 
     @property
@@ -150,7 +171,7 @@ class Transaction(models.Model):
         Profile, on_delete=models.CASCADE, related_name="transactions"
     )
     automation = models.ForeignKey(
-        SavingsAutomation,
+        Automation,
         on_delete=models.SET_NULL,
         related_name="transactions",
         null=True,
@@ -250,7 +271,7 @@ class AutomationExecution(models.Model):
         CANCELLED = "cancelled", "Annullata"
 
     automation = models.ForeignKey(
-        SavingsAutomation,
+        Automation,
         on_delete=models.SET_NULL,
         related_name="executions",
         null=True,
@@ -258,6 +279,12 @@ class AutomationExecution(models.Model):
     )
     automation_ref = models.PositiveBigIntegerField(db_index=True)
     automation_name = models.CharField(max_length=255)
+    kind = models.CharField(
+        max_length=16,
+        choices=Automation.Kind.choices,
+        default=Automation.Kind.TRANSFER,
+    )
+    description = models.CharField(max_length=255, blank=True)
     profile = models.ForeignKey(
         Profile, on_delete=models.CASCADE, related_name="automation_executions"
     )
@@ -324,7 +351,7 @@ class Notification(models.Model):
         Profile, on_delete=models.CASCADE, related_name="notifications"
     )
     automation = models.ForeignKey(
-        SavingsAutomation,
+        Automation,
         on_delete=models.SET_NULL,
         related_name="notifications",
         null=True,

@@ -23,7 +23,7 @@ from .models import (
     Notification,
     Profile,
     SavingsAccount,
-    SavingsAutomation,
+    Automation,
     Transaction,
 )
 from .services import assert_accounts_non_negative
@@ -32,13 +32,13 @@ from .serializers import (
     AccountSerializer,
     AccountUpdateSerializer,
     AutomationExecutionSerializer,
+    AutomationSerializer,
+    AutomationWriteSerializer,
     NotificationSerializer,
     ProfileSerializer,
     SavingsAccountCreateSerializer,
     SavingsAccountSerializer,
     SavingsAccountUpdateSerializer,
-    SavingsAutomationSerializer,
-    SavingsAutomationWriteSerializer,
     TransactionSerializer,
     TransactionWriteSerializer,
 )
@@ -181,7 +181,7 @@ class AccountDetailView(FinanceView):
                 {"detail": "Il conto è usato come appoggio di un salvadanaio."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if account.savings_automations.exists():
+        if account.automations.exists():
             return Response(
                 {"detail": "Il conto è usato da un'automazione periodica."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -403,12 +403,12 @@ class TransactionDetailView(FinanceView):
 class AutomationListCreateView(FinanceView):
     def get(self, request):
         profile = self.get_profile(request)
-        automations = SavingsAutomation.objects.filter(
+        automations = Automation.objects.filter(
             profile=profile
         ).select_related("savings", "source_account")
         return Response(
             {
-                "automations": SavingsAutomationSerializer(
+                "automations": AutomationSerializer(
                     automations, many=True
                 ).data
             }
@@ -416,38 +416,38 @@ class AutomationListCreateView(FinanceView):
 
     def post(self, request):
         profile = self.get_profile(request)
-        serializer = SavingsAutomationWriteSerializer(
+        serializer = AutomationWriteSerializer(
             data=request.data, context={"profile": profile}
         )
         serializer.is_valid(raise_exception=True)
         automation = serializer.save()
-        automation = SavingsAutomation.objects.select_related(
+        automation = Automation.objects.select_related(
             "savings", "source_account"
         ).get(pk=automation.pk)
         return Response(
-            SavingsAutomationSerializer(automation).data,
+            AutomationSerializer(automation).data,
             status=status.HTTP_201_CREATED,
         )
 
 
 class AutomationDetailView(FinanceView):
-    def get_object(self, request, pk: int) -> SavingsAutomation:
+    def get_object(self, request, pk: int) -> Automation:
         profile = self.get_profile(request)
         try:
-            return SavingsAutomation.objects.select_related(
+            return Automation.objects.select_related(
                 "savings", "source_account"
             ).get(pk=pk, profile=profile)
-        except SavingsAutomation.DoesNotExist as exc:
+        except Automation.DoesNotExist as exc:
             raise ValidationError({"detail": "Automazione non trovata."}) from exc
 
     def get(self, request, pk: int):
         return Response(
-            SavingsAutomationSerializer(self.get_object(request, pk)).data
+            AutomationSerializer(self.get_object(request, pk)).data
         )
 
     def patch(self, request, pk: int):
         automation = self.get_object(request, pk)
-        serializer = SavingsAutomationWriteSerializer(
+        serializer = AutomationWriteSerializer(
             automation,
             data=request.data,
             partial=True,
@@ -456,7 +456,7 @@ class AutomationDetailView(FinanceView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         automation.refresh_from_db()
-        return Response(SavingsAutomationSerializer(automation).data)
+        return Response(AutomationSerializer(automation).data)
 
     def delete(self, request, pk: int):
         automation = self.get_object(request, pk)
@@ -478,15 +478,15 @@ class AutomationRunView(FinanceView):
     def post(self, request, pk: int):
         profile = self.get_profile(request)
         try:
-            automation = SavingsAutomation.objects.get(pk=pk, profile=profile)
-        except SavingsAutomation.DoesNotExist as exc:
+            automation = Automation.objects.get(pk=pk, profile=profile)
+        except Automation.DoesNotExist as exc:
             raise ValidationError({"detail": "Automazione non trovata."}) from exc
         outcome = process_automation(automation)
         automation.refresh_from_db()
         return Response(
             {
                 "outcome": outcome,
-                "automation": SavingsAutomationSerializer(automation).data,
+                "automation": AutomationSerializer(automation).data,
             }
         )
 
@@ -502,10 +502,10 @@ class AutomationResolveView(FinanceView):
     def post(self, request, pk: int):
         profile = self.get_profile(request)
         try:
-            automation = SavingsAutomation.objects.get(pk=pk, profile=profile)
-        except SavingsAutomation.DoesNotExist as exc:
+            automation = Automation.objects.get(pk=pk, profile=profile)
+        except Automation.DoesNotExist as exc:
             raise ValidationError({"detail": "Automazione non trovata."}) from exc
-        if automation.status != SavingsAutomation.Status.ACTIVE:
+        if automation.status != Automation.Status.ACTIVE:
             raise ValidationError(
                 {
                     "detail": (
@@ -546,7 +546,7 @@ class AutomationResolveView(FinanceView):
         return Response(
             {
                 "outcome": outcome,
-                "automation": SavingsAutomationSerializer(automation).data,
+                "automation": AutomationSerializer(automation).data,
             }
         )
 

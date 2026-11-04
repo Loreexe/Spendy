@@ -12,7 +12,7 @@ from .models import (
     Notification,
     Profile,
     SavingsAccount,
-    SavingsAutomation,
+    Automation,
     Transaction,
 )
 from .services import assert_accounts_non_negative, savings_balance
@@ -137,9 +137,10 @@ class SavingsAccountUpdateSerializer(serializers.ModelSerializer):
         fields = ("name",)
 
 
-class SavingsAutomationSerializer(serializers.ModelSerializer):
-    savings_name = serializers.CharField(source="savings.name", read_only=True)
+class AutomationSerializer(serializers.ModelSerializer):
+    savings_name = serializers.SerializerMethodField()
     source_account_name = serializers.SerializerMethodField()
+    kind_label = serializers.CharField(source="get_kind_display", read_only=True)
     frequency_label = serializers.CharField(
         source="get_frequency_display", read_only=True
     )
@@ -147,14 +148,17 @@ class SavingsAutomationSerializer(serializers.ModelSerializer):
     pending_count = serializers.SerializerMethodField()
 
     class Meta:
-        model = SavingsAutomation
+        model = Automation
         fields = (
             "id",
+            "kind",
+            "kind_label",
             "savings",
             "savings_name",
             "source_account",
             "source_account_name",
             "amount",
+            "description",
             "frequency",
             "frequency_label",
             "next_run_on",
@@ -165,32 +169,37 @@ class SavingsAutomationSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
-    def get_source_account_name(self, obj: SavingsAutomation):
+    def get_savings_name(self, obj: Automation):
+        return obj.savings.name if obj.savings_id else None
+
+    def get_source_account_name(self, obj: Automation):
         return obj.source_account.name if obj.source_account_id else None
 
-    def get_pending_count(self, obj: SavingsAutomation) -> int:
+    def get_pending_count(self, obj: Automation) -> int:
         return obj.executions.filter(
             status=AutomationExecution.Status.PENDING
         ).count()
 
 
-class SavingsAutomationWriteSerializer(serializers.ModelSerializer):
+class AutomationWriteSerializer(serializers.ModelSerializer):
     amount = serializers.DecimalField(
         max_digits=12, decimal_places=2, min_value=Decimal("0.01")
     )
     savings = serializers.PrimaryKeyRelatedField(
-        queryset=SavingsAccount.objects.all()
+        queryset=SavingsAccount.objects.all(), required=False, allow_null=True
     )
     source_account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.all(), required=True
     )
 
     class Meta:
-        model = SavingsAutomation
+        model = Automation
         fields = (
+            "kind",
             "savings",
             "source_account",
             "amount",
+            "description",
             "frequency",
             "next_run_on",
             "status",
@@ -203,20 +212,21 @@ class SavingsAutomationWriteSerializer(serializers.ModelSerializer):
                 {label: "L'elemento non appartiene al profilo."}
             )
 
-    def validate_savings(self, savings: SavingsAccount) -> SavingsAccount:
-        self._check_owner(savings, "savings")
+    def validate_savings(self, savings: SavingsAccount | None) -> SavingsAccount | None:
+        if savings is not None:
+            self._check_owner(savings, "savings")
         return savings
 
     def validate_source_account(self, account: Account) -> Account:
         self._check_owner(account, "source_account")
         if account.archived:
             raise serializers.ValidationError(
-                { "source_account": "Il conto di partenza è archiviato." }
+                {"source_account": "Il conto di partenza è archiviato."}
             )
         return account
 
     def validate_status(self, value: str) -> str:
-        if value == SavingsAutomation.Status.SUSPENDED:
+        if value == Automation.Status.SUSPENDED:
             raise serializers.ValidationError(
                 {
                     "status": (
@@ -227,9 +237,47 @@ class SavingsAutomationWriteSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate(self, attrs):
+        kind = attrs.get(
+            "kind", getattr(self.instance, "kind", Automation.Kind.TRANSFER)
+        )
+        savings = attrs.get(
+            "savings", getattr(self.instance, "savings", None)
+        )
+        description = attrs.get(
+            "description", getattr(self.instance, "description", "")
+        )
+
+        if self.instance is not None and "kind" in attrs:
+            if attrs["kind"] != self.instance.kind:
+                raise serializers.ValidationError(
+                    {
+                        "kind": (
+                            "Il tipo di automazione non è modificabile dopo "
+                            "la creazione."
+                        )
+                    }
+                )
+
+        if kind == Automation.Kind.EXPENSE:
+            if savings is not None:
+                raise serializers.ValidationError(
+                    {"savings": "Una spesa ricorrente non usa un salvadanaio."}
+                )
+            if not (description or "").strip():
+                raise serializers.ValidationError(
+                    {"description": "Indica la descrizione della spesa."}
+                )
+        else:
+            if savings is None:
+                raise serializers.ValidationError(
+                    {"savings": "Indica il salvadanaio di destinazione."}
+                )
+        return attrs
+
     def create(self, validated_data):
         validated_data["profile"] = self.context["profile"]
-        return SavingsAutomation.objects.create(**validated_data)
+        return Automation.objects.create(**validated_data)
 
 
 class AutomationExecutionSerializer(serializers.ModelSerializer):
@@ -246,6 +294,8 @@ class AutomationExecutionSerializer(serializers.ModelSerializer):
             "automation",
             "automation_ref",
             "automation_name",
+            "kind",
+            "description",
             "scheduled_date",
             "amount",
             "source_account",
@@ -348,7 +398,10 @@ class TransactionSerializer(serializers.ModelSerializer):
     def get_automation_name(self, obj: Transaction):
         if obj.automation_id is None:
             return None
-        return obj.automation.savings.name
+        automation = obj.automation
+        if automation.kind == Automation.Kind.EXPENSE:
+            return automation.description or "Spesa ricorrente"
+        return automation.savings.name if automation.savings_id else None
 
 
 class TransactionWriteSerializer(serializers.Serializer):
