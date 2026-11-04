@@ -1,5 +1,16 @@
 # backend-core — Investimenti: modelli, migrazione e servizio ledger
 
+## Round 2 — fix del bug bloccante del verifier
+
+`delete_operation()` chiamava `assert_accounts_non_negative([], exclude_transaction=movement)` senza passare il conto: con `proposed_lines` vuoto e `accounts=None` il ciclo di validazione non veniva eseguito, quindi eliminare una vendita o un dividendo poteva lasciare il conto negativo. Ora passa `accounts=[_operation_account(locked)]` (conto storico della riga principale) mantenendo `exclude_transaction=movement`.
+
+Aggiunti 3 test di regressione in `DeleteAccountBalanceTests`:
+- eliminazione di una vendita che renderebbe il conto negativo → `ValidationError`, operazione e movimento restano;
+- eliminazione di un dividendo che renderebbe il conto negativo → `ValidationError`, operazione resta;
+- eliminazione di un dividendo senza impatto sul saldo → consentita.
+
+Check reali dopo il fix: `makemigrations --check --dry-run` → No changes detected; `finance.test_investments` → **37 test OK**; suite completa da `apps/backend` → **218 test OK**.
+
 ## Cosa ho fatto
 
 - `apps/backend/finance/models.py`
@@ -15,7 +26,7 @@
   - Regole: apertura senza movimento di conto; acquisto cassa `-(lordo+commissione)`; vendita cassa `+(lordo-commissione)`, costo rimosso a costo medio (intero costo se vendita totale), plusvalenza `netto - costo rimosso`; dividendo cassa `+`, costo invariato; denaro `ROUND_HALF_UP` a 2 decimali, quantità/prezzo 8 decimali; niente float.
   - Validazioni: quantità > 0, prezzo/controvalore obbligatorio e > 0, commissione >= 0, netto vendita > 0, vendita oltre la quantità posseduta alla data, apertura unica e solo come prima operazione, conto investimenti mancante/archiviato, conto che andrebbe negativo tramite `assert_accounts_non_negative`, posizione archiviata.
 - `apps/backend/finance/migrations/0005_profile_investment_account_alter_transaction_kind_and_more.py`: migrazione generata.
-- `apps/backend/finance/test_investments.py`: 34 test unitari (nessuna API): apertura, acquisto con commissione/controvalore, vendita parziale/totale, oversell, dividendo, modifica/eliminazione con ricalcolo e rollback, apertura duplicata/dopo altre operazioni, valore corrente/plusvalenza non realizzata, arrotondamenti frazionari, posizione non eliminabile con operazioni, archiviazione solo a quantità zero, conto negativo/mancante/archiviato, cambio conto che non riscrive lo storico, riepilogo portafoglio.
+- `apps/backend/finance/test_investments.py`: 37 test unitari (nessuna API): apertura, acquisto con commissione/controvalore, vendita parziale/totale, oversell, dividendo, modifica/eliminazione con ricalcolo e rollback, eliminazione di vendita/dividendo che renderebbe il conto negativo (round 2), apertura duplicata/dopo altre operazioni, valore corrente/plusvalenza non realizzata, arrotondamenti frazionari, posizione non eliminabile con operazioni, archiviazione solo a quantità zero, conto negativo/mancante/archiviato, cambio conto che non riscrive lo storico, riepilogo portafoglio.
 
 ## Cosa NON ho fatto (fuori scope)
 
@@ -26,14 +37,15 @@
 ## Check eseguiti (locali)
 
 - `makemigrations --check --dry-run`: **No changes detected**.
-- `manage.py test finance.test_investments`: **34 test, OK**.
-- Suite completa da `apps/backend`: **215 test, OK**.
+- `manage.py test finance.test_investments`: **37 test, OK**.
+- Suite completa da `apps/backend`: **218 test, OK**.
 - Nota: il comando dello spec lanciato dalla radice del worktree (`python apps/backend/manage.py test`) trova **0 test** perché la discovery parte dalla cwd; la suite reale va lanciata da `apps/backend` (come nel piano, §8.3). Da `apps/backend` sono 215/215 OK.
 
 ## Cosa deve verificare il verifier (indipendentemente)
 
 1. Ricostruire a mano un ledger (apertura, acquisto con commissione, vendita parziale, vendita totale, dividendo) e confrontarlo con `recalculate_position`.
 2. Casi avversari: oversell, apertura duplicata, apertura dopo operazioni, modifica/eliminazione che rende invalida una vendita successiva (deve fare rollback), arrotondamenti con quantità frazionarie.
+   - Round 2: eliminare una vendita o un dividendo che farebbe andare negativo il conto deve sollevare `ValidationError` senza cancellare nulla; eliminare senza impatto sul saldo deve restare consentito.
 3. Che il conto non vada mai negativo per acquisti/modifiche e che l'apertura non crei `Transaction`/`Line`.
 4. Che modifica/eliminazione usino il conto storico dell'operazione (non il conto investimenti corrente) e che il cambio conto non riscriva lo storico.
 5. Che non ci siano modifiche a views/serializers/urls/archive/export/frontend.

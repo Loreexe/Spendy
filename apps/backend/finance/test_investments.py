@@ -380,6 +380,66 @@ class EditAndDeleteTests(InvestmentTestBase):
         self.assertEqual(buy.kind, InvestmentOperation.Kind.BUY)
 
 
+class DeleteAccountBalanceTests(InvestmentTestBase):
+    """Deleting a cash-in operation must not leave the account negative."""
+
+    def setUp(self):
+        super().setUp()
+        self.account = self.make_account(initial="100.00")
+        set_investment_account(self.profile, self.account)
+        self.position = self.make_position()
+        self.opening(self.position, quantity="10", total="1000.00")
+
+    def spend(self, amount, day):
+        movement = Transaction.objects.create(
+            profile=self.profile,
+            kind=Transaction.Kind.EXPENSE,
+            date=day,
+            description="Spesa",
+            amount=D(amount),
+        )
+        Line.objects.create(
+            transaction=movement, account=self.account, amount=-D(amount)
+        )
+        return movement
+
+    def test_delete_sell_that_would_make_account_negative_is_rejected(self):
+        sell = self.sell(self.position, quantity="5", unit_price="200.00")
+        self.spend("900.00", date(2026, 2, 10))
+        self.assertEqual(self.account.balance, D("200.00"))
+
+        with self.assertRaises(ValidationError):
+            delete_operation(sell)
+
+        self.assertTrue(InvestmentOperation.objects.filter(pk=sell.pk).exists())
+        self.assertTrue(
+            Transaction.objects.filter(kind=Transaction.Kind.INVESTMENT_SELL).exists()
+        )
+        self.assertEqual(self.account.balance, D("200.00"))
+
+    def test_delete_dividend_that_would_make_account_negative_is_rejected(self):
+        dividend = self.dividend(self.position, amount="100.00")
+        self.spend("200.00", date(2026, 2, 10))
+        self.assertEqual(self.account.balance, D("0.00"))
+
+        with self.assertRaises(ValidationError):
+            delete_operation(dividend)
+
+        self.assertTrue(InvestmentOperation.objects.filter(pk=dividend.pk).exists())
+        self.assertEqual(self.account.balance, D("0.00"))
+
+    def test_delete_without_balance_impact_is_allowed(self):
+        dividend = self.dividend(self.position, amount="100.00")
+        self.assertEqual(self.account.balance, D("200.00"))
+
+        delete_operation(dividend)
+
+        self.assertEqual(self.account.balance, D("100.00"))
+        self.assertFalse(
+            InvestmentOperation.objects.filter(pk=dividend.pk).exists()
+        )
+
+
 class PositionRulesTests(InvestmentTestBase):
     def test_current_value_and_unrealized_gain(self):
         position = self.make_position(current_price=D("105.20"))

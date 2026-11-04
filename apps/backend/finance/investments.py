@@ -505,7 +505,9 @@ def delete_operation(operation: InvestmentOperation) -> None:
         )
         movement = locked.transaction
         if movement is not None:
-            assert_accounts_non_negative([], exclude_transaction=movement)
+            assert_accounts_non_negative(
+                accounts=[_operation_account(locked)], exclude_transaction=movement
+            )
         locked.delete()
         if movement is not None:
             movement.delete()
