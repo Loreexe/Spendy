@@ -36,6 +36,7 @@ KIND_LABEL = {
     InvestmentOperation.Kind.SELL: "Vendita",
     InvestmentOperation.Kind.DIVIDEND: "Dividendo",
 }
+INVESTMENT_TRANSACTION_KINDS = tuple(KIND_TRANSACTION.values())
 
 
 def money(value) -> Decimal:

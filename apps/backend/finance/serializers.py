@@ -4,10 +4,18 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from .investments import (
+    create_operation,
+    recalculate_position,
+    set_position_archived,
+    update_operation,
+)
 from .models import (
     ZERO,
     Account,
     AutomationExecution,
+    InvestmentOperation,
+    InvestmentPosition,
     Line,
     Notification,
     Profile,
@@ -735,12 +743,361 @@ class TransactionWriteSerializer(serializers.Serializer):
         return instance
 
 
+def _quantity(value) -> str | None:
+    return None if value is None else f"{value:.8f}"
+
+
+class InvestmentPositionSummarySerializer(serializers.Serializer):
+    """Derived values of one position, built from the ledger service."""
+
+    quantity = serializers.CharField()
+    average_cost = serializers.CharField()
+    cost = serializers.CharField()
+    current_value = serializers.CharField(allow_null=True)
+    unrealized_gain = serializers.CharField(allow_null=True)
+    realized_gain = serializers.CharField()
+    dividends = serializers.CharField()
+    has_price = serializers.BooleanField()
+
+
+class InvestmentSummarySerializer(serializers.Serializer):
+    """Aggregate of every position of a profile."""
+
+    total_cost = serializers.CharField()
+    total_value = serializers.CharField()
+    total_unrealized = serializers.CharField()
+    positions_without_price = serializers.IntegerField()
+    realized_gain = serializers.CharField()
+    dividends = serializers.CharField()
+
+
+class InvestmentPositionSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(source="get_category_display", read_only=True)
+    current_price = serializers.SerializerMethodField()
+    quantity = serializers.SerializerMethodField()
+    average_cost = serializers.SerializerMethodField()
+    cost = serializers.SerializerMethodField()
+    current_value = serializers.SerializerMethodField()
+    unrealized_gain = serializers.SerializerMethodField()
+    realized_gain = serializers.SerializerMethodField()
+    dividends = serializers.SerializerMethodField()
+    has_price = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InvestmentPosition
+        fields = (
+            "id",
+            "name",
+            "category",
+            "category_label",
+            "identifier",
+            "current_price",
+            "price_updated_on",
+            "archived",
+            "quantity",
+            "average_cost",
+            "cost",
+            "current_value",
+            "unrealized_gain",
+            "realized_gain",
+            "dividends",
+            "has_price",
+            "created_at",
+            "updated_at",
+        )
+
+    def _ledger(self, obj: InvestmentPosition) -> dict:
+        cache = self.context.setdefault("_ledger_cache", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = recalculate_position(obj)
+        return cache[obj.pk]
+
+    def get_current_price(self, obj: InvestmentPosition):
+        return None if obj.current_price is None else money(obj.current_price)
+
+    def get_quantity(self, obj: InvestmentPosition):
+        return _quantity(self._ledger(obj)["quantity"])
+
+    def get_average_cost(self, obj: InvestmentPosition):
+        return _quantity(self._ledger(obj)["average_cost"])
+
+    def get_cost(self, obj: InvestmentPosition):
+        return money(self._ledger(obj)["cost"])
+
+    def get_current_value(self, obj: InvestmentPosition):
+        value = self._ledger(obj)["current_value"]
+        return None if value is None else money(value)
+
+    def get_unrealized_gain(self, obj: InvestmentPosition):
+        value = self._ledger(obj)["unrealized_gain"]
+        return None if value is None else money(value)
+
+    def get_realized_gain(self, obj: InvestmentPosition):
+        return money(self._ledger(obj)["realized_gain"])
+
+    def get_dividends(self, obj: InvestmentPosition):
+        return money(self._ledger(obj)["dividends"])
+
+    def get_has_price(self, obj: InvestmentPosition):
+        return self._ledger(obj)["has_price"]
+
+
+class InvestmentOperationSerializer(serializers.ModelSerializer):
+    kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+    quantity = serializers.SerializerMethodField()
+    unit_price = serializers.SerializerMethodField()
+    gross_amount = serializers.SerializerMethodField()
+    commission = serializers.SerializerMethodField()
+    cash_amount = serializers.SerializerMethodField()
+    account = serializers.SerializerMethodField()
+    account_name = serializers.SerializerMethodField()
+    cost_removed = serializers.SerializerMethodField()
+    realized_gain = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InvestmentOperation
+        fields = (
+            "id",
+            "position",
+            "kind",
+            "kind_label",
+            "date",
+            "quantity",
+            "unit_price",
+            "gross_amount",
+            "commission",
+            "cash_amount",
+            "description",
+            "transaction",
+            "account",
+            "account_name",
+            "cost_removed",
+            "realized_gain",
+            "created_at",
+            "updated_at",
+        )
+
+    def _row(self, obj: InvestmentOperation) -> dict | None:
+        rows = self.context.get("ledger_rows")
+        if rows is not None:
+            return rows.get(obj.pk)
+        for row in recalculate_position(obj.position)["operations"]:
+            if row["operation"].pk == obj.pk:
+                return row
+        return None
+
+    def get_quantity(self, obj: InvestmentOperation):
+        return _quantity(obj.quantity)
+
+    def get_unit_price(self, obj: InvestmentOperation):
+        return _quantity(obj.unit_price)
+
+    def get_gross_amount(self, obj: InvestmentOperation):
+        value = obj.gross_amount
+        return None if value is None else money(value)
+
+    def get_commission(self, obj: InvestmentOperation):
+        return money(obj.commission)
+
+    def get_cash_amount(self, obj: InvestmentOperation):
+        return money(obj.cash_amount)
+
+    def _principal_line(self, obj: InvestmentOperation):
+        if obj.transaction_id is None:
+            return None
+        return obj.transaction.lines.filter(role=Line.Role.PRINCIPAL).first()
+
+    def get_account(self, obj: InvestmentOperation):
+        line = self._principal_line(obj)
+        return line.account_id if line is not None else None
+
+    def get_account_name(self, obj: InvestmentOperation):
+        line = self._principal_line(obj)
+        return line.account.name if line is not None else None
+
+    def get_cost_removed(self, obj: InvestmentOperation):
+        row = self._row(obj)
+        return money(row["cost_removed"]) if row is not None else "0.00"
+
+    def get_realized_gain(self, obj: InvestmentOperation):
+        row = self._row(obj)
+        return money(row["realized_gain"]) if row is not None else "0.00"
+
+
+class InvestmentOpeningSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    quantity = serializers.DecimalField(max_digits=24, decimal_places=8)
+    unit_price = serializers.DecimalField(
+        max_digits=24, decimal_places=8, required=False, allow_null=True
+    )
+    total_cost = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    total_amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    description = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+
+class InvestmentPositionCreateSerializer(serializers.ModelSerializer):
+    opening = InvestmentOpeningSerializer(required=False, write_only=True)
+
+    class Meta:
+        model = InvestmentPosition
+        fields = ("name", "category", "identifier", "current_price", "opening")
+
+    @transaction.atomic
+    def create(self, validated_data):
+        opening = validated_data.pop("opening", None)
+        position = InvestmentPosition.objects.create(
+            profile=self.context["profile"], **validated_data
+        )
+        if position.current_price is not None:
+            position.price_updated_on = timezone.localdate()
+            position.save(update_fields=("price_updated_on",))
+        if opening is not None:
+            total = opening.get("total_amount")
+            if total is None:
+                total = opening.get("total_cost")
+            create_operation(
+                position,
+                kind=InvestmentOperation.Kind.OPENING,
+                date=opening["date"],
+                quantity=opening["quantity"],
+                unit_price=opening.get("unit_price"),
+                total_amount=total,
+                description=opening.get("description", ""),
+            )
+        return position
+
+
+class InvestmentPositionUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvestmentPosition
+        fields = (
+            "name",
+            "category",
+            "identifier",
+            "current_price",
+            "price_updated_on",
+            "archived",
+        )
+
+    def update(self, instance, validated_data):
+        archived = validated_data.pop("archived", serializers.empty)
+        if archived is not serializers.empty:
+            instance = set_position_archived(instance, archived)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        if "current_price" in validated_data and "price_updated_on" not in validated_data:
+            instance.price_updated_on = (
+                None if validated_data["current_price"] is None else timezone.localdate()
+            )
+        instance.save()
+        return instance
+
+
+class InvestmentAccountSerializer(serializers.Serializer):
+    account = serializers.PrimaryKeyRelatedField(
+        queryset=Account.objects.all(), allow_null=True
+    )
+
+    def validate_account(self, account: Account | None) -> Account | None:
+        if account is not None:
+            profile = self.context["profile"]
+            if account.profile_id != profile.id:
+                raise serializers.ValidationError(
+                    "Il conto non appartiene al profilo."
+                )
+            if account.archived:
+                raise serializers.ValidationError("Il conto è archiviato.")
+        return account
+
+
+class InvestmentOperationCreateSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=InvestmentOperation.Kind.choices)
+    date = serializers.DateField()
+    quantity = serializers.DecimalField(
+        max_digits=24, decimal_places=8, required=False, allow_null=True
+    )
+    unit_price = serializers.DecimalField(
+        max_digits=24, decimal_places=8, required=False, allow_null=True
+    )
+    total_amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    commission = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
+    amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    description = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+    def create(self, validated_data):
+        return create_operation(self.context["position"], **validated_data)
+
+
+class InvestmentOperationUpdateSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(
+        choices=InvestmentOperation.Kind.choices, required=False
+    )
+    date = serializers.DateField(required=False)
+    quantity = serializers.DecimalField(
+        max_digits=24, decimal_places=8, required=False, allow_null=True
+    )
+    unit_price = serializers.DecimalField(
+        max_digits=24, decimal_places=8, required=False, allow_null=True
+    )
+    total_amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    commission = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=False, allow_null=True
+    )
+    amount = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False, allow_null=True
+    )
+    description = serializers.CharField(
+        required=False, allow_blank=True, max_length=255
+    )
+
+    def validate(self, attrs):
+        instance = self.instance
+        if "kind" in attrs and attrs["kind"] != instance.kind:
+            raise serializers.ValidationError(
+                {"kind": "Il tipo di operazione non è modificabile."}
+            )
+        if (
+            "amount" in attrs
+            and instance.kind != InvestmentOperation.Kind.DIVIDEND
+        ):
+            raise serializers.ValidationError(
+                {"amount": "L'importo si usa solo per il dividendo."}
+            )
+        return attrs
+
+    def update(self, instance, validated_data):
+        validated_data.pop("kind", None)
+        return update_operation(instance, **validated_data)
+
+
 class DashboardSerializer(serializers.Serializer):
     """Only used for schema/documentation; the dashboard is built in the view."""
 
     total_balance = serializers.CharField()
     total_savings = serializers.CharField()
     total_patrimony = serializers.CharField()
+    total_investments_cost = serializers.CharField()
+    total_investments_value = serializers.CharField()
+    total_investments_unrealized = serializers.CharField()
+    positions_without_price = serializers.IntegerField()
+    period_investments_realized = serializers.CharField()
+    period_dividends = serializers.CharField()
     period_balance = serializers.CharField()
     income_total = serializers.CharField()
     expense_total = serializers.CharField()

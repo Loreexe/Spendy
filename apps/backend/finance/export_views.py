@@ -12,6 +12,7 @@ from datetime import date
 from django.http import HttpResponse
 from django.utils import timezone
 
+from .investments import INVESTMENT_TRANSACTION_KINDS
 from .models import ZERO, Transaction
 from .views import FinanceView
 
@@ -36,6 +37,7 @@ class ExportTransactionsView(FinanceView):
         profile = self.get_profile(request)
         queryset = (
             Transaction.objects.filter(profile=profile)
+            .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
             .prefetch_related("lines__account")
             .order_by("date", "id")
         )
