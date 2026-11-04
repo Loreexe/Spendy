@@ -1,16 +1,20 @@
 import io
 import json
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
+from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
-from django.test import override_settings
+from django.db import IntegrityError
+from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
+from config.settings import read_version
 from core.system import is_newer, parse_version
 
 from .models import GlobalSettings, User
@@ -149,8 +153,38 @@ class RegistrationTests(APITestCase):
     def test_duplicate_email_is_case_insensitive(self):
         self.register("Utente@Example.com")
         response = self.register("utente@example.com")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("email", response.data)
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["pending"])
+        self.assertEqual(set(response.data.keys()), {"pending", "detail"})
+        self.assertEqual(
+            User.objects.filter(email__iexact="utente@example.com").count(), 1
+        )
+
+    def test_registration_does_not_reveal_existing_email(self):
+        first = self.register("Utente@Example.com")
+        second = self.register("utente@example.com")
+        self.assertEqual(second.status_code, first.status_code)
+        self.assertEqual(second.data, first.data)
+
+    @patch("accounts.views.RegisterSerializer.save", side_effect=IntegrityError)
+    def test_duplicate_during_save_is_neutral(self, _save):
+        response = self.register()
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(set(response.data.keys()), {"pending", "detail"})
+        self.assertFalse(User.objects.filter(email="utente@example.com").exists())
+
+    def test_duplicate_email_in_open_mode_is_neutral(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.patch(reverse("admin-settings"), {"registration_mode": "open"})
+        self.client.force_authenticate(user=None)
+        first = self.register("utente@example.com")
+        second = self.register("utente@example.com")
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.data, first.data)
+        self.assertFalse(second.data["pending"])
+        self.assertEqual(
+            User.objects.filter(email__iexact="utente@example.com").count(), 1
+        )
 
     def test_weak_password_is_refused(self):
         response = self.register(password="12345678")
@@ -230,6 +264,26 @@ class RegistrationTests(APITestCase):
         self.assertEqual(self.client.get(reverse("admin-users")).status_code, 403)
         self.assertEqual(self.client.get(reverse("admin-settings")).status_code, 403)
         self.assertEqual(self.client.get(reverse("admin-system")).status_code, 403)
+
+
+class VersionTests(SimpleTestCase):
+    def test_env_variable_has_precedence(self):
+        with patch.dict(os.environ, {"SPENDY_VERSION": "9.9.9"}):
+            self.assertEqual(read_version(), "9.9.9")
+
+    def test_version_file_is_the_fallback(self):
+        root = Path(settings.BASE_DIR).parent.parent
+        version_file = root / "VERSION"
+        if not version_file.exists():
+            self.skipTest("VERSION non è presente nell'immagine backend")
+        expected = version_file.read_text(encoding="utf-8").strip()
+        clean_env = {
+            name: value
+            for name, value in os.environ.items()
+            if name != "SPENDY_VERSION"
+        }
+        with patch.dict(os.environ, clean_env, clear=True):
+            self.assertEqual(read_version(), expected)
 
 
 class AdminSystemTests(APITestCase):

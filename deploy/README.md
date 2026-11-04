@@ -121,6 +121,61 @@ verifica `accounts_user` e lo elimina.
 Il job scrive `status.json`; la sezione **Sistema** mostra ultimo backup, esito,
 copia offsite, ultimo successo e test di ripristino.
 
+## Aggiornamento a una release
+
+Sull'host LXC, dalla root del repository (`/opt/spendy`):
+
+```bash
+./scripts/update.sh --dry-run v0.5.0   # verifica prerequisiti, non modifica nulla
+./scripts/update.sh v0.5.0             # applica la release
+```
+
+**Prima esecuzione (bootstrap).** Se il checkout non contiene ancora
+`scripts/update.sh`, recupera il tag ed esegui lo script senza modificare il
+working tree:
+
+```bash
+cd /opt/spendy
+export SPENDY_ROOT=/opt/spendy
+git fetch --tags origin
+git show v0.5.0:scripts/update.sh | bash -s -- v0.5.0
+```
+
+Il rollback parte dal commit attualmente estratto, quindi il bootstrap da una
+release precedente funziona come gli aggiornamenti successivi. `SPENDY_ROOT` è
+obbligatorio quando lo script viene letto da standard input.
+
+Lo script richiede un **working tree pulito** e un `.env` presente, poi:
+
+1. recupera i tag e verifica che il tag esista sul remote `origin` e che il
+   commit locale coincida con quello remoto;
+2. controlla che `VERSION` nel tag coincida con `vX.Y.Z` e rifiuta un
+   downgrade senza `--allow-downgrade`;
+3. crea un backup locale del database in `backups/` (salvo `--no-backup`);
+4. attiva la pagina di manutenzione (`maintenance/on`), applica il tag in
+   modalità detached, allinea `SPENDY_VERSION` nel `.env`, ricostruisce e
+   avvia i container;
+5. attende l'health check del backend, verifica la versione attiva e il
+   frontend, poi rimuove la manutenzione;
+6. se uno dei passi fallisce, ripristina il commit precedente e ricostruisce.
+   Il **database non viene ripristinato automaticamente**: le migrazioni già
+   applicate restano. Se il rollback non basta, usare il ripristino completo
+   dalla sezione successiva.
+
+Note operative:
+
+- La prima esecuzione su una versione precedente a questo script non mostra la
+  pagina di manutenzione, perché il container frontend non ha ancora il volume
+  `maintenance/`. Dalla successiva il comportamento è completo.
+- Il rollback automatico è pensato per errori di build, avvio o health check;
+  non annulla migrazioni irreversibili.
+- La manutenzione si può gestire anche a mano: `touch maintenance/on` attiva,
+  `rm maintenance/on` disattiva. La pagina è servita con stato `503`.
+- Il backup locale è in chiaro e va trattato come dato finanziario: usa
+  `./scripts/backup.sh` solo per il rollback e conservalo fuori dal repository.
+- Il controllo della versione attiva viene saltato per release anteriori alla
+  `0.3.0`, che non esponevano `SPENDY_VERSION`.
+
 ## Ripristino completo su un host pulito
 
 1. Recupera dal password manager la chiave privata age.

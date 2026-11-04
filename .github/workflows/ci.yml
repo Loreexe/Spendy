@@ -6,6 +6,17 @@ on:
   pull_request:
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versions are aligned with VERSION
+        run: python3 scripts/check_version.py
+      - name: Version check tests
+        run: python3 scripts/test_check_version.py
+      - name: Update script syntax
+        run: bash -n scripts/update.sh
+
   backend:
     runs-on: ubuntu-latest
     services:

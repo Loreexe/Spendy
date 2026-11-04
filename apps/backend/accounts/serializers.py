@@ -25,10 +25,10 @@ class RegisterSerializer(serializers.Serializer):
     password_confirm = serializers.CharField(write_only=True, trim_whitespace=False)
 
     def validate_email(self, value: str) -> str:
-        email = value.strip().lower()
-        if User.objects.filter(email__iexact=email).exists():
-            raise serializers.ValidationError("Esiste già un account con questa email.")
-        return email
+        # La verifica dei duplicati resta nella view: la risposta deve essere
+        # identica a una registrazione riuscita per non rivelare se l'email è
+        # già associata a un account (BUG-007).
+        return value.strip().lower()
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password_confirm"]:

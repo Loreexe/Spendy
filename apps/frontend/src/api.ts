@@ -18,7 +18,6 @@ export interface SetupStatus {
 }
 
 export interface RegisterResult {
-  user: User;
   pending: boolean;
   detail: string;
 }

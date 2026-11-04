@@ -21,6 +21,7 @@ dist/
 *.dump
 backups/
 backup-status/
+maintenance/on
 
 # OS / editor
 .DS_Store

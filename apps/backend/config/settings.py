@@ -31,7 +31,27 @@ if not SECRET_KEY:
         raise ImproperlyConfigured(
             "DJANGO_SECRET_KEY non impostata: è obbligatoria quando DJANGO_DEBUG=0."
         )
-SPENDY_VERSION = os.environ.get("SPENDY_VERSION", "0.3.0")
+def read_version() -> str:
+    """Versione applicativa: variabile d'ambiente o file VERSION del monorepo.
+
+    In Docker Compose la variabile è sempre impostata dal compose; in sviluppo
+    e nei test si legge il file `VERSION` alla radice, così non esiste un
+    secondo valore hardcoded da tenere allineato (BUG-006).
+    """
+    value = os.environ.get("SPENDY_VERSION", "").strip()
+    if value:
+        return value
+    for candidate in (BASE_DIR / "VERSION", BASE_DIR.parent.parent / "VERSION"):
+        try:
+            value = candidate.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if value:
+            return value
+    return "0.0.0"
+
+
+SPENDY_VERSION = read_version()
 BACKUP_STATUS_FILE = os.environ.get(
     "SPENDY_BACKUP_STATUS_FILE", str(BASE_DIR / "backup-status" / "status.json")
 )

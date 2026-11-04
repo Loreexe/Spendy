@@ -1,9 +1,10 @@
 from django.conf import settings
 from django.contrib.auth import login, logout
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -231,14 +232,35 @@ class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        pending = (
+            GlobalSettings.load().registration_mode
+            != GlobalSettings.RegistrationMode.OPEN
+        )
+        email = serializer.validated_data["email"]
+        # Un'email già registrata riceve la stessa risposta di una nuova
+        # registrazione, senza creare un account: la registrazione non deve
+        # consentire l'enumerazione degli account (BUG-007).
+        if User.objects.filter(email__iexact=email).exists():
+            # Calcola comunque un hash: evita che la risposta per un'email già
+            # presente sia riconoscibile dai tempi di risposta.
+            make_password(serializer.validated_data["password"])
+            return self._response(pending)
+        try:
+            with transaction.atomic():
+                user = serializer.save()
+        except IntegrityError:
+            # Duplicato inserito tra il controllo e il salvataggio.
+            return self._response(pending)
+        return self._response(user.status == User.Status.PENDING)
+
+    @staticmethod
+    def _response(pending: bool) -> Response:
         return Response(
             {
-                "user": UserSerializer(user).data,
-                "pending": user.status == User.Status.PENDING,
+                "pending": pending,
                 "detail": (
                     "Registrazione completata: l'account è in attesa di approvazione."
-                    if user.status == User.Status.PENDING
+                    if pending
                     else "Registrazione completata: puoi accedere."
                 ),
             },

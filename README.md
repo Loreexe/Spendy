@@ -10,7 +10,7 @@ senza integrazioni bancarie.
 [![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> **Stato:** release **`v0.4.0`**. Il progetto è in sviluppo attivo:
+> **Stato:** release **`v0.4.1`**. Il progetto è in sviluppo attivo:
 > le funzionalità di base sono utilizzabili, ma gruppi, investimenti, automazioni,
 > MCP e notifiche non sono ancora implementati.
 
@@ -146,11 +146,14 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato per `v0.4.0`: **124 test backend**, **5 test dello script di
-backup**, lint e build frontend, configurazione Compose valida e flusso UI
-completo; la sezione Sistema e il backup globale sono nel workspace e non sono
-ancora inclusi in una release. Backup reale su Backblaze B2, test di ripristino
-automatico e ripristino completo su host pulito eseguiti con successo.
+Stato verificato per `v0.4.1`: **129 test backend**, **8 test** del controllo
+versioni, **5 test** dello script di backup, lint e build frontend,
+configurazione Compose valida, configurazione Nginx e pagina di manutenzione
+verificate, procedura di aggiornamento provata in dry-run e con Docker simulato
+(successo e rollback). La sezione Sistema, il backup globale e l'hardening
+pre-esposizione sono inclusi nella release. Backup reale su Backblaze B2, test
+di ripristino automatico e ripristino completo su host pulito eseguiti con
+successo.
 
 ## Importazione dei movimenti
 
@@ -225,10 +228,21 @@ Il frontend Nginx invia già `Content-Security-Policy`, `X-Content-Type-Options`
 `X-Frame-Options`, `Referrer-Policy` e `Permissions-Policy`. HSTS va gestito da
 NPM per evitare header duplicati.
 
-### Backup prima di un aggiornamento
+### Aggiornamento e backup
 
-Usa lo script incluso, che scrive in `backups/` (escluso da Git), imposta i
-permessi a `600` e genera un checksum SHA-256:
+L'aggiornamento a una release si esegue sull'host con lo script dedicato, che
+verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
+ricostruisce lo stack e fa rollback in caso di errore:
+
+```bash
+./scripts/update.sh --dry-run v0.5.0
+./scripts/update.sh v0.5.0
+```
+
+Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).
+
+Per un backup manuale del database, lo script incluso scrive in `backups/`
+(escluso da Git), imposta i permessi a `600` e genera un checksum SHA-256:
 
 ```bash
 ./scripts/backup.sh
