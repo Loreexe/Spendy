@@ -948,6 +948,13 @@ class InvestmentPositionCreateSerializer(serializers.ModelSerializer):
         model = InvestmentPosition
         fields = ("name", "category", "identifier", "current_price", "opening")
 
+    def validate_current_price(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError(
+                "Il prezzo corrente non può essere negativo."
+            )
+        return value
+
     @transaction.atomic
     def create(self, validated_data):
         opening = validated_data.pop("opening", None)
@@ -974,6 +981,8 @@ class InvestmentPositionCreateSerializer(serializers.ModelSerializer):
 
 
 class InvestmentPositionUpdateSerializer(serializers.ModelSerializer):
+    price_updated_on = serializers.DateField(read_only=True)
+
     class Meta:
         model = InvestmentPosition
         fields = (
@@ -985,13 +994,20 @@ class InvestmentPositionUpdateSerializer(serializers.ModelSerializer):
             "archived",
         )
 
+    def validate_current_price(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError(
+                "Il prezzo corrente non può essere negativo."
+            )
+        return value
+
     def update(self, instance, validated_data):
         archived = validated_data.pop("archived", serializers.empty)
         if archived is not serializers.empty:
             instance = set_position_archived(instance, archived)
         for field, value in validated_data.items():
             setattr(instance, field, value)
-        if "current_price" in validated_data and "price_updated_on" not in validated_data:
+        if "current_price" in validated_data:
             instance.price_updated_on = (
                 None if validated_data["current_price"] is None else timezone.localdate()
             )

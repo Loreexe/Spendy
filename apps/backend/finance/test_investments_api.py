@@ -165,6 +165,44 @@ class PositionApiTests(InvestmentApiTestBase):
         self.assertEqual(response.data["current_price"], "99.50")
         self.assertEqual(response.data["price_updated_on"], self.today.isoformat())
 
+    def test_negative_current_price_is_rejected(self):
+        response = self.create_position(current_price="-1.00")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("current_price", response.data)
+
+        position = self.create_position(current_price="1.00").data
+        response = self.client.patch(
+            reverse("finance-investment-detail", args=[position["id"]]),
+            {"current_price": "-0.01"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("current_price", response.data)
+
+    def test_price_updated_on_is_server_controlled(self):
+        position = self.create_position(current_price="100.00").data
+        response = self.client.patch(
+            reverse("finance-investment-detail", args=[position["id"]]),
+            {
+                "current_price": "99.50",
+                "price_updated_on": "2000-01-01",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["price_updated_on"], self.today.isoformat())
+        stored = InvestmentPosition.objects.get(pk=position["id"])
+        self.assertEqual(stored.price_updated_on, self.today)
+
+        response = self.client.patch(
+            reverse("finance-investment-detail", args=[position["id"]]),
+            {"price_updated_on": "2001-01-01"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        stored.refresh_from_db()
+        self.assertEqual(stored.price_updated_on, self.today)
+
     def test_position_delete_requires_no_operations(self):
         with_operations = self.create_position(
             opening={
@@ -371,6 +409,23 @@ class OperationApiTests(InvestmentApiTestBase):
             },
         )
         self.assertEqual(negative_fee.status_code, 400)
+
+    def test_quantity_price_overflow_is_rejected_with_400(self):
+        response = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "9999999999999999.99999999",
+                "unit_price": "9999999999999999.99999999",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            Transaction.objects.filter(
+                kind=Transaction.Kind.INVESTMENT_BUY
+            ).exists()
+        )
 
     def test_operation_kind_is_immutable(self):
         operation = self.add_operation(
