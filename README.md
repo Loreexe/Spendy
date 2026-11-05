@@ -6,14 +6,12 @@ Spendy è un'app web per tenere sotto controllo conti, movimenti e salvadanai.
 Nasce per essere ospitata sul proprio server, senza servizi finanziari esterni e
 senza integrazioni bancarie.
 
-[![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)](https://github.com/Loreexe/Spendy/releases)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release **`v0.5.2`**, che include le automazioni per salvadanai e
-> spese ricorrenti, la periodicità personalizzata e l'avviso anticipato di
-> saldo insufficiente. Il progetto è in sviluppo attivo: gruppi, investimenti, MCP
-> e notifiche push/email non sono ancora implementati.
+> **Stato:** release `v0.6.0`, che aggiunge la sezione **Investimenti** e
+> mantiene automazioni per salvadanai e spese ricorrenti, periodicità
+> personalizzata e avviso anticipato di saldo insufficiente. Il progetto è in
+> sviluppo attivo: gruppi, MCP e notifiche push/email non sono ancora implementati.
 
 ## Funzionalità
 
@@ -21,44 +19,29 @@ senza integrazioni bancarie.
 - **Conti personali** con nome, tipo, saldo iniziale e archiviazione.
 - **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento.
 - **Salvadanai** con conto di appoggio, versamenti e prelievi.
-- **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura
-  parziale dal conto di appoggio.
+- **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
-- **Automazioni periodiche**: trasferimenti ricorrenti verso i salvadanai e
-  spese ricorrenti come abbonamenti, affitto o palestra, con periodicità
-  personalizzata, recupero delle occorrenze perse, gestione dei fallimenti,
-  storico delle esecuzioni e notifiche in-app.
-- **Avviso anticipato di saldo insufficiente**: qualche giorno prima della
-  scadenza Spendy calcola il saldo previsto e avvisa se l'addebito rischia di
-  non riuscire.
-- **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima
-  correggibile, controllo dei duplicati e riepilogo prima della conferma.
-- **Backup personale del profilo**: archivio ZIP con conti, salvadanai,
-  movimenti e righe contabili in CSV, manifesto con checksum e ripristino
-  guidato su un profilo vuoto. Distinto dal backup globale del database.
-- **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero
-  viene rifiutata con il saldo disponibile.
-- **Isolamento tra profili**: ogni account normale ha il proprio spazio
-  finanziario; l'admin globale non ha un profilo finanziario.
-- **Autenticazione** email/password, registrazione con approvazione e setup
-  iniziale protetto.
-- **Sistema (admin)**: controllo manuale delle release GitHub, versione
-  backend/frontend, stato del database e stato del backup globale, in sola
-  lettura.
-- **Backup globale automatico**: dump PostgreSQL ogni 15 minuti, configurazione
-  cifrata con age, copia su Backblaze B2 tramite rclone e test di ripristino
-  mensile. La procedura è in [deploy/README.md](deploy/README.md).
+- **Investimenti**: posizioni con quantità e prezzo, apertura di posizioni già possedute senza movimento di conto, acquisti, vendite e dividendi; costo storico a costo medio ponderato, commissioni incluse, valore corrente mostrato separatamente.
+- **Automazioni periodiche**: trasferimenti ricorrenti verso i salvadanai e spese ricorrenti come abbonamenti, affitto o palestra, con periodicità personalizzata, recupero delle occorrenze perse, gestione dei fallimenti, storico delle esecuzioni e notifiche in-app.
+- **Avviso anticipato di saldo insufficiente**: qualche giorno prima della scadenza Spendy calcola il saldo previsto e avvisa se l'addebito rischia di non riuscire.
+- **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima correggibile, controllo dei duplicati e riepilogo prima della conferma.
+- **Backup personale del profilo**: archivio ZIP con conti, salvadanai, movimenti, righe contabili, posizioni e operazioni di investimento in CSV, manifesto con checksum e ripristino guidato su un profilo vuoto. Distinto dal backup globale del database.
+- **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero viene rifiutata con il saldo disponibile.
+- **Isolamento tra profili**: ogni account normale ha il proprio spazio finanziario; l'admin globale non ha un profilo finanziario.
+- **Autenticazione** email/password, registrazione con approvazione e setup iniziale protetto.
+- **Sistema (admin)**: controllo manuale delle release GitHub, versione backend/frontend, stato del database e stato del backup globale, in sola lettura.
+- **Backup globale automatico**: dump PostgreSQL ogni 15 minuti, configurazione cifrata con age, copia su Backblaze B2 tramite rclone e test di ripristino mensile. La procedura è in [deploy/README.md](deploy/README.md).
 
 ## Stack
 
-| Componente | Tecnologia |
-| --- | --- |
-| Backend | Python, Django 6, Django REST Framework |
-| Database | PostgreSQL 16 |
-| Frontend | React 19, TypeScript, Vite |
-| Serving | Nginx |
-| Deployment | Docker Compose |
-| CI | GitHub Actions |
+| Componente | Tecnologia                              |
+|------------|-----------------------------------------|
+| Backend    | Python, Django 6, Django REST Framework |
+| Database   | PostgreSQL 16                           |
+| Frontend   | React 19, TypeScript, Vite              |
+| Serving    | Nginx                                   |
+| Deployment | Docker Compose                          |
+| CI         | GitHub Actions                          |
 
 I dati finanziari restano nel database PostgreSQL. Il repository contiene solo
 codice e configurazione, mai dati reali.
@@ -154,14 +137,14 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **181 test backend**, **8 test** del controllo versioni,
+Stato verificato: **270 test backend**, **8 test** del controllo versioni,
 **5 test** dello script di backup, lint e build frontend, configurazione Compose
 valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
 aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
-La release `v0.5.2` include periodicità personalizzata e avvisi anticipati di
-saldo, oltre alle automazioni per salvadanai e spese ricorrenti, verificate
-anche con PostgreSQL e con il worker Compose; la sezione Sistema, il
-backup globale e l'hardening pre-esposizione restano inclusi dalle release
+La release `v0.6.0` aggiunge la sezione Investimenti, verificata con test
+dedicati su modello contabile, API, dashboard, archivio personale e build
+frontend; restano incluse le automazioni per salvadanai e spese ricorrenti, la
+sezione Sistema, il backup globale e l'hardening pre-esposizione delle release
 precedenti. Backup reale su Backblaze B2, test di ripristino automatico e
 ripristino completo su host pulito eseguiti con successo.
 
@@ -170,8 +153,7 @@ ripristino completo su host pulito eseguiti con successo.
 Dalla pagina **Automazioni** puoi creare due tipi di regola:
 
 - un **versamento periodico** da un conto a un salvadanaio;
-- una **spesa ricorrente** da un conto, ad esempio Netflix, l'affitto o la
-  palestra.
+- una **spesa ricorrente** da un conto, ad esempio Netflix, l'affitto o la palestra.
 
 L'importo è fisso. La periodicità è personalizzabile: ad esempio ogni 2
 settimane, ogni 45 giorni, ogni 3 mesi o ogni anno. Il servizio `automation-worker` in `compose.yaml` controlla le
@@ -183,31 +165,48 @@ docker compose exec backend python manage.py run_automations
 
 Comportamento:
 
-- ogni occorrenza ha una chiave univoca (regola + data prevista), quindi un
-  riavvio o un doppio controllo non crea movimenti duplicati;
-- una sola occorrenza persa viene recuperata automaticamente con la **data
-  originale**; con due o più occorrenze perse l'app chiede quali recuperare e
-  salta le altre;
-- saldo insufficiente o dati mancanti: l'occorrenza viene saltata con una
-  notifica e la regola resta attiva;
-- errore tecnico: fino a 3 tentativi con attese crescenti (60, 300 e 900
-  secondi, configurabili con `SPENDY_AUTOMATION_MAX_ATTEMPTS` e
-  `SPENDY_AUTOMATION_RETRY_DELAYS`); esauriti i tentativi la regola viene
-  sospesa e l'utente avvisato;
-- modificare o annullare un movimento generato aggiorna lo stato
-  dell'occorrenza e non la riesegue;
-- eliminare un salvadanaio rimuove i versamenti collegati ma non le spese
-  ricorrenti; in entrambi i casi lo storico delle esecuzioni resta disponibile;
-- una spesa ricorrente genera un normale movimento di spesa, quindi entra nella
-  dashboard, nel registro e nelle esportazioni;
-- per ogni regola si possono scegliere quanti giorni prima avvisare (default 3,
-  `0` per disattivare). L'avviso considera i movimenti registrati e le altre
-  automazioni attive sullo stesso conto; viene ripetuto ogni giorno finché il
-  saldo previsto resta insufficiente, una sola volta al giorno per occorrenza.
+- ogni occorrenza ha una chiave univoca (regola + data prevista), quindi un riavvio o un doppio controllo non crea movimenti duplicati;
+- una sola occorrenza persa viene recuperata automaticamente con la **data originale**; con due o più occorrenze perse l'app chiede quali recuperare e salta le altre;
+- saldo insufficiente o dati mancanti: l'occorrenza viene saltata con una notifica e la regola resta attiva;
+- errore tecnico: fino a 3 tentativi con attese crescenti (60, 300 e 900 secondi, configurabili con `SPENDY_AUTOMATION_MAX_ATTEMPTS` e `SPENDY_AUTOMATION_RETRY_DELAYS`); esauriti i tentativi la regola viene sospesa e l'utente avvisato;
+- modificare o annullare un movimento generato aggiorna lo stato dell'occorrenza e non la riesegue;
+- eliminare un salvadanaio rimuove i versamenti collegati ma non le spese ricorrenti; in entrambi i casi lo storico delle esecuzioni resta disponibile;
+- una spesa ricorrente genera un normale movimento di spesa, quindi entra nella dashboard, nel registro e nelle esportazioni;
+- per ogni regola si possono scegliere quanti giorni prima avvisare (default 3, `0` per disattivare). L'avviso considera i movimenti registrati e le altre automazioni attive sullo stesso conto; viene ripetuto ogni giorno finché il saldo previsto resta insufficiente, una sola volta al giorno per occorrenza.
 
 Le notifiche sono per ora **in-app**, nella pagina Automazioni. Canale e
 preferenze delle notifiche, parametri definitivi del retry e sorte dello storico
 alla cancellazione della regola restano da confermare.
+
+## Investimenti
+
+Dalla pagina **Investimenti** puoi seguire le posizioni e le operazioni del
+profilo:
+
+- scegli un **conto personale** per gli investimenti; resta utilizzabile anche
+  come conto normale e puoi cambiarlo in seguito, senza riscrivere lo storico;
+- crea una **posizione** con nome, categoria e identificativo opzionali,
+  quantità e prezzo;
+- registra **acquisti**, **vendite** e **dividendi**; per acquisti e vendite puoi
+  inserire quantità e prezzo unitario oppure il controvalore totale, con
+  commissione separata;
+- se possiedi già una posizione, usa l'**apertura** con quantità e costo storico:
+  il conto non cambia e il patrimonio include il costo;
+- aggiorna a mano il **prezzo corrente**: il valore corrente è mostrato a parte,
+  insieme alla plusvalenza non realizzata; il patrimonio usa il **costo
+  residuo** a costo medio ponderato, non il valore di mercato;
+- acquisti e vendite possono essere modificati o eliminati, con ricalcolo del
+  costo medio e delle plusvalenze; non puoi vendere più di quanto possiedi né
+  portare un conto sotto zero.
+
+Gli acquisti di investimenti **non sono spese**: riducono il saldo del periodo
+ma non le uscite. I dividendi sono entrate. Le operazioni di investimento
+compaiono solo nella pagina Investimenti, non nel registro Movimenti; i loro
+effetti restano nei totali della dashboard.
+
+Restano fuori da questa release i contributi senza acquisto di quote, le
+posizioni a valore manuale (case, fondi pensione, beni senza quantità), i
+rendimenti percentuali, i prezzi automatici e lo storico del valore corrente.
 
 ## Importazione dei movimenti
 
@@ -224,23 +223,14 @@ data;descrizione;categoria;conto;importo
 25-11-2026;Entrata di prova;esempio;Contanti;-100,00
 ```
 
-- il formato della data, il separatore di colonna e il separatore decimale
-  vengono **rilevati automaticamente** e si possono correggere dall'anteprima
-  (es. `GG-MM-AAAA`, `AAAA-MM-GG`, `;` o `,`, virgola o punto decimale);
-- importi senza `€` e senza migliaia; gli interi sono accettati
-  (`150` equivale a `150,00`);
+- il formato della data, il separatore di colonna e il separatore decimale vengono **rilevati automaticamente** e si possono correggere dall'anteprima (es. `GG-MM-AAAA`, `AAAA-MM-GG`, `;` o `,`, virgola o punto decimale);
+- importi senza `€` e senza migliaia; gli interi sono accettati (`150` equivale a `150,00`);
 - importo positivo = uscita, negativo = entrata;
-- la prima riga per data di un **nuovo conto** è la sua apertura e deve essere
-  negativa; i conti esistenti ricevono solo movimenti;
-- se importi in un conto già esistente, il suo saldo iniziale resta quello già
-  registrato: righe più vecchie dell'apertura possono risultare in un saldo
-  insufficiente nel passato. Per uno storico completo usa un conto nuovo, che
-  l'importazione crea con l'apertura presa dal file;
+- la prima riga per data di un **nuovo conto** è la sua apertura e deve essere negativa; i conti esistenti ricevono solo movimenti;
+- se importi in un conto già esistente, il suo saldo iniziale resta quello già registrato: righe più vecchie dell'apertura possono risultare in un saldo insufficiente nel passato. Per uno storico completo usa un conto nuovo, che l'importazione crea con l'apertura presa dal file;
 - ogni riga è indipendente: trasferimenti e salvadanai non sono importabili;
 - la colonna `categoria` è accettata ma ignorata, in attesa della funzionalità;
-- righe identiche nel file o già presenti nell'app sono segnalate come
-  duplicati (stesso segno: un'uscita e un'entrata dello stesso importo non lo
-  sono); puoi scartarle oppure confermare singolarmente che non lo sono.
+- righe identiche nel file o già presenti nell'app sono segnalate come duplicati (stesso segno: un'uscita e un'entrata dello stesso importo non lo sono); puoi scartarle oppure confermare singolarmente che non lo sono.
 
 ### Esportazione
 
@@ -249,32 +239,33 @@ stesse colonne e la stessa convenzione di segno dell'importazione, così il file
 può essere aperto in un foglio di calcolo o reimportato. La colonna `categoria`
 contiene il tipo del movimento (Apertura, Entrata, Spesa, Trasferimento). I
 trasferimenti diventano una riga per conto; dei salvadanai viene esportata solo
-la parte che passa dal conto.
+la parte che passa dal conto. Le operazioni di investimento non sono incluse in
+questo export: si esportano dalla pagina Investimenti.
 
 ### Backup personale del profilo
 
 Da **Account → Import / Export** puoi scaricare un archivio ZIP con tutti i dati
 del profilo:
 
-- `conti.csv`, `salvadanai.csv`, `movimenti.csv`, `righe.csv`;
+- `conti.csv`, `salvadanai.csv`, `movimenti.csv`, `righe.csv`, `posizioni.csv`, `operazioni_investimenti.csv`;
 - `manifest.json` con data, versione, conteggi e checksum SHA-256.
 
 L'archivio conserva anche le due parti dei trasferimenti, le righe tecniche dei
-salvadanai e le coperture parziali. Può essere ricaricato con **Ripristina un
-archivio** su un profilo vuoto: Spendy valida il contenuto, mostra un'anteprima e
-scrive in modo atomico. Le regole di automazione e il loro storico non sono
-ancora incluse in questo archivio CSV: sono protette dal backup globale del
-database PostgreSQL. Il ripristino è pensato per il passaggio a un altro server;
-non sostituisce il backup globale.
+salvadanai, le coperture parziali, le posizioni e le operazioni di investimento
+(comprese le aperture senza movimento di conto). Può essere ricaricato con
+**Ripristina un archivio** su un profilo vuoto: Spendy valida il contenuto,
+mostra un'anteprima e scrive in modo atomico. Gli archivi creati con la versione
+precedente (quattro CSV) restano ripristinabili. Le regole di automazione e il
+loro storico non sono ancora incluse in questo archivio CSV: sono protette dal
+backup globale del database PostgreSQL. Il ripristino è pensato per il passaggio
+a un altro server; non sostituisce il backup globale.
 
 ## Configurazione di produzione
 
-- Servire l'app tramite **HTTPS** con Nginx Proxy Manager: procedura e header
-  in [deploy/npm/README.md](deploy/npm/README.md).
+- Servire l'app tramite **HTTPS** con Nginx Proxy Manager: procedura e header in [deploy/npm/README.md](deploy/npm/README.md).
 - Impostare `SECURE_COOKIES=1` quando HTTPS è attivo.
 - Impostare `SECURE_SSL_REDIRECT=1` se NPM non forza già HTTPS.
-- Impostare `DJANGO_SECRET_KEY` con un valore casuale lungo: senza questa
-  variabile il backend non parte quando `DJANGO_DEBUG=0`.
+- Impostare `DJANGO_SECRET_KEY` con un valore casuale lungo: senza questa variabile il backend non parte quando `DJANGO_DEBUG=0`.
 - Impostare `DJANGO_ALLOWED_HOSTS` e `CSRF_TRUSTED_ORIGINS` con il dominio reale.
 - Non esporre PostgreSQL.
 - Conservare il volume PostgreSQL e includerlo nel backup.
@@ -291,8 +282,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.5.2
-./scripts/update.sh v0.5.2
+./scripts/update.sh --dry-run v0.6.0
+./scripts/update.sh v0.6.0
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).
@@ -321,19 +312,15 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 
 ## Sicurezza e privacy
 
-- Non inserire mai `.env`, dump del database, backup o dati finanziari reali nel
-  repository.
+- Non inserire mai `.env`, dump del database, backup o dati finanziari reali nel repository.
 - I segreti vanno conservati fuori dal repository e ruotati se esposti.
-- Login e registrazione hanno rate limiting; dopo 5 tentativi falliti per lo
-  stesso IP e identificativo, l'accesso resta bloccato per 15 minuti.
+- Login e registrazione hanno rate limiting; dopo 5 tentativi falliti per lo stesso IP e identificativo, l'accesso resta bloccato per 15 minuti.
 - Il database è la fonte di verità: nessun saldo viene mantenuto solo in memoria.
 
 ## Limiti attuali
 
-- Gruppi, investimenti, MCP e notifiche push/email non sono inclusi.
-- Le spese ricorrenti usano solo un conto, non un salvadanaio come metodo di
-  pagamento; gli importi variabili e le categorie automatiche non sono ancora
-  disponibili.
+- Gruppi, MCP e notifiche push/email non sono inclusi.
+- Le spese ricorrenti usano solo un conto, non un salvadanaio come metodo di pagamento; gli importi variabili e le categorie automatiche non sono ancora disponibili.
 - Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
 - L'LXC su Proxmox è già stato creato e ospita l'app; configurazione NPM, verifica email, SSO e 2FA non sono completati.
 

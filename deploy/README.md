@@ -141,8 +141,8 @@ copia offsite, ultimo successo e test di ripristino.
 Sull'host LXC, dalla root del repository (`/opt/spendy`):
 
 ```bash
-./scripts/update.sh --dry-run v0.5.2   # verifica prerequisiti, non modifica nulla
-./scripts/update.sh v0.5.2             # applica la release
+./scripts/update.sh --dry-run v0.6.0   # verifica prerequisiti, non modifica nulla
+./scripts/update.sh v0.6.0             # applica la release
 ```
 
 **Prima esecuzione (bootstrap).** Se il checkout non contiene ancora
