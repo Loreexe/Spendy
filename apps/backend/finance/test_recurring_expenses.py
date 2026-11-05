@@ -321,7 +321,7 @@ class RecurringExpenseRuleLifecycleTests(RecurringExpenseTestBase):
         )
         self.assertEqual(response.status_code, 204)
         execution = AutomationExecution.objects.get(automation_ref=rule["id"])
-        self.assertIsNone(execution.automation_id)
+        self.assertEqual(execution.automation_id, rule["id"])
         self.assertEqual(execution.status, AutomationExecution.Status.SUCCEEDED)
         self.assertTrue(
             Transaction.objects.filter(

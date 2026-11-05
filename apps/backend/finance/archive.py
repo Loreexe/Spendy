@@ -31,17 +31,21 @@ from rest_framework.exceptions import ValidationError
 from .csv_safety import restore_csv_text, sanitize_csv_text
 from .models import (
     ZERO,
+    DEFAULT_CATEGORY_NAME,
     Account,
+    Category,
     InvestmentOperation,
     InvestmentPosition,
     Line,
     Profile,
     SavingsAccount,
+    Tag,
     Transaction,
+    ensure_default_categories,
 )
 
-SCHEMA = 2
-SUPPORTED_SCHEMAS = {1, 2}
+SCHEMA = 3
+SUPPORTED_SCHEMAS = {1, 2, 3}
 SCOPE = "backup-profilo"
 DELIMITER = ";"
 BOM = b"\xef\xbb\xbf"
@@ -51,7 +55,7 @@ QUANTITY_PLACES = Decimal("0.00000001")
 
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
-MAX_ENTRIES = 8
+MAX_ENTRIES = 12
 
 ACCOUNT_HEADER = (
     "id",
@@ -81,6 +85,24 @@ TRANSACTION_HEADER = (
     "importo",
     "creato_il",
     "aggiornato_il",
+)
+SCHEMA3_TRANSACTION_HEADER = TRANSACTION_HEADER + (
+    "categoria_id",
+    "categoria_nome",
+)
+CATEGORY_HEADER = (
+    "id",
+    "nome",
+    "predefinita",
+    "iniziale",
+)
+TAG_HEADER = (
+    "id",
+    "nome",
+)
+MOVTAG_HEADER = (
+    "movimento_id",
+    "tag_id",
 )
 LINE_HEADER = (
     "id",
@@ -128,19 +150,33 @@ INVESTMENT_OPERATION_HEADER = (
 CSV_HEADERS = {
     "conti.csv": ACCOUNT_HEADER,
     "salvadanai.csv": SAVINGS_HEADER,
-    "movimenti.csv": TRANSACTION_HEADER,
+    "movimenti.csv": SCHEMA3_TRANSACTION_HEADER,
     "righe.csv": LINE_HEADER,
     "posizioni.csv": POSITION_HEADER,
     "operazioni_investimenti.csv": INVESTMENT_OPERATION_HEADER,
+    "categorie.csv": CATEGORY_HEADER,
+    "tag.csv": TAG_HEADER,
+    "movimento_tag.csv": MOVTAG_HEADER,
 }
 SCHEMA1_CSV = frozenset(
     {"conti.csv", "salvadanai.csv", "movimenti.csv", "righe.csv"}
 )
-SCHEMA2_CSV = frozenset(CSV_HEADERS)
+SCHEMA2_CSV = frozenset(
+    {
+        "conti.csv",
+        "salvadanai.csv",
+        "movimenti.csv",
+        "righe.csv",
+        "posizioni.csv",
+        "operazioni_investimenti.csv",
+    }
+)
+SCHEMA3_CSV = frozenset(CSV_HEADERS)
 INVESTMENT_CSV = ("posizioni.csv", "operazioni_investimenti.csv")
 ARCHIVE_NAMES_BY_SCHEMA = {
     1: SCHEMA1_CSV | {MANIFEST_NAME},
     2: SCHEMA2_CSV | {MANIFEST_NAME},
+    3: SCHEMA3_CSV | {MANIFEST_NAME},
 }
 
 
@@ -323,10 +359,25 @@ def build_archive(profile: Profile) -> bytes:
             .order_by("id")
         )
         transactions = list(
-            Transaction.objects.filter(profile=profile).order_by("id")
+            Transaction.objects.filter(profile=profile)
+            .select_related("category")
+            .order_by("id")
+        )
+        categories = list(
+            Category.objects.filter(profile=profile).order_by("id")
+        )
+        tags = list(Tag.objects.filter(profile=profile).order_by("id"))
+        tag_pairs = list(
+            Transaction.tags.through.objects.filter(
+                transaction__profile=profile
+            )
+            .order_by("transaction_id", "tag_id")
+            .values_list("transaction_id", "tag_id")
         )
         lines = list(
-            Line.objects.filter(transaction__profile=profile)
+            Line.objects.filter(
+                transaction__profile=profile, transaction__is_deleted=False
+            )
             .select_related("account", "savings")
             .order_by("id")
         )
@@ -370,9 +421,26 @@ def build_archive(profile: Profile) -> bytes:
             _money(operation.amount),
             _iso(operation.created_at),
             _iso(operation.updated_at),
+            operation.category_id or "",
+            sanitize_csv_text(
+                operation.category.name if operation.category_id else ""
+            ),
         ]
         for operation in transactions
     ]
+    category_rows = [
+        [
+            entry.id,
+            sanitize_csv_text(entry.name),
+            "1" if entry.is_preset else "0",
+            "1" if entry.is_default else "0",
+        ]
+        for entry in categories
+    ]
+    tag_rows = [
+        [entry.id, sanitize_csv_text(entry.name)] for entry in tags
+    ]
+    movtag_rows = [list(pair) for pair in tag_pairs]
     line_rows = [
         [
             line.id,
@@ -391,8 +459,11 @@ def build_archive(profile: Profile) -> bytes:
     files = {
         "conti.csv": _csv_bytes(ACCOUNT_HEADER, account_rows),
         "salvadanai.csv": _csv_bytes(SAVINGS_HEADER, savings_rows),
-        "movimenti.csv": _csv_bytes(TRANSACTION_HEADER, transaction_rows),
+        "movimenti.csv": _csv_bytes(SCHEMA3_TRANSACTION_HEADER, transaction_rows),
         "righe.csv": _csv_bytes(LINE_HEADER, line_rows),
+        "categorie.csv": _csv_bytes(CATEGORY_HEADER, category_rows),
+        "tag.csv": _csv_bytes(TAG_HEADER, tag_rows),
+        "movimento_tag.csv": _csv_bytes(MOVTAG_HEADER, movtag_rows),
     }
     files.update(_investment_files(positions, operations))
     counts = {
@@ -400,6 +471,9 @@ def build_archive(profile: Profile) -> bytes:
         "salvadanai": len(savings_rows),
         "movimenti": len(transaction_rows),
         "righe": len(line_rows),
+        "categorie": len(category_rows),
+        "tag": len(tag_rows),
+        "movimento_tag": len(movtag_rows),
         "posizioni": len(positions),
         "operazioni_investimenti": len(operations),
     }
@@ -435,7 +509,8 @@ def build_archive(profile: Profile) -> bytes:
         "note": [
             "Backup personale del profilo: non sostituisce il backup globale "
             "del sistema.",
-            "La categoria non è memorizzata nel modello e non è esportata.",
+            "Categorie e tag sono inclusi in categorie.csv, tag.csv e "
+            "movimento_tag.csv.",
             "Le operazioni di investimento sono incluse solo in questo "
             "archivio e nell'export dedicato, non nel registro Movimenti.",
             "Le date di creazione e aggiornamento sono informative: il "
@@ -516,8 +591,11 @@ def _parse_bool(value: str, where: str) -> bool:
     _fail(f"{where}: valore booleano non valido.")
 
 
-def _csv_rows(contents: dict[str, bytes], name: str) -> list[list[str]]:
-    header = CSV_HEADERS[name]
+def _csv_rows(contents: dict[str, bytes], name: str, schema: int) -> list[list[str]]:
+    if name == "movimenti.csv" and schema < 3:
+        header = TRANSACTION_HEADER
+    else:
+        header = CSV_HEADERS[name]
     try:
         text = contents[name].decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -552,8 +630,8 @@ def _read_zip(raw: bytes) -> dict[str, bytes]:
             or len(names) != len(set(names))
         ):
             _fail(
-                "L'archivio deve contenere i quattro CSV del formato 1 oppure "
-                "i sei CSV del formato 2, con manifest.json."
+                "L'archivio deve contenere i CSV del formato 1, 2 o 3, "
+                "con manifest.json."
             )
         if any(
             info.is_dir() or "/" in info.filename or "\\" in info.filename
@@ -669,13 +747,18 @@ def _parse_savings(rows: list[list[str]]) -> list[dict]:
     return result
 
 
-def _parse_transactions(rows: list[list[str]]) -> list[dict]:
+def _parse_transactions(
+    rows: list[list[str]], schema: int
+) -> list[dict]:
     result = []
     seen: set[int] = set()
     kinds = set(Transaction.Kind.values)
+    expected = len(TRANSACTION_HEADER) if schema < 3 else len(
+        SCHEMA3_TRANSACTION_HEADER
+    )
     for number, row in enumerate(rows, start=2):
         where = f"movimenti.csv, riga {number}"
-        if len(row) != len(TRANSACTION_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         transaction_id = _parse_int(row[0], where)
         if transaction_id in seen:
@@ -690,15 +773,101 @@ def _parse_transactions(rows: list[list[str]]) -> list[dict]:
         description = restore_csv_text(row[4])
         if len(description) > 255:
             _fail(f"{where}: descrizione troppo lunga.")
+        entry: dict = {
+            "id": transaction_id,
+            "kind": kind,
+            "date": _parse_date(row[3], where),
+            "description": description,
+            "amount": amount,
+        }
+        if schema >= 3:
+            raw_category_id = row[8].strip()
+            category_id = (
+                _parse_int(raw_category_id, where) if raw_category_id else None
+            )
+            category_name = restore_csv_text(row[9].strip())
+            if len(category_name) > 60:
+                _fail(f"{where}: nome della categoria troppo lungo.")
+            entry["category_id"] = category_id
+            entry["category_name"] = category_name
+        result.append(entry)
+    return result
+
+
+def _parse_categories(rows: list[list[str]]) -> list[dict]:
+    result = []
+    seen: set[int] = set()
+    names: set[str] = set()
+    for number, row in enumerate(rows, start=2):
+        where = f"categorie.csv, riga {number}"
+        if len(row) != len(CATEGORY_HEADER):
+            _fail(f"{where}: numero di colonne non valido.")
+        category_id = _parse_int(row[0], where)
+        if category_id in seen:
+            _fail(f"{where}: identificativo duplicato.")
+        seen.add(category_id)
+        name = restore_csv_text(row[1].strip())
+        if not name or len(name) > 60:
+            _fail(f"{where}: nome della categoria non valido.")
+        if name.casefold() in names:
+            _fail(f"{where}: nome della categoria duplicato.")
+        names.add(name.casefold())
         result.append(
             {
-                "id": transaction_id,
-                "kind": kind,
-                "date": _parse_date(row[3], where),
-                "description": description,
-                "amount": amount,
+                "id": category_id,
+                "name": name,
+                "is_preset": _parse_bool(row[2].strip(), where),
+                "is_default": _parse_bool(row[3].strip(), where),
             }
         )
+    defaults = [entry for entry in result if entry["is_default"]]
+    if len(defaults) != 1:
+        _fail("categorie.csv: deve esistere una sola categoria iniziale.")
+    return result
+
+
+def _parse_tags(rows: list[list[str]]) -> list[dict]:
+    result = []
+    seen: set[int] = set()
+    names: set[str] = set()
+    for number, row in enumerate(rows, start=2):
+        where = f"tag.csv, riga {number}"
+        if len(row) != len(TAG_HEADER):
+            _fail(f"{where}: numero di colonne non valido.")
+        tag_id = _parse_int(row[0], where)
+        if tag_id in seen:
+            _fail(f"{where}: identificativo duplicato.")
+        seen.add(tag_id)
+        name = restore_csv_text(row[1].strip())
+        if not name or len(name) > 30:
+            _fail(f"{where}: nome del tag non valido.")
+        if name in names:
+            _fail(f"{where}: nome del tag duplicato.")
+        names.add(name)
+        result.append({"id": tag_id, "name": name})
+    return result
+
+
+def _parse_movtags(
+    rows: list[list[str]],
+    transaction_ids: set[int],
+    tag_ids: set[int],
+) -> list[dict]:
+    result = []
+    seen: set[tuple[int, int]] = set()
+    for number, row in enumerate(rows, start=2):
+        where = f"movimento_tag.csv, riga {number}"
+        if len(row) != len(MOVTAG_HEADER):
+            _fail(f"{where}: numero di colonne non valido.")
+        pair = (_parse_int(row[0].strip(), where), _parse_int(row[1].strip(), where))
+        if pair in seen:
+            _fail(f"{where}: assegnazione duplicata.")
+        seen.add(pair)
+        if pair[0] not in transaction_ids:
+            _fail(f"{where}: movimento inesistente.")
+        if pair[1] not in tag_ids:
+            _fail(f"{where}: tag inesistente.")
+        result.append({"transaction_id": pair[0], "tag_id": pair[1]})
     return result
 
 
@@ -956,10 +1125,23 @@ def _validate(
     lines: list[dict],
     positions: list[dict],
     operations: list[dict],
+    categories: list[dict] | None = None,
+    tags: list[dict] | None = None,
+    movtags: list[dict] | None = None,
 ):
     account_ids = {entry["id"] for entry in accounts}
     savings_ids = {entry["id"] for entry in savings}
     transaction_ids = {entry["id"] for entry in transactions}
+    if schema >= 3:
+        category_ids = {entry["id"] for entry in (categories or [])}
+        for entry in transactions:
+            if entry.get("category_id") is not None and entry.get(
+                "category_id"
+            ) not in category_ids:
+                _fail(
+                    f"movimenti.csv: il movimento {entry['id']} indica una "
+                    "categoria inesistente."
+                )
 
     for entry in savings:
         if entry["backing_account_id"] not in account_ids:
@@ -1029,7 +1211,7 @@ def _validate(
                 "Un archivio schema 1 non può contenere movimenti di "
                 "investimento."
             )
-    if schema == 2:
+    if schema >= 2:
         _validate_investments(
             accounts, transactions, lines, positions, operations
         )
@@ -1053,6 +1235,12 @@ def _validate(
     if schema == 2:
         expected_counts["posizioni"] = len(positions)
         expected_counts["operazioni_investimenti"] = len(operations)
+    if schema >= 3:
+        expected_counts["posizioni"] = len(positions)
+        expected_counts["operazioni_investimenti"] = len(operations)
+        expected_counts["categorie"] = len(categories or [])
+        expected_counts["tag"] = len(tags or [])
+        expected_counts["movimento_tag"] = len(movtags or [])
     if counts != expected_counts:
         _fail("I conteggi del manifest non corrispondono ai file.")
 
@@ -1070,25 +1258,39 @@ def _parse_archive(raw: bytes):
     contents = _read_zip(raw)
     manifest = _read_manifest(contents)
     schema = manifest["schema"]
-    csv_names = SCHEMA1_CSV if schema == 1 else SCHEMA2_CSV
+    csv_names = {1: SCHEMA1_CSV, 2: SCHEMA2_CSV, 3: SCHEMA3_CSV}[schema]
     expected_names = ARCHIVE_NAMES_BY_SCHEMA[schema]
     if set(contents) != expected_names:
         _fail("I file dell'archivio non corrispondono alla versione indicata.")
     parsed_rows = {
-        name: _csv_rows(contents, name) for name in csv_names
+        name: _csv_rows(contents, name, schema) for name in csv_names
     }
     _check_checksums(contents, manifest, parsed_rows, csv_names)
     accounts = _parse_accounts(parsed_rows["conti.csv"])
     savings = _parse_savings(parsed_rows["salvadanai.csv"])
-    transactions = _parse_transactions(parsed_rows["movimenti.csv"])
+    transactions = _parse_transactions(parsed_rows["movimenti.csv"], schema)
     lines = _parse_lines(parsed_rows["righe.csv"])
     if schema == 2:
         positions = _parse_positions(parsed_rows["posizioni.csv"])
         operations = _parse_investment_operations(
             parsed_rows["operazioni_investimenti.csv"]
         )
+        categories, tags, movtags = [], [], []
+    elif schema == 3:
+        positions = _parse_positions(parsed_rows["posizioni.csv"])
+        operations = _parse_investment_operations(
+            parsed_rows["operazioni_investimenti.csv"]
+        )
+        categories = _parse_categories(parsed_rows["categorie.csv"])
+        tags = _parse_tags(parsed_rows["tag.csv"])
+        movtags = _parse_movtags(
+            parsed_rows["movimento_tag.csv"],
+            {entry["id"] for entry in transactions},
+            {entry["id"] for entry in tags},
+        )
     else:
         positions, operations = [], []
+        categories, tags, movtags = [], [], []
     _validate(
         manifest,
         schema,
@@ -1098,8 +1300,22 @@ def _parse_archive(raw: bytes):
         lines,
         positions,
         operations,
+        categories,
+        tags,
+        movtags,
     )
-    return manifest, accounts, savings, transactions, lines, positions, operations
+    return (
+        manifest,
+        accounts,
+        savings,
+        transactions,
+        lines,
+        positions,
+        operations,
+        categories,
+        tags,
+        movtags,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1221,6 +1437,9 @@ def analyze_archive(raw: bytes, profile: Profile) -> dict:
         lines,
         positions,
         operations,
+        categories,
+        tags,
+        movtags,
     ) = _parse_archive(raw)
     has_data = _profile_has_data(profile)
     warnings = []
@@ -1273,6 +1492,9 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
         lines,
         positions,
         operations,
+        categories,
+        tags,
+        movtags,
     ) = _parse_archive(raw)
     if _profile_has_data(profile):
         _fail(
@@ -1318,6 +1540,37 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             for entry, savings_account in zip(savings, savings_objects)
         }
 
+        if manifest.get("schema", 1) >= 3:
+            Category.objects.filter(profile=profile).delete()
+            Tag.objects.filter(profile=profile).delete()
+            category_objects = [
+                Category(
+                    profile=profile,
+                    name=entry["name"],
+                    is_preset=entry["is_preset"],
+                    is_default=entry["is_default"],
+                )
+                for entry in categories
+            ]
+            Category.objects.bulk_create(category_objects)
+            category_map = {
+                entry["id"]: category
+                for entry, category in zip(categories, category_objects)
+            }
+            tag_objects = [
+                Tag(profile=profile, name=entry["name"]) for entry in tags
+            ]
+            Tag.objects.bulk_create(tag_objects)
+            tag_map = {
+                entry["id"]: tag
+                for entry, tag in zip(tags, tag_objects)
+            }
+        else:
+            defaults = ensure_default_categories(profile)
+            default_category = defaults[DEFAULT_CATEGORY_NAME]
+            category_map = {}
+            tag_map = {}
+
         transaction_objects = [
             Transaction(
                 profile=profile,
@@ -1325,6 +1578,11 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
                 date=entry["date"],
                 description=entry["description"],
                 amount=entry["amount"],
+                category=(
+                    category_map.get(entry["category_id"])
+                    if manifest.get("schema", 1) >= 3
+                    else default_category
+                ),
             )
             for entry in transactions
         ]
@@ -1333,6 +1591,17 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             entry["id"]: operation
             for entry, operation in zip(transactions, transaction_objects)
         }
+        if manifest.get("schema", 1) >= 3 and movtags:
+            through = Transaction.tags.through
+            through.objects.bulk_create(
+                [
+                    through(
+                        transaction_id=transaction_map[item["transaction_id"]].id,
+                        tag_id=tag_map[item["tag_id"]].id,
+                    )
+                    for item in movtags
+                ]
+            )
 
         Line.objects.bulk_create(
             [

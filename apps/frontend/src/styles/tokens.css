@@ -1,0 +1,83 @@
+/* Spendy — design token F2 (DC-085, DC-090). Nessun selettore di elemento:
+   solo @font-face e variabili. Il tema si attiva con data-theme su <html>
+   (default: scuro); senza attributo valgono le variabili storiche di styles.css. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+[data-theme="dark"] {
+  --bg0: #0b0f0d;
+  --bg1: #111614;
+  --bg2: #18201c;
+  --line: #26302b;
+  --text: #f4f7f5;
+  --muted: #9db3a8;
+  --accent: #1db48b;
+  --accent-ink: #0b0f0d;
+  --danger: #f26d6d;
+  --warn: #e8a33d;
+  --info: #5eb1ef;
+  --up: #3fd08c;
+  --down: #f27e7e;
+  --radius: 18px;
+  --radius-lg: 20px;
+  --shadow-soft: 0 8px 28px rgb(0 0 0 / 0.35);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+}
+
+[data-theme="light"] {
+  --bg0: #f4f7f5;
+  --bg1: #ffffff;
+  --bg2: #e9efec;
+  --line: #d5dcd7;
+  --text: #0b0f0d;
+  --muted: #4a5a53;
+  --accent: #166047;
+  --accent-ink: #ffffff;
+  --danger: #c23b3b;
+  --warn: #9a6206;
+  --info: #0b6bcb;
+  --up: #166047;
+  --down: #c23b3b;
+  --radius: 18px;
+  --radius-lg: 20px;
+  --shadow-soft: 0 8px 28px rgb(11 15 13 / 0.1);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+}
+
+/* Cifre tabulari per gli importi (Inter supporta tnum). */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}

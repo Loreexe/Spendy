@@ -429,7 +429,10 @@ class AutomationEffectsTests(AutomationTestBase):
             Automation.objects.filter(pk=automation["id"]).exists()
         )
         execution = AutomationExecution.objects.get(automation_ref=automation["id"])
-        self.assertIsNone(execution.automation_id)
+        self.assertEqual(execution.automation_id, automation["id"])
+        self.assertTrue(
+            Automation.all_objects.filter(pk=automation["id"]).exists()
+        )
         self.assertEqual(execution.status, AutomationExecution.Status.SUCCEEDED)
         self.assertTrue(
             Transaction.objects.filter(
@@ -449,7 +452,7 @@ class AutomationEffectsTests(AutomationTestBase):
             Automation.objects.filter(pk=automation["id"]).exists()
         )
         execution = AutomationExecution.objects.get(automation_ref=automation["id"])
-        self.assertIsNone(execution.automation_id)
+        self.assertEqual(execution.automation_id, automation["id"])
 
 
 class AutomationWorkerTests(AutomationTestBase):

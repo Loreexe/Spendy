@@ -28,6 +28,9 @@ CSV_NAMES = (
     "righe.csv",
     "posizioni.csv",
     "operazioni_investimenti.csv",
+    "categorie.csv",
+    "tag.csv",
+    "movimento_tag.csv",
 )
 
 
@@ -107,11 +110,30 @@ class ArchiveTestBase(FinanceTestBase):
     def as_schema1(self, content):
         contents = self.unpack(content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        for name in ("posizioni.csv", "operazioni_investimenti.csv"):
+        for name in (
+            "posizioni.csv",
+            "operazioni_investimenti.csv",
+            "categorie.csv",
+            "tag.csv",
+            "movimento_tag.csv",
+        ):
             del contents[name]
             del manifest["file"][name]
             del manifest["conteggi"][name[:-4]]
+        rows = self.csv_rows(contents, "movimenti.csv")
+        stripped = [row[:8] for row in rows]
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+        writer.writerows(stripped)
+        contents["movimenti.csv"] = (
+            b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
+        )
         manifest["schema"] = 1
+        manifest["file"]["movimenti.csv"]["sha256"] = hashlib.sha256(
+            contents["movimenti.csv"]
+        ).hexdigest()
+        manifest["file"]["movimenti.csv"]["righe"] = len(stripped) - 1
+        manifest["conteggi"]["movimenti"] = len(stripped) - 1
         manifest.pop("conto_investimenti_id", None)
         manifest.pop("conto_investimenti", None)
         contents["manifest.json"] = json.dumps(manifest).encode("utf-8")
@@ -289,7 +311,7 @@ class ArchiveExportTests(ArchiveTestBase):
         self.make_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 2)
+        self.assertEqual(manifest["schema"], 3)
         self.assertEqual(manifest["scopo"], "backup-profilo")
         self.assertEqual(manifest["valuta"], "EUR")
         self.assertEqual(
@@ -301,6 +323,9 @@ class ArchiveExportTests(ArchiveTestBase):
                 "righe": 11,
                 "posizioni": 0,
                 "operazioni_investimenti": 0,
+                "categorie": 9,
+                "tag": 0,
+                "movimento_tag": 0,
             },
         )
         for name in CSV_NAMES:
@@ -340,16 +365,27 @@ class ArchiveExportTests(ArchiveTestBase):
                 "righe": 0,
                 "posizioni": 0,
                 "operazioni_investimenti": 0,
+                "categorie": 9,
+                "tag": 0,
+                "movimento_tag": 0,
             },
         )
         for name in CSV_NAMES:
-            self.assertEqual(len(contents[name].decode("utf-8-sig").splitlines()), 1)
+            if name == "categorie.csv":
+                # Il profilo vuoto ha comunque le 9 categorie predefinite.
+                self.assertEqual(
+                    len(contents[name].decode("utf-8-sig").splitlines()), 10
+                )
+            else:
+                self.assertEqual(
+                    len(contents[name].decode("utf-8-sig").splitlines()), 1
+                )
 
-    def test_schema2_archive_contains_positions_and_operations(self):
+    def test_schema3_archive_contains_positions_and_operations(self):
         account, _ = self.make_investment_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 2)
+        self.assertEqual(manifest["schema"], 3)
         self.assertEqual(manifest["conteggi"]["posizioni"], 1)
         self.assertEqual(manifest["conteggi"]["operazioni_investimenti"], 4)
         self.assertEqual(manifest["conto_investimenti_id"], account["id"])

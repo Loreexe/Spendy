@@ -13,6 +13,8 @@ import {
   type InvestmentPositionUpdatePayload,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
+import { ConfirmModal } from "../components/ConfirmModal";
+import { useToast } from "../components/Toast";
 import { money, signedMoney, todayISO } from "../format";
 
 const CATEGORIES: { value: InvestmentCategory; label: string }[] = [
@@ -440,6 +442,10 @@ function PositionDetail({
     editing: InvestmentOperation | null;
   } | null>(null);
   const [name, setName] = useState(position.name);
+  const [confirmDeletePosition, setConfirmDeletePosition] = useState(false);
+  const [confirmDeleteOperation, setConfirmDeleteOperation] =
+    useState<InvestmentOperation | null>(null);
+  const { notify } = useToast();
   const [category, setCategory] = useState<InvestmentCategory | "">(
     position.category,
   );
@@ -541,19 +547,25 @@ function PositionDetail({
   }
 
   async function removePosition() {
-    if (
-      !window.confirm(
-        `Eliminare la posizione "${position.name}"? ` +
-          "L'operazione è definitiva e possibile solo se non ha operazioni.",
-      )
-    ) {
-      return;
-    }
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api.deleteInvestmentPosition(position.id);
+      notify(`Posizione «${position.name}» eliminata.`, {
+        label: "Annulla",
+        onClick: () => {
+          api
+            .restoreTrash("position", position.id)
+            .then(() => onChanged())
+            .catch((err) =>
+              setError(
+                err instanceof Error ? err.message : "Ripristino non riuscito.",
+              ),
+            );
+        },
+      });
+      setConfirmDeletePosition(false);
       await onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eliminazione non riuscita.");
@@ -606,21 +618,28 @@ function PositionDetail({
   }
 
   async function removeOperation(operation: InvestmentOperation) {
-    if (
-      !window.confirm(
-        `Eliminare l'operazione "${operation.kind_label}" del ` +
-          `${prettyDate(operation.date)}? ` +
-          "Il movimento di conto collegato sarà rimosso e quantità, costo e " +
-          "plusvalenze della posizione saranno ricalcolati.",
-      )
-    ) {
-      return;
-    }
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api.deleteInvestmentOperation(operation.id);
+      notify("Operazione eliminata; i totali sono stati ricalcolati.", {
+        label: "Annulla",
+        onClick: () => {
+          api
+            .restoreTrash("operation", operation.id)
+            .then(() => {
+              loadDetail();
+              onChanged();
+            })
+            .catch((err) =>
+              setError(
+                err instanceof Error ? err.message : "Ripristino non riuscito.",
+              ),
+            );
+        },
+      });
+      setConfirmDeleteOperation(null);
       setMessage("Operazione eliminata; i totali sono stati ricalcolati.");
       await loadDetail();
       await onChanged();
@@ -669,7 +688,7 @@ function PositionDetail({
           <button
             type="button"
             className="danger"
-            onClick={() => void removePosition()}
+            onClick={() => setConfirmDeletePosition(true)}
             disabled={busy || loadingDetail || operations.length > 0}
             title={
               operations.length > 0
@@ -928,7 +947,7 @@ function PositionDetail({
                     <button
                       type="button"
                       className="danger"
-                      onClick={() => void removeOperation(operation)}
+                      onClick={() => setConfirmDeleteOperation(operation)}
                       disabled={busy}
                     >
                       Elimina
@@ -940,6 +959,31 @@ function PositionDetail({
           </tbody>
         </table>
       </div>
+      {confirmDeletePosition && (
+        <ConfirmModal
+          title={`Eliminare la posizione «${position.name}»?`}
+          summary={[
+            "Possibile solo se non ha operazioni.",
+            "La posizione finisce nel cestino per 30 giorni.",
+          ]}
+          busy={busy}
+          onConfirm={() => void removePosition()}
+          onCancel={() => setConfirmDeletePosition(false)}
+        />
+      )}
+      {confirmDeleteOperation && (
+        <ConfirmModal
+          title="Eliminare questa operazione?"
+          summary={[
+            `${confirmDeleteOperation.kind_label} del ${prettyDate(confirmDeleteOperation.date)}.`,
+            "Il movimento di conto collegato sarà rimosso e quantità, costo e plusvalenze saranno ricalcolati.",
+            "L'operazione finisce nel cestino per 30 giorni.",
+          ]}
+          busy={busy}
+          onConfirm={() => void removeOperation(confirmDeleteOperation)}
+          onCancel={() => setConfirmDeleteOperation(null)}
+        />
+      )}
     </section>
   );
 }

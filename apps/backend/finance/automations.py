@@ -80,7 +80,9 @@ def projected_account_balance(
 ) -> "Decimal":
     total = (
         Line.objects.filter(
-            account=account, transaction__date__lte=target_date
+            account=account,
+            transaction__date__lte=target_date,
+            transaction__is_deleted=False,
         ).aggregate(total=Sum("amount"))["total"]
         or ZERO
     )

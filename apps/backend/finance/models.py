@@ -7,6 +7,48 @@ from django.utils import timezone
 
 ZERO = Decimal("0.00")
 
+TRASH_RETENTION_DAYS = 30
+
+
+class ActiveManager(models.Manager):
+    """Default manager: hides soft-deleted rows (DC-088)."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+
+class SoftDeleteModel(models.Model):
+    """Soft delete with 30-day retention: rows stay queryable via all_objects."""
+
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    objects = ActiveManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        abstract = True
+
+    def soft_delete(self, user=None):
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        if user is not None:
+            self.deleted_by = user
+        self.save(update_fields=("is_deleted", "deleted_at", "deleted_by"))
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=("is_deleted", "deleted_at", "deleted_by"))
+
 
 class Profile(models.Model):
     """Personal profile: exactly one per normal account (DC-013)."""
@@ -17,6 +59,11 @@ class Profile(models.Model):
         related_name="finance_profile",
     )
     display_name = models.CharField(max_length=120, blank=True)
+    theme = models.CharField(
+        max_length=5,
+        choices=[("dark", "Scuro"), ("light", "Chiaro")],
+        default="dark",
+    )
     investment_account = models.ForeignKey(
         "Account",
         on_delete=models.SET_NULL,
@@ -31,7 +78,172 @@ class Profile(models.Model):
         return self.display_name or self.user.get_full_name()
 
 
-class Account(models.Model):
+class Category(SoftDeleteModel):
+    """Movement category: one per transaction, preset or personal (DC-086)."""
+
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="categories"
+    )
+    name = models.CharField(max_length=60)
+    is_preset = models.BooleanField(default=False)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("profile", "name"),
+                condition=Q(is_deleted=False),
+                name="finance_category_unique_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+DEFAULT_CATEGORIES = (
+    "Altro",
+    "Alimentari",
+    "Casa e bollette",
+    "Trasporti",
+    "Salute",
+    "Svago e tempo libero",
+    "Shopping",
+    "Lavoro e studio",
+    "Risparmio",
+)
+
+DEFAULT_CATEGORY_NAME = "Altro"
+
+
+def ensure_default_categories(profile: Profile) -> dict[str, Category]:
+    """Create the preset categories (including default "Altro") if missing."""
+    existing = {
+        category.name: category
+        for category in Category.objects.filter(profile=profile)
+    }
+    result = dict(existing)
+    for name in DEFAULT_CATEGORIES:
+        if name in result:
+            continue
+        result[name] = Category.objects.create(
+            profile=profile,
+            name=name,
+            is_preset=True,
+            is_default=(name == DEFAULT_CATEGORY_NAME),
+        )
+    default = result.get(DEFAULT_CATEGORY_NAME)
+    if default is not None and not default.is_default:
+        default.is_default = True
+        default.save(update_fields=("is_default", "updated_at"))
+    return result
+
+
+class Tag(SoftDeleteModel):
+    """Free-form movement label, unique per profile (DC-086)."""
+
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="tags"
+    )
+    name = models.CharField(max_length=30)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("profile", "name"),
+                condition=Q(is_deleted=False),
+                name="finance_tag_unique_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+MAX_TAGS_PER_TRANSACTION = 10
+
+
+def normalize_tag_name(value: object) -> str:
+    return str(value or "").strip()
+
+
+def purge_trash() -> int:
+    """Hard-delete soft-deleted rows older than the retention window."""
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(days=TRASH_RETENTION_DAYS)
+    removed = 0
+    for model in (
+        Transaction,
+        Automation,
+        InvestmentOperation,
+        InvestmentPosition,
+        SavingsAccount,
+        Account,
+        Category,
+        Tag,
+    ):
+        for entry in model.all_objects.filter(
+            is_deleted=True, deleted_at__lt=cutoff
+        ):
+            if isinstance(entry, Account) and (
+                Transaction.all_objects.filter(lines__account=entry).exists()
+                or Automation.all_objects.filter(
+                    source_account=entry
+                ).exists()
+            ):
+                continue
+            entry.delete()
+            removed += 1
+    return removed
+    return str(value or "").strip()
+
+
+def resolve_tags(profile: Profile, names: list) -> list[Tag]:
+    """Get-or-create tags for normalized names (max 10, empties dropped).
+
+    Reusing the name of a trashed tag restores it.
+    """
+    seen: list[str] = []
+    for raw in names or []:
+        name = normalize_tag_name(raw)
+        if not name or name in seen:
+            continue
+        seen.append(name)
+        if len(seen) >= MAX_TAGS_PER_TRANSACTION:
+            break
+    resolved = []
+    for name in seen:
+        tag = (
+            Tag.all_objects.filter(profile=profile, name=name)
+            .order_by("is_deleted", "-id")
+            .first()
+        )
+        if tag is None:
+            tag = Tag.objects.create(profile=profile, name=name)
+        elif tag.is_deleted:
+            tag.restore()
+        resolved.append(tag)
+    return resolved
+
+
+def match_category(profile: Profile, text: str) -> Category:
+    """Match a free-text category to a profile category, else default."""
+    wanted = (text or "").strip()
+    if wanted:
+        found = Category.objects.filter(
+            profile=profile, name__iexact=wanted
+        ).first()
+        if found is not None:
+            return found
+    defaults = ensure_default_categories(profile)
+    return defaults[DEFAULT_CATEGORY_NAME]
+
+
+class Account(SoftDeleteModel):
     class Type(models.TextChoices):
         CASH = "cash", "Contanti"
         CHECKING = "checking", "Conto corrente"
@@ -59,10 +271,15 @@ class Account(models.Model):
 
     @property
     def balance(self) -> Decimal:
-        return self.lines.aggregate(total=Sum("amount"))["total"] or ZERO
+        return (
+            self.lines.filter(transaction__is_deleted=False).aggregate(
+                total=Sum("amount")
+            )["total"]
+            or ZERO
+        )
 
 
-class SavingsAccount(models.Model):
+class SavingsAccount(SoftDeleteModel):
     """Savings container with its own balance and a backing account (DC-011)."""
 
     profile = models.ForeignKey(
@@ -83,10 +300,15 @@ class SavingsAccount(models.Model):
 
     @property
     def balance(self) -> Decimal:
-        return self.lines.aggregate(total=Sum("amount"))["total"] or ZERO
+        return (
+            self.lines.filter(transaction__is_deleted=False).aggregate(
+                total=Sum("amount")
+            )["total"]
+            or ZERO
+        )
 
 
-class Automation(models.Model):
+class Automation(SoftDeleteModel):
     """Recurring rule: a savings transfer or an expense (DC-014, DC-080).
 
     Only temporal, periodic rules are implemented. The model stays generic so
@@ -201,7 +423,7 @@ class Automation(models.Model):
         return self.status == self.Status.ACTIVE
 
 
-class Transaction(models.Model):
+class Transaction(SoftDeleteModel):
     class Kind(models.TextChoices):
         OPENING = "opening", "Apertura"
         INCOME = "income", "Entrata"
@@ -225,6 +447,14 @@ class Transaction(models.Model):
     date = models.DateField()
     description = models.CharField(max_length=255, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="transactions",
+    )
+    tags = models.ManyToManyField(Tag, blank=True, related_name="transactions")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -438,7 +668,7 @@ class Notification(models.Model):
             self.save(update_fields=("read_at",))
 
 
-class InvestmentPosition(models.Model):
+class InvestmentPosition(SoftDeleteModel):
     """A holding tracked by quantity and unit price (DC-082/DC-083).
 
     Derived values (quantity, cost, gains) are never stored: they are always
@@ -477,7 +707,7 @@ class InvestmentPosition(models.Model):
         return self.name
 
 
-class InvestmentOperation(models.Model):
+class InvestmentOperation(SoftDeleteModel):
     """One movement of an investment position.
 
     ``cash_amount`` is the signed source of truth for the account movement:

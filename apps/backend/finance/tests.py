@@ -52,6 +52,35 @@ class ProfileTests(FinanceTestBase):
         response = self.client.get(reverse("finance-dashboard"))
         self.assertEqual(response.status_code, 403)
 
+    def test_theme_defaults_to_dark_and_is_exposed(self):
+        response = self.client.get(reverse("finance-profile"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["theme"], "dark")
+
+    def test_theme_can_be_switched_to_light(self):
+        response = self.client.patch(
+            reverse("finance-profile"), {"theme": "light"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["theme"], "light")
+        self.assertEqual(
+            Profile.objects.get(user=self.user).theme, "light"
+        )
+
+    def test_theme_rejects_unknown_values(self):
+        response = self.client.patch(
+            reverse("finance-profile"), {"theme": "auto"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_global_admin_cannot_change_theme(self):
+        admin = User.objects.get(is_global_admin=True)
+        self.client.force_authenticate(user=admin)
+        response = self.client.patch(
+            reverse("finance-profile"), {"theme": "light"}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+
 
 class AccountTests(FinanceTestBase):
     def test_account_with_initial_balance_creates_opening_movement(self):

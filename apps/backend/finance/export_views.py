@@ -39,6 +39,7 @@ class ExportTransactionsView(FinanceView):
         queryset = (
             Transaction.objects.filter(profile=profile)
             .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
+            .select_related("category")
             .prefetch_related("lines__account")
             .order_by("date", "id")
         )
@@ -48,13 +49,19 @@ class ExportTransactionsView(FinanceView):
             queryset = queryset.filter(lines__account_id=account_id)
         if savings_id:
             queryset = queryset.filter(lines__savings_id=savings_id)
+        category_id = request.query_params.get("category")
+        if category_id:
+            queryset = queryset.filter(category_id=category_id)
+        tag = (request.query_params.get("tag") or "").strip()
+        if tag:
+            queryset = queryset.filter(tags__name=tag)
         start = _parse_date(request.query_params.get("start"))
         end = _parse_date(request.query_params.get("end"))
         if start is not None:
             queryset = queryset.filter(date__gte=start)
         if end is not None:
             queryset = queryset.filter(date__lte=end)
-        if account_id or savings_id:
+        if account_id or savings_id or category_id or tag:
             queryset = queryset.distinct()
 
         buffer = io.StringIO()
@@ -79,7 +86,11 @@ class ExportTransactionsView(FinanceView):
                         sanitize_csv_text(
                             operation.description or operation.get_kind_display()
                         ),
-                        operation.get_kind_display(),
+                        sanitize_csv_text(
+                            operation.category.name
+                            if operation.category_id
+                            else operation.get_kind_display()
+                        ),
                         sanitize_csv_text(names[account_pk]),
                         _amount(-net),
                     ]

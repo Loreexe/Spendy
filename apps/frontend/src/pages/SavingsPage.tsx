@@ -4,7 +4,9 @@ import {
   type Account,
   type SavingsAccount,
 } from "../api";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { LoadingScreen } from "../components/Guards";
+import { useToast } from "../components/Toast";
 import { amountClass, money, todayISO } from "../format";
 
 function SavingsCard({
@@ -24,6 +26,8 @@ function SavingsCard({
   );
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const { notify } = useToast();
 
   useEffect(() => {
     if (!accountId && accounts[0]) setAccountId(String(accounts[0].id));
@@ -71,11 +75,25 @@ function SavingsCard({
   }
 
   async function remove() {
-    if (!window.confirm(`Eliminare il salvadanaio "${savings.name}"?`)) return;
     setBusy(true);
     report(null, null);
     try {
       await api.deleteSavings(savings.id);
+      setConfirming(false);
+      notify(`Salvadanaio «${savings.name}» eliminato.`, {
+        label: "Annulla",
+        onClick: () => {
+          api
+            .restoreTrash("savings", savings.id)
+            .then(() => onChanged())
+            .catch((err) =>
+              report(
+                null,
+                err instanceof Error ? err.message : "Ripristino non riuscito.",
+              ),
+            );
+        },
+      });
       await onChanged();
       report("Salvadanaio eliminato; il saldo residuo è stato trasferito.", null);
     } catch (err) {
@@ -133,12 +151,25 @@ function SavingsCard({
         <button
           type="button"
           className="danger"
-          onClick={() => void remove()}
+          onClick={() => setConfirming(true)}
           disabled={busy}
         >
           Elimina
         </button>
       </form>
+      {confirming && (
+        <ConfirmModal
+          title={`Eliminare il salvadanaio «${savings.name}»?`}
+          summary={[
+            `Saldo attuale: ${money(savings.balance)} (trasferito al conto di appoggio).`,
+            "Le automazioni collegate vengono rimosse.",
+            "Il salvadanaio finisce nel cestino per 30 giorni.",
+          ]}
+          busy={busy}
+          onConfirm={() => void remove()}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
     </li>
   );
 }

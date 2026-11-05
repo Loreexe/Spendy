@@ -1,7 +1,7 @@
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -24,8 +24,10 @@ from .investments import (
 )
 from .models import (
     ZERO,
+    DEFAULT_CATEGORY_NAME,
     Account,
     AutomationExecution,
+    Category,
     InvestmentOperation,
     InvestmentPosition,
     Line,
@@ -33,7 +35,10 @@ from .models import (
     Profile,
     SavingsAccount,
     Automation,
+    Tag,
     Transaction,
+    ensure_default_categories,
+    match_category,
 )
 from .services import assert_accounts_non_negative
 from .serializers import (
@@ -70,10 +75,16 @@ class FinanceView(APIView):
             raise PermissionDenied(
                 "L'amministratore globale non ha un profilo finanziario."
             )
-        profile, _ = Profile.objects.get_or_create(
+        profile, created = Profile.objects.get_or_create(
             user=request.user,
-            defaults={"display_name": request.user.email or request.user.username or ""},
+            defaults={
+                "display_name": request.user.email
+                or request.user.username
+                or ""
+            },
         )
+        if created:
+            ensure_default_categories(profile)
         return profile
 
 
@@ -81,6 +92,13 @@ class ProfileView(FinanceView):
     def get(self, request):
         profile = self.get_profile(request)
         return Response(ProfileSerializer(profile).data)
+
+    def patch(self, request):
+        profile = self.get_profile(request)
+        serializer = ProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class DashboardView(FinanceView):
@@ -105,6 +123,7 @@ class DashboardView(FinanceView):
                 account__profile=profile,
                 transaction__date__gte=start,
                 transaction__date__lte=end,
+                transaction__is_deleted=False,
             ).aggregate(total=Sum("amount"))["total"]
             or ZERO
         )
@@ -196,6 +215,110 @@ class DashboardView(FinanceView):
             raise ValidationError({"detail": f"Data non valida: {value}."}) from exc
 
 
+class DashboardSeriesView(FinanceView):
+    """Time buckets and per-category expenses for the dashboard charts."""
+
+    def get(self, request):
+        from datetime import timedelta
+
+        profile = self.get_profile(request)
+        today = timezone.localdate()
+        start = DashboardView._parse_date(
+            request.query_params.get("start"), today.replace(day=1)
+        )
+        end = DashboardView._parse_date(
+            request.query_params.get("end"), today
+        )
+        if start > end:
+            raise ValidationError(
+                {"detail": "La data iniziale supera quella finale."}
+            )
+
+        span = (end - start).days
+        step = 1 if span <= 62 else 7
+        buckets: list[date] = []
+        cursor = start
+        while cursor <= end:
+            buckets.append(cursor)
+            cursor += timedelta(days=step)
+        if buckets[-1] != end:
+            buckets.append(end)
+        buckets = buckets[:95]
+
+        account_lines = Line.objects.filter(
+            account__profile=profile,
+            transaction__is_deleted=False,
+        ).order_by("transaction__date", "id")
+        savings_lines = Line.objects.filter(
+            savings__profile=profile,
+            transaction__is_deleted=False,
+        ).order_by("transaction__date", "id")
+        cost_steps: list[list[tuple[date, Decimal]]] = []
+        for position in profile.investment_positions.all():
+            cost_steps.append(
+                [
+                    (row["operation"].date, row["cost_after"])
+                    for row in recalculate_position(position)["operations"]
+                ]
+            )
+
+        points = []
+        for bucket in buckets:
+            saldo = (
+                account_lines.filter(transaction__date__lte=bucket).aggregate(
+                    total=Sum("amount")
+                )["total"]
+                or ZERO
+            )
+            savings = (
+                savings_lines.filter(transaction__date__lte=bucket).aggregate(
+                    total=Sum("amount")
+                )["total"]
+                or ZERO
+            )
+            invested = ZERO
+            for steps in cost_steps:
+                current = ZERO
+                for op_date, cost_after in steps:
+                    if op_date > bucket:
+                        break
+                    current = cost_after
+                invested += current
+            points.append(
+                {
+                    "date": bucket.isoformat(),
+                    "saldo": f"{saldo:.2f}",
+                    "patrimonio": f"{saldo + savings + invested:.2f}",
+                }
+            )
+
+        by_category = (
+            Transaction.objects.filter(
+                profile=profile,
+                kind=Transaction.Kind.EXPENSE,
+                date__gte=start,
+                date__lte=end,
+            )
+            .exclude(category__isnull=True)
+            .values("category__id", "category__name")
+            .annotate(total=Sum("amount"))
+            .order_by("-total")
+        )
+        return Response(
+            {
+                "buckets": points,
+                "by_category": [
+                    {
+                        "id": entry["category__id"],
+                        "name": entry["category__name"],
+                        "total": f"{entry['total']:.2f}",
+                    }
+                    for entry in by_category
+                ],
+            }
+        )
+
+
 class AccountListCreateView(FinanceView):
     def get(self, request):
         profile = self.get_profile(request)
@@ -269,7 +392,7 @@ class AccountDetailView(FinanceView):
                 {"detail": "Il conto ha movimenti: puoi solo archiviarlo."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        account.delete()
+        account.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -329,6 +452,7 @@ class SavingsAccountDetailView(FinanceView):
                     kind=Notification.Kind.AUTOMATION_PENDING,
                     read_at__isnull=True,
                 ).update(read_at=timezone.now())
+                automation.soft_delete(request.user)
             if balance != ZERO:
                 transfer = Transaction.objects.create(
                     profile=savings.profile,
@@ -336,6 +460,7 @@ class SavingsAccountDetailView(FinanceView):
                     date=timezone.localdate(),
                     description=f"Saldo residuo salvadanaio {savings.name}",
                     amount=abs(balance),
+                    category=match_category(savings.profile, ""),
                 )
                 Line.objects.create(
                     transaction=transfer,
@@ -345,7 +470,7 @@ class SavingsAccountDetailView(FinanceView):
                     if balance > ZERO
                     else Line.Role.TRANSFER_OUT,
                 )
-            savings.delete()
+            savings.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -355,7 +480,8 @@ class TransactionListCreateView(FinanceView):
         queryset = (
             Transaction.objects.filter(profile=profile)
             .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
-            .prefetch_related("lines__account", "lines__savings")
+            .select_related("category")
+            .prefetch_related("tags", "lines__account", "lines__savings")
             .order_by("-date", "-id")
         )
         account_id = request.query_params.get("account")
@@ -370,7 +496,13 @@ class TransactionListCreateView(FinanceView):
             queryset = queryset.filter(date__gte=start)
         if end:
             queryset = queryset.filter(date__lte=end)
-        if account_id or savings_id:
+        category_id = request.query_params.get("category")
+        if category_id:
+            queryset = queryset.filter(category_id=category_id)
+        tag = (request.query_params.get("tag") or "").strip()
+        if tag:
+            queryset = queryset.filter(tags__name=tag)
+        if account_id or savings_id or tag:
             queryset = queryset.distinct()
         try:
             limit = min(max(int(request.query_params.get("limit", 100)), 1), 500)
@@ -397,9 +529,11 @@ class TransactionListCreateView(FinanceView):
         )
         serializer.is_valid(raise_exception=True)
         operation = serializer.save()
-        operation = Transaction.objects.prefetch_related(
-            "lines__account", "lines__savings"
-        ).get(pk=operation.pk)
+        operation = (
+            Transaction.objects.select_related("category")
+            .prefetch_related("tags", "lines__account", "lines__savings")
+            .get(pk=operation.pk)
+        )
         return Response(
             TransactionSerializer(operation).data, status=status.HTTP_201_CREATED
         )
@@ -409,9 +543,11 @@ class TransactionDetailView(FinanceView):
     def get_object(self, request, pk: int) -> Transaction:
         profile = self.get_profile(request)
         try:
-            return Transaction.objects.prefetch_related(
-                "lines__account", "lines__savings"
-            ).get(pk=pk, profile=profile)
+            return (
+                Transaction.objects.select_related("category")
+                .prefetch_related("tags", "lines__account", "lines__savings")
+                .get(pk=pk, profile=profile)
+            )
         except Transaction.DoesNotExist as exc:
             raise ValidationError({"detail": "Movimento non trovato."}) from exc
 
@@ -442,9 +578,11 @@ class TransactionDetailView(FinanceView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        operation = Transaction.objects.prefetch_related(
-            "lines__account", "lines__savings"
-        ).get(pk=operation.pk)
+        operation = (
+            Transaction.objects.select_related("category")
+            .prefetch_related("tags", "lines__account", "lines__savings")
+            .get(pk=operation.pk)
+        )
         AutomationExecution.objects.filter(transaction=operation).update(
             corrected=True, updated_at=timezone.now()
         )
@@ -495,8 +633,373 @@ class TransactionDetailView(FinanceView):
                         "updated_at",
                     )
                 )
-            operation.delete()
+            operation.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _category_payload(category: Category) -> dict:
+    return {
+        "id": category.id,
+        "name": category.name,
+        "is_preset": category.is_preset,
+        "is_default": category.is_default,
+    }
+
+
+class CategoryListCreateView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        ensure_default_categories(profile)
+        categories = Category.objects.filter(profile=profile).order_by(
+            "-is_default", "name"
+        )
+        return Response([_category_payload(item) for item in categories])
+
+    def post(self, request):
+        profile = self.get_profile(request)
+        name = str(request.data.get("name", "")).strip()
+        if not name or len(name) > 60:
+            raise ValidationError(
+                {"name": "Indica un nome da 1 a 60 caratteri."}
+            )
+        if Category.objects.filter(
+            profile=profile, name__iexact=name
+        ).exists():
+            raise ValidationError({"name": "Esiste già questa categoria."})
+        ensure_default_categories(profile)
+        category = Category.objects.create(profile=profile, name=name)
+        return Response(
+            _category_payload(category), status=status.HTTP_201_CREATED
+        )
+
+
+class CategoryDetailView(FinanceView):
+    def _get_object(self, request, pk: int) -> Category:
+        profile = self.get_profile(request)
+        try:
+            return Category.objects.get(pk=pk, profile=profile)
+        except Category.DoesNotExist as exc:
+            raise ValidationError({"detail": "Categoria non trovata."}) from exc
+
+    def patch(self, request, pk: int):
+        category = self._get_object(request, pk)
+        if category.is_default:
+            raise ValidationError(
+                {"detail": 'La categoria "Altro" non si può rinominare.'}
+            )
+        name = str(request.data.get("name", "")).strip()
+        if not name or len(name) > 60:
+            raise ValidationError(
+                {"name": "Indica un nome da 1 a 60 caratteri."}
+            )
+        if (
+            Category.objects.filter(profile=category.profile, name__iexact=name)
+            .exclude(pk=category.pk)
+            .exists()
+        ):
+            raise ValidationError({"name": "Esiste già questa categoria."})
+        category.name = name
+        category.save(update_fields=("name", "updated_at"))
+        return Response(_category_payload(category))
+
+    def delete(self, request, pk: int):
+        category = self._get_object(request, pk)
+        if category.is_default:
+            raise ValidationError(
+                {"detail": 'La categoria "Altro" non si può eliminare.'}
+            )
+        default = match_category(category.profile, "")
+        with transaction.atomic():
+            Transaction.objects.filter(category=category).update(
+                category=default
+            )
+            category.soft_delete(request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TagListCreateView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        tags = Tag.objects.filter(profile=profile).order_by("name")
+        return Response([{"id": item.id, "name": item.name} for item in tags])
+
+    def post(self, request):
+        profile = self.get_profile(request)
+        name = str(request.data.get("name", "")).strip()
+        if not name or len(name) > 30:
+            raise ValidationError(
+                {"name": "Indica un nome da 1 a 30 caratteri."}
+            )
+        tag, _ = Tag.objects.get_or_create(profile=profile, name=name)
+        return Response(
+            {"id": tag.id, "name": tag.name},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TagDetailView(FinanceView):
+    def delete(self, request, pk: int):
+        profile = self.get_profile(request)
+        try:
+            tag = Tag.objects.get(pk=pk, profile=profile)
+        except Tag.DoesNotExist as exc:
+            raise ValidationError({"detail": "Tag non trovato."}) from exc
+        tag.soft_delete(request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+TRASH_TYPES = (
+    "movement",
+    "account",
+    "savings",
+    "automation",
+    "position",
+    "operation",
+    "category",
+    "tag",
+)
+
+
+def _trash_label(entry) -> str:
+    name = getattr(entry, "name", "") or ""
+    if name:
+        return name
+    description = getattr(entry, "description", "") or ""
+    if description:
+        return description
+    return str(entry)
+
+
+def _trash_entry(item_type: str, entry) -> dict:
+    author = getattr(entry, "deleted_by", None)
+    return {
+        "type": item_type,
+        "id": entry.id,
+        "label": _trash_label(entry),
+        "deleted_at": entry.deleted_at.isoformat() if entry.deleted_at else None,
+        "deleted_by": (
+            author.email or author.username if author is not None else None
+        ),
+    }
+
+
+def _trash_queryset(profile: Profile, item_type: str):
+    mapping = {
+        "movement": Transaction.all_objects.filter(
+            profile=profile,
+        ).exclude(kind__in=INVESTMENT_TRANSACTION_KINDS),
+        "account": Account.all_objects.filter(profile=profile),
+        "savings": SavingsAccount.all_objects.filter(profile=profile),
+        "automation": Automation.all_objects.filter(profile=profile),
+        "position": InvestmentPosition.all_objects.filter(profile=profile),
+        "operation": InvestmentOperation.all_objects.filter(profile=profile),
+        "category": Category.all_objects.filter(profile=profile),
+        "tag": Tag.all_objects.filter(profile=profile),
+    }
+    return mapping[item_type].filter(is_deleted=True)
+
+
+class TrashView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        item_type = request.query_params.get("type", "")
+        types = [item_type] if item_type in TRASH_TYPES else list(TRASH_TYPES)
+        items: list[dict] = []
+        for kind in types:
+            for entry in _trash_queryset(profile, kind).order_by("-deleted_at"):
+                items.append(_trash_entry(kind, entry))
+        items.sort(key=lambda item: item["deleted_at"] or "", reverse=True)
+        return Response({"items": items, "count": len(items)})
+
+
+class TrashRestoreView(FinanceView):
+    def post(self, request):
+        profile = self.get_profile(request)
+        item_type = request.data.get("type", "")
+        try:
+            item_id = int(request.data.get("id"))
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": "Elemento non valido."})
+        if item_type not in TRASH_TYPES:
+            raise ValidationError({"detail": "Tipo non valido."})
+        try:
+            entry = _trash_queryset(profile, item_type).get(pk=item_id)
+        except Exception as exc:
+            raise ValidationError(
+                {"detail": "Elemento non trovato nel cestino."}
+            ) from exc
+        if item_type in ("category", "tag"):
+            clash = (
+                Category.objects.filter(
+                    profile=profile, name__iexact=entry.name
+                ).exists()
+                if item_type == "category"
+                else Tag.objects.filter(profile=profile, name=entry.name).exists()
+            )
+            if clash:
+                raise ValidationError(
+                    {
+                        "detail": (
+                            f'Esiste già "{entry.name}": rinomina o elimina '
+                            "l'elemento attivo prima di ripristinare."
+                        )
+                    }
+                )
+        if item_type == "automation":
+            try:
+                containers = [entry.savings, entry.source_account]
+            except (SavingsAccount.DoesNotExist, Account.DoesNotExist):
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Il conto o salvadanaio collegato non esiste più."
+                        )
+                    }
+                )
+            if any(
+                container is not None and container.is_deleted
+                for container in containers
+            ):
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Il conto o salvadanaio collegato è nel cestino: "
+                            "ripristinalo prima."
+                        )
+                    }
+                )
+        if item_type == "movement":
+            if entry.kind in INVESTMENT_TRANSACTION_KINDS:
+                raise ValidationError(
+                    {
+                        "detail": (
+                            "Le operazioni di investimento si gestiscono dalla "
+                            "pagina Investimenti."
+                        )
+                    }
+                )
+            for line in entry.lines.all():
+                container = line.account or line.savings
+                if container is not None and container.is_deleted:
+                    raise ValidationError(
+                        {
+                            "detail": (
+                                "Il conto o salvadanaio del movimento è nel "
+                                "cestino: ripristinalo prima."
+                            )
+                        }
+                    )
+        if item_type == "operation" and entry.transaction_id is not None:
+            try:
+                movement = Transaction.all_objects.get(
+                    pk=entry.transaction_id, profile=profile
+                )
+            except Transaction.DoesNotExist as exc:
+                raise ValidationError(
+                    {"detail": "Il movimento collegato non esiste più."}
+                ) from exc
+            if movement.is_deleted:
+                movement.restore()
+        entry.restore()
+        return Response(_trash_entry(item_type, entry))
+
+
+class TrashPurgeView(FinanceView):
+    def post(self, request):
+        profile = self.get_profile(request)
+        item_type = request.data.get("type", "")
+        try:
+            item_id = int(request.data.get("id"))
+        except (TypeError, ValueError):
+            raise ValidationError({"detail": "Elemento non valido."})
+        if item_type not in TRASH_TYPES:
+            raise ValidationError({"detail": "Tipo non valido."})
+        try:
+            entry = _trash_queryset(profile, item_type).get(pk=item_id)
+        except Exception as exc:
+            raise ValidationError(
+                {"detail": "Elemento non trovato nel cestino."}
+            ) from exc
+        if item_type == "account" and (
+            Transaction.all_objects.filter(lines__account=entry).exists()
+            or Automation.all_objects.filter(source_account=entry).exists()
+        ):
+            raise ValidationError(
+                {
+                    "detail": (
+                        "Il conto ha movimenti o automazioni: "
+                        "non si può eliminare."
+                    )
+                }
+            )
+        entry.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TrashEmptyView(FinanceView):
+    def post(self, request):
+        profile = self.get_profile(request)
+        removed = 0
+        for kind in TRASH_TYPES:
+            for entry in _trash_queryset(profile, kind):
+                if kind == "account" and (
+                    Transaction.all_objects.filter(
+                        lines__account=entry
+                    ).exists()
+                    or Automation.all_objects.filter(
+                        source_account=entry
+                    ).exists()
+                ):
+                    continue
+                entry.delete()
+                removed += 1
+        return Response({"purged": removed})
+
+
+class SuggestCategoryView(FinanceView):
+    """Rule-based category suggestion (no ML): history, then account, then default."""
+
+    def get(self, request):
+        profile = self.get_profile(request)
+        description = (request.query_params.get("description") or "").strip()
+        account_id = request.query_params.get("account")
+        base = Transaction.objects.filter(profile=profile).exclude(
+            kind__in=[
+                Transaction.Kind.TRANSFER,
+                *INVESTMENT_TRANSACTION_KINDS,
+            ]
+        )
+        category = None
+        source = "default"
+        if len(description) >= 3:
+            match = (
+                base.filter(description__icontains=description)
+                .exclude(category__isnull=True)
+                .values("category")
+                .annotate(count=Count("id"))
+                .order_by("-count")
+                .first()
+            )
+            if match is not None:
+                category = Category.objects.filter(pk=match["category"]).first()
+                source = "history"
+        if category is None and account_id:
+            match = (
+                base.filter(lines__account_id=account_id)
+                .exclude(category__isnull=True)
+                .values("category")
+                .annotate(count=Count("id"))
+                .order_by("-count")
+                .first()
+            )
+            if match is not None:
+                category = Category.objects.filter(pk=match["category"]).first()
+                source = "account"
+        if category is None:
+            category = match_category(profile, "")
+        return Response(
+            {"category": _category_payload(category), "source": source}
+        )
 
 
 def _get_position(profile: Profile, pk: int) -> InvestmentPosition:
@@ -593,7 +1096,7 @@ class InvestmentDetailView(FinanceView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        position.delete()
+        position.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -652,7 +1155,7 @@ class InvestmentOperationDetailView(FinanceView):
 
     def delete(self, request, pk: int):
         operation = self.get_object(request, pk)
-        delete_operation(operation)
+        delete_operation(operation, request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -726,7 +1229,7 @@ class AutomationDetailView(FinanceView):
                 kind=Notification.Kind.AUTOMATION_PENDING,
                 read_at__isnull=True,
             ).update(read_at=timezone.now())
-            automation.delete()
+            automation.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

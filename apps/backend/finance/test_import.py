@@ -513,8 +513,8 @@ class ExportTests(FinanceTestBase):
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         lines = text.splitlines()
         self.assertEqual(lines[0], "data;descrizione;categoria;conto;importo")
-        self.assertIn(f"{today};Caffè;Spesa;Contanti;1,20", lines)
-        self.assertIn(f"{today};Entrata;Entrata;Contanti;-50,00", lines)
+        self.assertIn(f"{today};Caffè;Altro;Contanti;1,20", lines)
+        self.assertIn(f"{today};Entrata;Altro;Contanti;-50,00", lines)
         self.assertTrue(any(";Apertura;Contanti;-100,00" in line for line in lines))
 
     def test_export_respects_date_filter(self):
@@ -565,6 +565,6 @@ class ExportTests(FinanceTestBase):
         self.assertEqual(response.status_code, 200)
         lines = response.content.decode("utf-8-sig").splitlines()
         self.assertTrue(any("'=HYPERLINK" in line for line in lines))
-        self.assertTrue(any(";'+Entrata;Entrata;'@Conto;" in line for line in lines))
+        self.assertTrue(any(";'+Entrata;Altro;'@Conto;" in line for line in lines))
         self.assertTrue(any(line.endswith(";-50,00") for line in lines))
         self.assertFalse(any("'-50,00" in line for line in lines))

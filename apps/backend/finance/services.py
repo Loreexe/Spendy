@@ -17,7 +17,7 @@ def account_balance(account: Account) -> Decimal:
 
 
 def savings_balance(savings: SavingsAccount, exclude_transaction=None) -> Decimal:
-    queryset = savings.lines.all()
+    queryset = savings.lines.filter(transaction__is_deleted=False)
     if exclude_transaction is not None:
         queryset = queryset.exclude(transaction=exclude_transaction)
     return queryset.aggregate(total=Sum("amount"))["total"] or ZERO
@@ -82,9 +82,9 @@ def assert_accounts_non_negative(
                 excluded[line.account_id][exclude_transaction.date] += line.amount
 
     for account_id, account in targets.items():
-        rows = Line.objects.filter(account=account).values_list(
-            "transaction__date", "amount", "transaction_id"
-        )
+        rows = Line.objects.filter(
+            account=account, transaction__is_deleted=False
+        ).values_list("transaction__date", "amount", "transaction_id")
         current: dict[date, Decimal] = defaultdict(lambda: ZERO)
         after: dict[date, Decimal] = defaultdict(lambda: ZERO)
         for day, amount, transaction_id in rows:

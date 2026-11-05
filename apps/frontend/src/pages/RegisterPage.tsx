@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { AuthHero } from "../components/AuthHero";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ export function RegisterPage() {
 
   return (
     <div className="card narrow">
-      <p className="eyebrow">Nuovo account</p>
+      <AuthHero />
       <h1>Registrati</h1>
       <p className="muted">
         La registrazione richiede l'approvazione dell'amministratore, salvo

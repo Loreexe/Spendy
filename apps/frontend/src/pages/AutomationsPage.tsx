@@ -11,6 +11,7 @@ import {
   type SavingsAccount,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
+import { useToast } from "../components/Toast";
 import { money, todayISO } from "../format";
 
 function prettyDate(value: string | null | undefined): string {
@@ -127,6 +128,7 @@ function AutomationEditForm({
 }
 
 export function AutomationsPage() {
+  const { notify } = useToast();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [executions, setExecutions] = useState<AutomationExecution[]>([]);
   const [notifications, setNotifications] = useState<FinanceNotification[]>([]);
@@ -543,18 +545,27 @@ export function AutomationsPage() {
                         className="danger"
                         disabled={busy}
                         onClick={() => {
-                          if (
-                            !window.confirm(
-                              `Eliminare l'automazione "${ruleLabel ?? ""}"? ` +
-                                "Lo storico delle esecuzioni resta disponibile.",
-                            )
-                          ) {
-                            return;
-                          }
-                          void runAction(
-                            () => api.deleteAutomation(automation.id),
-                            "Automazione eliminata.",
-                          );
+                          void runAction(async () => {
+                            await api.deleteAutomation(automation.id);
+                            notify(
+                              `Automazione eliminata (${ruleLabel ?? "regola"}).`,
+                              {
+                                label: "Annulla",
+                                onClick: () => {
+                                  api
+                                    .restoreTrash("automation", automation.id)
+                                    .then(() => load())
+                                    .catch((err) =>
+                                      setError(
+                                        err instanceof Error
+                                          ? err.message
+                                          : "Ripristino non riuscito.",
+                                      ),
+                                    );
+                                },
+                              },
+                            );
+                          }, "Automazione eliminata.");
                         }}
                       >
                         Elimina

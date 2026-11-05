@@ -4,12 +4,16 @@ import {
   api,
   ApiError,
   type Account,
+  type Category,
+  type CategorySuggestion,
   type Line,
   type SavingsAccount,
+  type Tag,
   type Transaction,
   type TransactionPayload,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
+import { useToast } from "../components/Toast";
 import { amountClass, money, signedMoney, todayISO } from "../format";
 
 type Kind = "income" | "expense" | "transfer";
@@ -62,7 +66,17 @@ function MovementItem({
         <span className="muted small">
           {new Date(`${transaction.date}T12:00:00`).toLocaleDateString("it-IT")} ·{" "}
           {transaction.kind_label}
+          {transaction.category ? ` · ${transaction.category.name}` : ""}
         </span>
+        {transaction.tags.length > 0 && (
+          <span className="small">
+            {transaction.tags.map((tag) => (
+              <span key={tag} className="badge" style={{ marginRight: "0.25rem" }}>
+                {tag}
+              </span>
+            ))}
+          </span>
+        )}
         <ul className="lines">
           {transaction.lines.map((line) => (
             <li key={line.id}>
@@ -97,6 +111,7 @@ function MovementItem({
 }
 
 export function MovementsPage() {
+  const { notify } = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [savings, setSavings] = useState<SavingsAccount[]>([]);
@@ -127,25 +142,42 @@ export function MovementsPage() {
   const [filterSavings, setFilterSavings] = useState("");
   const [filterStart, setFilterStart] = useState("");
   const [filterEnd, setFilterEnd] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterTag, setFilterTag] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [categoryId, setCategoryId] = useState("");
+  const [tagInput, setTagInput] = useState("");
+  const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async (limit = 200) => {
     setLoading(true);
     try {
-      const [transactionsData, accountsData, savingsData] = await Promise.all([
-        api.transactions({
-          account: filterAccount ? Number(filterAccount) : undefined,
-          savings: filterSavings ? Number(filterSavings) : undefined,
-          start: filterStart || undefined,
-          end: filterEnd || undefined,
-          limit,
-        }),
-        api.accounts(),
-        api.savings(),
-      ]);
+      const [transactionsData, accountsData, savingsData, categoriesData, tagsData] =
+        await Promise.all([
+          api.transactions({
+            account: filterAccount ? Number(filterAccount) : undefined,
+            savings: filterSavings ? Number(filterSavings) : undefined,
+            start: filterStart || undefined,
+            end: filterEnd || undefined,
+            category: filterCategory ? Number(filterCategory) : undefined,
+            tag: filterTag || undefined,
+            limit,
+          }),
+          api.accounts(),
+          api.savings(),
+          api.categories(),
+          api.tags(),
+        ]);
       setTransactions(transactionsData.transactions);
       setTotal(transactionsData.count);
+      setCategories(categoriesData);
+      setAllTags(tagsData);
       const activeAccounts = accountsData.accounts.filter((item) => !item.archived);
       setAccounts(activeAccounts);
       setSavings(savingsData.savings);
@@ -164,7 +196,7 @@ export function MovementsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterAccount, filterSavings, filterStart, filterEnd]);
+  }, [filterAccount, filterSavings, filterStart, filterEnd, filterCategory, filterTag]);
 
   useEffect(() => {
     if (filterStart && filterEnd && filterStart > filterEnd) {
@@ -174,7 +206,7 @@ export function MovementsPage() {
     setError(null);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterAccount, filterSavings, filterStart, filterEnd]);
+  }, [filterAccount, filterSavings, filterStart, filterEnd, filterCategory, filterTag]);
 
   async function loadMore() {
     setLoadingMore(true);
@@ -185,6 +217,8 @@ export function MovementsPage() {
         savings: filterSavings ? Number(filterSavings) : undefined,
         start: filterStart || undefined,
         end: filterEnd || undefined,
+        category: filterCategory ? Number(filterCategory) : undefined,
+        tag: filterTag || undefined,
         limit: 200,
         offset: transactions.length,
       });
@@ -209,10 +243,138 @@ export function MovementsPage() {
         savings: filterSavings ? Number(filterSavings) : undefined,
         start: filterStart || undefined,
         end: filterEnd || undefined,
+        category: filterCategory ? Number(filterCategory) : undefined,
+        tag: filterTag || undefined,
       });
     } catch (err) {
       setError(errorMessage(err));
     }
+  }
+
+  async function suggestForDescription(value: string) {
+    const text = value.trim();
+    if (text.length < 3 || categoryId) {
+      if (text.length < 3) setSuggestion(null);
+      return;
+    }
+    try {
+      const account =
+        kind === "income" || (kind === "expense" && expenseSource === "account")
+          ? Number(accountId) || undefined
+          : undefined;
+      const result = await api.suggestCategory({
+        description: text,
+        account,
+      });
+      setSuggestion(result);
+    } catch {
+      setSuggestion(null);
+    }
+  }
+
+  function clearFilters() {
+    setFilterAccount("");
+    setFilterSavings("");
+    setFilterStart("");
+    setFilterEnd("");
+    setFilterCategory("");
+    setFilterTag("");
+  }
+
+  async function refreshTaxonomy() {
+    try {
+      const [categoriesData, tagsData] = await Promise.all([
+        api.categories(),
+        api.tags(),
+      ]);
+      setCategories(categoriesData);
+      setAllTags(tagsData);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function handleCreateCategory() {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      await api.createCategory(name);
+      setNewCategoryName("");
+      await refreshTaxonomy();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function handleRenameCategory(category: Category) {
+    const name = editingCategoryName.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      await api.updateCategory(category.id, name);
+      setEditingCategoryId(null);
+      setEditingCategoryName("");
+      await refreshTaxonomy();
+      await reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function handleDeleteCategory(category: Category) {
+    setError(null);
+    try {
+      await api.deleteCategory(category.id);
+      notify(`Categoria «${category.name}» eliminata.`, {
+        label: "Annulla",
+        onClick: () => {
+          api
+            .restoreTrash("category", category.id)
+            .then(() => {
+              refreshTaxonomy();
+              reload();
+            })
+            .catch((err) => setError(errorMessage(err)));
+        },
+      });
+      if (String(category.id) === categoryId) setCategoryId("");
+      if (String(category.id) === filterCategory) setFilterCategory("");
+      await refreshTaxonomy();
+      await reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function handleDeleteTag(tag: Tag) {
+    setError(null);
+    try {
+      await api.deleteTag(tag.id);
+      notify(`Tag «${tag.name}» eliminato.`, {
+        label: "Annulla",
+        onClick: () => {
+          api
+            .restoreTrash("tag", tag.id)
+            .then(() => {
+              refreshTaxonomy();
+              reload();
+            })
+            .catch((err) => setError(errorMessage(err)));
+        },
+      });
+      await refreshTaxonomy();
+      await reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  function parseTags(): string[] {
+    return tagInput
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   }
 
   function buildPayload(): TransactionPayload | null {
@@ -220,6 +382,8 @@ export function MovementsPage() {
       setError("Inserisci un importo maggiore di zero.");
       return null;
     }
+    const category_id = categoryId ? Number(categoryId) : undefined;
+    const tags = parseTags();
     if (kind === "income") {
       if (!accountId) {
         setError("Seleziona il conto dell'entrata.");
@@ -231,6 +395,8 @@ export function MovementsPage() {
         description,
         amount,
         account: Number(accountId),
+        category_id,
+        tags,
       };
     }
     if (kind === "expense") {
@@ -245,6 +411,8 @@ export function MovementsPage() {
           description,
           amount,
           account: Number(accountId),
+          category_id,
+          tags,
         };
       }
       if (!savingsId) {
@@ -258,6 +426,8 @@ export function MovementsPage() {
         amount,
         savings: Number(savingsId),
         confirm_coverage: confirmCoverage,
+        category_id,
+        tags,
       };
     }
 
@@ -270,6 +440,8 @@ export function MovementsPage() {
       date,
       description,
       amount,
+      category_id: categoryId ? Number(categoryId) : undefined,
+      tags: parseTags(),
     };
     if (fromKind === "account") {
       if (!fromAccountId) {
@@ -330,6 +502,9 @@ export function MovementsPage() {
     setDescription("");
     setAmount("");
     setConfirmCoverage(false);
+    setCategoryId("");
+    setTagInput("");
+    setSuggestion(null);
   }
 
   function startEdit(transaction: Transaction) {
@@ -340,6 +515,9 @@ export function MovementsPage() {
     setDescription(transaction.description);
     setAmount(transaction.amount);
     setConfirmCoverage(false);
+    setCategoryId(transaction.category ? String(transaction.category.id) : "");
+    setTagInput(transaction.tags.join(", "));
+    setSuggestion(null);
 
     if (transaction.kind === "income") {
       const line = transaction.lines.find(
@@ -390,14 +568,24 @@ export function MovementsPage() {
   }
 
   async function remove(transaction: Transaction) {
-    if (!window.confirm("Eliminare questo movimento?")) return;
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api.deleteTransaction(transaction.id);
       if (editingId === transaction.id) resetForm();
-      setMessage("Movimento eliminato.");
+      notify(
+        `Movimento eliminato: ${transaction.description || transaction.kind_label}.`,
+        {
+          label: "Annulla",
+          onClick: () => {
+            api
+              .restoreTrash("movement", transaction.id)
+              .then(() => reload())
+              .catch((err) => setError(errorMessage(err)));
+          },
+        },
+      );
       await reload();
     } catch (err) {
       setError(errorMessage(err));
@@ -474,10 +662,51 @@ export function MovementsPage() {
               <input
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                onBlur={(event) => void suggestForDescription(event.target.value)}
                 placeholder="Facoltativa"
               />
             </label>
+            <label>
+              Categoria
+              <select
+                value={categoryId}
+                onChange={(event) => {
+                  setCategoryId(event.target.value);
+                  setSuggestion(null);
+                }}
+              >
+                <option value="">Altro (automatica)</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Tag (separati da virgola)
+              <input
+                value={tagInput}
+                onChange={(event) => setTagInput(event.target.value)}
+                placeholder="Facoltativi"
+              />
+            </label>
           </div>
+          {suggestion && !categoryId && (
+            <p className="muted small">
+              Categoria suggerita: <strong>{suggestion.category.name}</strong>{" "}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setCategoryId(String(suggestion.category.id));
+                  setSuggestion(null);
+                }}
+              >
+                Usa
+              </button>
+            </p>
+          )}
 
           {kind === "income" && (
             <label>
@@ -725,16 +954,38 @@ export function MovementsPage() {
                 onChange={(event) => setFilterEnd(event.target.value)}
               />
             </label>
-            {(filterAccount || filterSavings || filterStart || filterEnd) && (
+            <label>
+              <span className="small muted">Categoria</span>
+              <select
+                value={filterCategory}
+                onChange={(event) => setFilterCategory(event.target.value)}
+              >
+                <option value="">Tutte le categorie</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="small muted">Tag</span>
+              <input
+                value={filterTag}
+                onChange={(event) => setFilterTag(event.target.value)}
+                placeholder="Tutti i tag"
+              />
+            </label>
+            {(filterAccount ||
+              filterSavings ||
+              filterStart ||
+              filterEnd ||
+              filterCategory ||
+              filterTag) && (
               <button
                 type="button"
                 className="secondary"
-                onClick={() => {
-                  setFilterAccount("");
-                  setFilterSavings("");
-                  setFilterStart("");
-                  setFilterEnd("");
-                }}
+                onClick={clearFilters}
               >
                 Mostra tutto
               </button>
@@ -751,13 +1002,13 @@ export function MovementsPage() {
         <p className="muted small">
           Un movimento appartiene a un conto oppure a un salvadanaio: scegliendo
           un filtro l&apos;altro viene azzerato. «Dal» e «Al» limitano il periodo
-          e possono essere usati da soli o insieme agli altri filtri. «Esporta
-          CSV» scarica i movimenti filtrati. Il registro mostra prima i
-          movimenti più recenti.
+          e possono essere usati da soli o insieme agli altri filtri. «Categoria»
+          e «Tag» filtrano per classificazione. «Esporta CSV» scarica i movimenti
+          filtrati. Il registro mostra prima i movimenti più recenti.
         </p>
         {transactions.length === 0 ? (
           <p className="muted">
-            {filterAccount || filterSavings
+            {filterAccount || filterSavings || filterCategory || filterTag
               ? "Nessun movimento per questo filtro."
               : "Nessun movimento registrato."}
           </p>
@@ -787,6 +1038,119 @@ export function MovementsPage() {
                 </button>
               </div>
             )}
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="card-heading">
+          <h2>Categorie e tag</h2>
+        </div>
+        <p className="muted small">
+          Ogni movimento ha una categoria (i nuovi movimenti senza categoria
+          vanno su «Altro») e zero o più tag. «Altro» non si può rinominare né
+          eliminare; eliminando una categoria i suoi movimenti passano ad
+          «Altro».
+        </p>
+        <ul className="entity-list">
+          {categories.map((category) => (
+            <li key={category.id}>
+              {editingCategoryId === category.id ? (
+                <span className="inline-form">
+                  <input
+                    value={editingCategoryName}
+                    onChange={(event) =>
+                      setEditingCategoryName(event.target.value)
+                    }
+                    maxLength={60}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleRenameCategory(category)}
+                  >
+                    Salva
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setEditingCategoryId(null)}
+                  >
+                    Annulla
+                  </button>
+                </span>
+              ) : (
+                <>
+                  <span>
+                    {category.name}{" "}
+                    {category.is_default && (
+                      <span className="badge">Iniziale</span>
+                    )}{" "}
+                    {category.is_preset && !category.is_default && (
+                      <span className="badge">Predefinita</span>
+                    )}
+                  </span>
+                  {!category.is_default && (
+                    <span className="entity-side">
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setEditingCategoryId(category.id);
+                          setEditingCategoryName(category.name);
+                        }}
+                      >
+                        Rinomina
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => void handleDeleteCategory(category)}
+                      >
+                        Elimina
+                      </button>
+                    </span>
+                  )}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+        <div className="inline-form" style={{ marginTop: "0.75rem" }}>
+          <input
+            value={newCategoryName}
+            onChange={(event) => setNewCategoryName(event.target.value)}
+            placeholder="Nuova categoria"
+            maxLength={60}
+          />
+          <button type="button" onClick={() => void handleCreateCategory()}>
+            Aggiungi
+          </button>
+        </div>
+        {allTags.length > 0 && (
+          <>
+            <div className="card-heading" style={{ marginTop: "1rem" }}>
+              <h2>Tag usati</h2>
+            </div>
+            <p className="small">
+              {allTags.map((tag) => (
+                <span
+                  key={tag.id}
+                  className="badge"
+                  style={{ marginRight: "0.25rem" }}
+                >
+                  {tag.name}{" "}
+                  <button
+                    type="button"
+                    className="link-button"
+                    aria-label={`Elimina tag ${tag.name}`}
+                    onClick={() => void handleDeleteTag(tag)}
+                    style={{ color: "inherit", fontWeight: 700 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </p>
           </>
         )}
       </section>

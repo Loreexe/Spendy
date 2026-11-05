@@ -20,7 +20,7 @@ from django.db.models import Min, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import ZERO, Account, Line, Profile, Transaction
+from .models import ZERO, Account, Line, Profile, Transaction, match_category
 from .services import (
     assert_accounts_non_negative,
     first_negative_point,
@@ -481,20 +481,22 @@ def _analyze(
         balance_before = ZERO
         first_movement = None
         if account is not None:
-            for day, amount in Line.objects.filter(account=account).values_list(
-                "transaction__date", "amount"
-            ):
+            for day, amount in Line.objects.filter(
+                account=account, transaction__is_deleted=False
+            ).values_list("transaction__date", "amount"):
                 current_points[day] += amount
             balance_before = (
                 Line.objects.filter(
-                    account=account, transaction__date__lt=start
+                    account=account,
+                    transaction__date__lt=start,
+                    transaction__is_deleted=False,
                 ).aggregate(total=Sum("amount"))["total"]
                 or ZERO
             )
             first_movement = (
-                Line.objects.filter(account=account).aggregate(
-                    first=Min("transaction__date")
-                )["first"]
+                Line.objects.filter(
+                    account=account, transaction__is_deleted=False
+                ).aggregate(first=Min("transaction__date"))["first"]
             )
         current_minimum = running_minimum(current_points)
 
@@ -588,6 +590,7 @@ def _analyze(
                 account=account,
                 transaction__date__gte=start,
                 transaction__date__lte=end,
+                transaction__is_deleted=False,
             )
             .values("transaction_id")
             .distinct()
@@ -715,6 +718,7 @@ def _analyze(
             "amount": abs(row["amount_value"]),
             "date": row["date_value"],
             "description": row["description"],
+            "category": row["category"],
         }
         for row in prepared
         if row["valid"] and not row["errors"]
@@ -796,6 +800,7 @@ def confirm(
                 date=item["date"],
                 description=item["description"],
                 amount=item["amount"],
+                category=match_category(profile, item.get("category", "")),
             )
             signed = (
                 item["amount"]

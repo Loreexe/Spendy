@@ -509,8 +509,8 @@ def update_operation(operation: InvestmentOperation, **changes) -> InvestmentOpe
         return locked
 
 
-def delete_operation(operation: InvestmentOperation) -> None:
-    """Delete an operation and its account movement inside one transaction."""
+def delete_operation(operation: InvestmentOperation, user=None) -> None:
+    """Soft-delete an operation and its account movement (DC-088)."""
     with transaction.atomic():
         position = _lock_position(operation.position)
         locked = InvestmentOperation.objects.select_related("transaction").get(
@@ -521,7 +521,7 @@ def delete_operation(operation: InvestmentOperation) -> None:
             assert_accounts_non_negative(
                 accounts=[_operation_account(locked)], exclude_transaction=movement
             )
-        locked.delete()
+        locked.soft_delete(user)
         if movement is not None:
-            movement.delete()
+            movement.soft_delete(user)
         recalculate_position(position)

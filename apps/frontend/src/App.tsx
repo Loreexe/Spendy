@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { api } from "./api";
 import { AuthProvider } from "./auth";
+import { ToastProvider } from "./components/Toast";
 import {
   AdminRoute,
   LoadingScreen,
@@ -29,6 +30,7 @@ import { PendingPage } from "./pages/PendingPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SavingsPage } from "./pages/SavingsPage";
 import { SetupPage } from "./pages/SetupPage";
+import { TrashPage } from "./pages/TrashPage";
 
 function SetupGate({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -61,7 +63,8 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Layout>
+        <ToastProvider>
+          <Layout>
           <SetupGate>
             <Routes>
               <Route path="/setup" element={<SetupPage />} />
@@ -125,6 +128,14 @@ export function App() {
                 }
               />
               <Route
+                path="/trash"
+                element={
+                  <ProfileRoute>
+                    <TrashPage />
+                  </ProfileRoute>
+                }
+              />
+              <Route
                 path="/account"
                 element={
                   <ProtectedRoute>
@@ -143,7 +154,8 @@ export function App() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </SetupGate>
-        </Layout>
+          </Layout>
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

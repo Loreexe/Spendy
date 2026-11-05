@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type Dashboard, type Line, type Transaction } from "../api";
+import {
+  api,
+  type Dashboard,
+  type DashboardSeries,
+  type Line,
+  type Transaction,
+} from "../api";
 import { useAuth } from "../auth";
+import { CategoryBars, InOutBars, TrendChart } from "../components/Charts";
 import { LoadingScreen } from "../components/Guards";
 import {
   amountClass,
@@ -57,6 +64,7 @@ function TransactionRows({ transaction }: { transaction: Transaction }) {
 export function DashboardPage() {
   const { user } = useAuth();
   const [data, setData] = useState<Dashboard | null>(null);
+  const [series, setSeries] = useState<DashboardSeries | null>(null);
   const [start, setStart] = useState(firstOfMonthISO());
   const [end, setEnd] = useState(todayISO());
   const [loading, setLoading] = useState(true);
@@ -66,7 +74,12 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      setData(await api.dashboard(from, to));
+      const [dashboardData, seriesData] = await Promise.all([
+        api.dashboard(from, to),
+        api.dashboardSeries(from, to),
+      ]);
+      setData(dashboardData);
+      setSeries(seriesData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Caricamento non riuscito.");
     } finally {
@@ -213,6 +226,31 @@ export function DashboardPage() {
             sono spese; i dividendi sono entrate. Le operazioni sono visibili
             nella pagina Investimenti, non nel registro Movimenti.
           </p>
+
+          <section className="card">
+            <div className="card-heading">
+              <h2>Grafici del periodo</h2>
+            </div>
+            {series && (
+              <div className="stack">
+                <div>
+                  <h3 className="stat-label">Andamento saldo e patrimonio</h3>
+                  <TrendChart points={series.buckets} />
+                </div>
+                <div>
+                  <h3 className="stat-label">Entrate vs uscite</h3>
+                  <InOutBars
+                    income={data.income_total}
+                    expense={data.expense_total}
+                  />
+                </div>
+                <div>
+                  <h3 className="stat-label">Spese per categoria</h3>
+                  <CategoryBars rows={series.by_category} />
+                </div>
+              </div>
+            )}
+          </section>
 
           <section className="two-columns">
             <div className="card">

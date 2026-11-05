@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type Account, type AccountType } from "../api";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { LoadingScreen } from "../components/Guards";
+import { useToast } from "../components/Toast";
 import { amountClass, money } from "../format";
 
 const TYPES: { value: AccountType; label: string }[] = [
@@ -11,6 +13,7 @@ const TYPES: { value: AccountType; label: string }[] = [
 ];
 
 export function AccountsPage() {
+  const { notify } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [name, setName] = useState("");
   const [type, setType] = useState<AccountType>("cash");
@@ -19,6 +22,7 @@ export function AccountsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,13 +75,23 @@ export function AccountsPage() {
   }
 
   async function remove(account: Account) {
-    if (!window.confirm(`Eliminare il conto "${account.name}"?`)) return;
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api.deleteAccount(account.id);
-      setMessage("Conto eliminato.");
+      notify(`Conto «${account.name}» eliminato.`, {
+        label: "Annulla",
+        onClick: () => {
+          api
+            .restoreTrash("account", account.id)
+            .then(() => load())
+            .catch((err) =>
+              setError(err instanceof Error ? err.message : "Ripristino non riuscito."),
+            );
+        },
+      });
+      setConfirmDelete(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eliminazione non riuscita.");
@@ -177,7 +191,7 @@ export function AccountsPage() {
                       <button
                         type="button"
                         className="danger"
-                        onClick={() => void remove(account)}
+                        onClick={() => setConfirmDelete(account)}
                         disabled={busy}
                       >
                         Elimina
@@ -190,6 +204,19 @@ export function AccountsPage() {
           )}
         </section>
       </div>
+      {confirmDelete && (
+        <ConfirmModal
+          title={`Eliminare il conto «${confirmDelete.name}»?`}
+          summary={[
+            `Saldo attuale: ${money(confirmDelete.balance)}.`,
+            "Possibile solo senza movimenti (altrimenti archivia).",
+            "Il conto finisce nel cestino per 30 giorni e non incide più sui saldi.",
+          ]}
+          busy={busy}
+          onConfirm={() => void remove(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
   );
 }

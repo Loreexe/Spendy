@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from finance.automations import run_all
+from finance.models import purge_trash
 
 
 class Command(BaseCommand):
@@ -20,9 +21,12 @@ class Command(BaseCommand):
 
             today = date.fromisoformat(options["date"])
         outcome = run_all(today=today, now=timezone.now())
+        purged = purge_trash()
         self.stdout.write(
             "Automazioni: {rules} regole, {created} occorrenze create, "
             "{executed} eseguite, {retried} recuperate dopo errore, "
-            "{pending_choice} in attesa di scelta, {alerts} avvisi di saldo."
-            .format(**outcome)
+            "{pending_choice} in attesa di scelta, {alerts} avvisi di saldo; "
+            "cestino: {purged} eliminati definitivamente.".format(
+                **outcome, purged=purged
+            )
         )

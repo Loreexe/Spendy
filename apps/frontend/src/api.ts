@@ -27,6 +27,13 @@ export interface Settings {
   setup_completed: boolean;
 }
 
+export interface FinanceProfile {
+  id: number;
+  display_name: string;
+  theme: "dark" | "light";
+  created_at: string;
+}
+
 export interface SystemRelease {
   version: string;
   tag: string;
@@ -193,9 +200,52 @@ export interface Transaction {
   amount: string;
   automation: number | null;
   automation_name: string | null;
+  category: TransactionCategory | null;
+  tags: string[];
   lines: Line[];
   created_at: string;
   updated_at: string;
+}
+
+export interface TransactionCategory {
+  id: number;
+  name: string;
+  is_default: boolean;
+}
+
+export interface Category {
+  id: number;
+  name: string;
+  is_preset: boolean;
+  is_default: boolean;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+}
+
+export type TrashType =
+  | "movement"
+  | "account"
+  | "savings"
+  | "automation"
+  | "position"
+  | "operation"
+  | "category"
+  | "tag";
+
+export interface TrashItem {
+  type: TrashType;
+  id: number;
+  label: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
+}
+
+export interface CategorySuggestion {
+  category: TransactionCategory;
+  source: "history" | "account" | "default";
 }
 
 export interface Dashboard {
@@ -215,6 +265,23 @@ export interface Dashboard {
   accounts: Account[];
   savings: SavingsAccount[];
   recent_transactions: Transaction[];
+}
+
+export interface SeriesPoint {
+  date: string;
+  saldo: string;
+  patrimonio: string;
+}
+
+export interface CategoryTotal {
+  id: number;
+  name: string;
+  total: string;
+}
+
+export interface DashboardSeries {
+  buckets: SeriesPoint[];
+  by_category: CategoryTotal[];
 }
 
 export type InvestmentCategory =
@@ -349,6 +416,8 @@ export interface TransactionPayload {
   from_savings?: number;
   to_savings?: number;
   confirm_coverage?: boolean;
+  category_id?: number | null;
+  tags?: string[];
 }
 
 export interface ImportIssue {
@@ -631,6 +700,14 @@ export const api = {
 
   me: () => request<{ user: User | null }>("/api/auth/me/"),
 
+  profile: () => request<FinanceProfile>("/api/finance/profile/"),
+
+  updateTheme: (theme: "dark" | "light") =>
+    request<FinanceProfile>("/api/finance/profile/", {
+      method: "PATCH",
+      body: JSON.stringify({ theme }),
+    }),
+
   updateEmail: (email: string) =>
     request<{ user: User }>("/api/auth/me/", {
       method: "PATCH",
@@ -674,6 +751,16 @@ export const api = {
     if (end) params.set("end", end);
     const query = params.toString();
     return request<Dashboard>(`/api/finance/dashboard/${query ? `?${query}` : ""}`);
+  },
+
+  dashboardSeries: (start?: string, end?: string) => {
+    const params = new URLSearchParams();
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
+    const query = params.toString();
+    return request<DashboardSeries>(
+      `/api/finance/dashboard/series/${query ? `?${query}` : ""}`,
+    );
   },
 
   accounts: () =>
@@ -881,6 +968,8 @@ export const api = {
     end?: string;
     limit?: number;
     offset?: number;
+    category?: number;
+    tag?: string;
   } = {}) => {
     const query = new URLSearchParams();
     if (params.account) query.set("account", String(params.account));
@@ -889,6 +978,8 @@ export const api = {
     if (params.end) query.set("end", params.end);
     if (params.limit) query.set("limit", String(params.limit));
     if (params.offset) query.set("offset", String(params.offset));
+    if (params.category) query.set("category", String(params.category));
+    if (params.tag) query.set("tag", params.tag);
     const suffix = query.toString();
     return request<{ transactions: Transaction[]; count: number }>(
       `/api/finance/transactions/${suffix ? `?${suffix}` : ""}`,
@@ -910,6 +1001,60 @@ export const api = {
   deleteTransaction: (id: number) =>
     request<void>(`/api/finance/transactions/${id}/`, { method: "DELETE" }),
 
+  categories: () => request<Category[]>("/api/finance/categories/"),
+
+  createCategory: (name: string) =>
+    request<Category>("/api/finance/categories/", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  updateCategory: (id: number, name: string) =>
+    request<Category>(`/api/finance/categories/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteCategory: (id: number) =>
+    request<void>(`/api/finance/categories/${id}/`, { method: "DELETE" }),
+
+  tags: () => request<Tag[]>("/api/finance/tags/"),
+
+  deleteTag: (id: number) =>
+    request<void>(`/api/finance/tags/${id}/`, { method: "DELETE" }),
+
+  trash: (type?: TrashType) =>
+    request<{ items: TrashItem[]; count: number }>(
+      `/api/finance/trash/${type ? `?type=${type}` : ""}`,
+    ),
+
+  restoreTrash: (type: TrashType, id: number) =>
+    request<TrashItem>("/api/finance/trash/restore/", {
+      method: "POST",
+      body: JSON.stringify({ type, id }),
+    }),
+
+  purgeTrash: (type: TrashType, id: number) =>
+    request<void>("/api/finance/trash/purge/", {
+      method: "POST",
+      body: JSON.stringify({ type, id }),
+    }),
+
+  emptyTrash: () =>
+    request<{ purged: number }>("/api/finance/trash/empty/", {
+      method: "POST",
+    }),
+
+  suggestCategory: (params: { description?: string; account?: number }) => {
+    const query = new URLSearchParams();
+    if (params.description) query.set("description", params.description);
+    if (params.account) query.set("account", String(params.account));
+    const suffix = query.toString();
+    return request<CategorySuggestion>(
+      `/api/finance/suggest-category/${suffix ? `?${suffix}` : ""}`,
+    );
+  },
+
   downloadImportTemplate: () =>
     download(
       "/api/finance/import/template/",
@@ -921,12 +1066,16 @@ export const api = {
     savings?: number;
     start?: string;
     end?: string;
+    category?: number;
+    tag?: string;
   } = {}) => {
     const query = new URLSearchParams();
     if (params.account) query.set("account", String(params.account));
     if (params.savings) query.set("savings", String(params.savings));
     if (params.start) query.set("start", params.start);
     if (params.end) query.set("end", params.end);
+    if (params.category) query.set("category", String(params.category));
+    if (params.tag) query.set("tag", params.tag);
     const suffix = query.toString();
     const today = new Date().toISOString().slice(0, 10);
     return download(

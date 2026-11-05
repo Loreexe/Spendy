@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import { AuthHero } from "../components/AuthHero";
 
 interface LocationState {
   from?: string;
@@ -36,7 +37,7 @@ export function LoginPage() {
 
   return (
     <div className="card narrow">
-      <p className="eyebrow">Spendy</p>
+      <AuthHero glow />
       <h1>Accedi</h1>
       {state.registered && (
         <p className="notice success">Registrazione completata: ora puoi accedere.</p>

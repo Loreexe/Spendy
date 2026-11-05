@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type SetupStatus } from "../api";
 import { useAuth } from "../auth";
+import { AuthHero } from "../components/AuthHero";
 import { LoadingScreen } from "../components/Guards";
 
 export function SetupPage() {
@@ -78,7 +79,7 @@ export function SetupPage() {
 
   return (
     <div className="card narrow">
-      <p className="eyebrow">Primo avvio</p>
+      <AuthHero />
       <h1>Imposta la password di admin</h1>
       <p className="muted">
         L'account globale <code>admin</code> non ha una password finché non la

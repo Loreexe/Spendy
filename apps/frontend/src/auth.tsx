@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, type User } from "./api";
+import { syncThemeFromProfile } from "./theme";
 
 interface AuthContextValue {
   user: User | null;
@@ -28,6 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api.me();
       setUser(data.user);
+      if (data.user && !data.user.is_global_admin) {
+        await syncThemeFromProfile();
+      }
     } catch {
       setUser(null);
     }
@@ -40,6 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (identifier: string, password: string) => {
     const data = await api.login(identifier, password);
     setUser(data.user);
+    if (!data.user.is_global_admin) {
+      await syncThemeFromProfile();
+    }
   }, []);
 
   const logout = useCallback(async () => {

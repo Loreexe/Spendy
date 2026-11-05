@@ -21,6 +21,7 @@ from .views import (
     AutomationResolveView,
     AutomationRunAllView,
     AutomationRunView,
+    DashboardSeriesView,
     DashboardView,
     InvestmentAccountView,
     InvestmentDetailView,
@@ -32,6 +33,15 @@ from .views import (
     ProfileView,
     SavingsAccountDetailView,
     SavingsAccountListCreateView,
+    CategoryDetailView,
+    CategoryListCreateView,
+    SuggestCategoryView,
+    TagDetailView,
+    TagListCreateView,
+    TrashEmptyView,
+    TrashPurgeView,
+    TrashRestoreView,
+    TrashView,
     TransactionDetailView,
     TransactionListCreateView,
 )
@@ -39,6 +49,11 @@ from .views import (
 urlpatterns = [
     path("profile/", ProfileView.as_view(), name="finance-profile"),
     path("dashboard/", DashboardView.as_view(), name="finance-dashboard"),
+    path(
+        "dashboard/series/",
+        DashboardSeriesView.as_view(),
+        name="finance-dashboard-series",
+    ),
     path("accounts/", AccountListCreateView.as_view(), name="finance-accounts"),
     path(
         "accounts/<int:pk>/",
@@ -60,6 +75,43 @@ urlpatterns = [
         "transactions/<int:pk>/",
         TransactionDetailView.as_view(),
         name="finance-transaction-detail",
+    ),
+    path(
+        "categories/",
+        CategoryListCreateView.as_view(),
+        name="finance-categories",
+    ),
+    path(
+        "categories/<int:pk>/",
+        CategoryDetailView.as_view(),
+        name="finance-category-detail",
+    ),
+    path("tags/", TagListCreateView.as_view(), name="finance-tags"),
+    path(
+        "tags/<int:pk>/",
+        TagDetailView.as_view(),
+        name="finance-tag-detail",
+    ),
+    path(
+        "suggest-category/",
+        SuggestCategoryView.as_view(),
+        name="finance-suggest-category",
+    ),
+    path("trash/", TrashView.as_view(), name="finance-trash"),
+    path(
+        "trash/restore/",
+        TrashRestoreView.as_view(),
+        name="finance-trash-restore",
+    ),
+    path(
+        "trash/purge/",
+        TrashPurgeView.as_view(),
+        name="finance-trash-purge",
+    ),
+    path(
+        "trash/empty/",
+        TrashEmptyView.as_view(),
+        name="finance-trash-empty",
     ),
     path(
         "investments/",

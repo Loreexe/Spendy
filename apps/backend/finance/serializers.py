@@ -14,6 +14,7 @@ from .models import (
     ZERO,
     Account,
     AutomationExecution,
+    Category,
     InvestmentOperation,
     InvestmentPosition,
     Line,
@@ -21,7 +22,10 @@ from .models import (
     Profile,
     SavingsAccount,
     Automation,
+    Tag,
     Transaction,
+    match_category,
+    resolve_tags,
 )
 from .services import assert_accounts_non_negative, savings_balance
 
@@ -33,7 +37,7 @@ def money(value: Decimal) -> str:
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ("id", "display_name", "created_at")
+        fields = ("id", "display_name", "theme", "created_at")
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -407,6 +411,8 @@ class TransactionSerializer(serializers.ModelSerializer):
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
     amount = serializers.SerializerMethodField()
     automation_name = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
+    tags = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
@@ -419,10 +425,24 @@ class TransactionSerializer(serializers.ModelSerializer):
             "amount",
             "automation",
             "automation_name",
+            "category",
+            "tags",
             "lines",
             "created_at",
             "updated_at",
         )
+
+    def get_category(self, obj: Transaction):
+        if obj.category_id is None:
+            return None
+        return {
+            "id": obj.category_id,
+            "name": obj.category.name,
+            "is_default": obj.category.is_default,
+        }
+
+    def get_tags(self, obj: Transaction) -> list:
+        return [tag.name for tag in obj.tags.all()]
 
     def get_amount(self, obj: Transaction) -> str:
         return money(obj.amount)
@@ -430,10 +450,19 @@ class TransactionSerializer(serializers.ModelSerializer):
     def get_automation_name(self, obj: Transaction):
         if obj.automation_id is None:
             return None
-        automation = obj.automation
+        try:
+            automation = Automation.all_objects.get(pk=obj.automation_id)
+        except Automation.DoesNotExist:
+            return None
         if automation.kind == Automation.Kind.EXPENSE:
             return automation.description or "Spesa ricorrente"
-        return automation.savings.name if automation.savings_id else None
+        if automation.savings_id is None:
+            return None
+        try:
+            savings = SavingsAccount.all_objects.get(pk=automation.savings_id)
+        except SavingsAccount.DoesNotExist:
+            return None
+        return savings.name
 
 
 class TransactionWriteSerializer(serializers.Serializer):
@@ -473,6 +502,15 @@ class TransactionWriteSerializer(serializers.Serializer):
     confirm_coverage = serializers.BooleanField(
         required=False, default=False, write_only=True
     )
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    tags = serializers.ListField(
+        child=serializers.CharField(max_length=30),
+        required=False,
+    )
 
     def _check_owner(self, obj, profile, label: str):
         if obj is not None and obj.profile_id != profile.id:
@@ -498,8 +536,15 @@ class TransactionWriteSerializer(serializers.Serializer):
             "to_account",
             "from_savings",
             "to_savings",
+            "category_id",
         ):
             self._check_owner(attrs.get(key), profile, key)
+        if attrs.get("category_id") is not None and attrs[
+            "category_id"
+        ].is_deleted:
+            raise serializers.ValidationError(
+                {"category_id": "La categoria è nel cestino."}
+            )
 
         account = attrs.get("account")
         savings = attrs.get("savings")
@@ -717,13 +762,19 @@ class TransactionWriteSerializer(serializers.Serializer):
     @transaction.atomic
     def create(self, validated_data):
         profile = self.context["profile"]
+        category = validated_data.get("category_id") or match_category(
+            profile, ""
+        )
+        tag_names = validated_data.get("tags", [])
         transaction_obj = Transaction.objects.create(
             profile=profile,
             kind=validated_data["kind"],
             date=validated_data["date"],
             description=validated_data.get("description", ""),
             amount=validated_data["amount"],
+            category=category,
         )
+        transaction_obj.tags.set(resolve_tags(profile, tag_names))
         Line.objects.bulk_create(
             [Line(transaction=transaction_obj, **line) for line in self._lines]
         )
@@ -735,7 +786,15 @@ class TransactionWriteSerializer(serializers.Serializer):
         instance.date = validated_data["date"]
         instance.description = validated_data.get("description", "")
         instance.amount = validated_data["amount"]
+        if "category_id" in validated_data:
+            instance.category = validated_data[
+                "category_id"
+            ] or match_category(instance.profile, "")
         instance.save()
+        if "tags" in validated_data:
+            instance.tags.set(
+                resolve_tags(instance.profile, validated_data["tags"])
+            )
         instance.lines.all().delete()
         Line.objects.bulk_create(
             [Line(transaction=instance, **line) for line in self._lines]

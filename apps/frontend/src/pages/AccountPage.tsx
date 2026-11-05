@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type UserStatus } from "../api";
 import { useAuth } from "../auth";
+import { applyTheme, type Theme } from "../theme";
 import { ImportExportSection } from "../components/ImportExportSection";
 
 const STATUS_LABEL: Record<UserStatus, string> = {
@@ -10,6 +11,65 @@ const STATUS_LABEL: Record<UserStatus, string> = {
   rejected: "Rifiutato",
   disabled: "Disabilitato",
 };
+
+function AppearanceSection() {
+  const [theme, setTheme] = useState<Theme | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .profile()
+      .then((profile) => setTheme(profile.theme))
+      .catch(() =>
+        setError("Preferenza del tema non caricata: resta quella attiva."),
+      );
+  }, []);
+
+  async function choose(next: Theme) {
+    if (next === theme) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const updated = await api.updateTheme(next);
+      setTheme(updated.theme);
+      applyTheme(updated.theme);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Salvataggio del tema non riuscito.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>Aspetto</h2>
+      <p className="muted">
+        Tema scuro di default, chiaro a parità di qualità. La scelta è
+        sincronizzata tra i tuoi dispositivi.
+      </p>
+      <div className="radio-group" role="radiogroup" aria-label="Tema">
+        {(["dark", "light"] as const).map((value) => (
+          <label key={value} className="checkbox-row">
+            <input
+              type="radio"
+              name="theme"
+              checked={theme === value}
+              disabled={busy || theme === null}
+              onChange={() => void choose(value)}
+            />
+            {value === "dark" ? "Scuro" : "Chiaro"}
+          </label>
+        ))}
+      </div>
+      {error && <p className="error">{error}</p>}
+    </section>
+  );
+}
 
 export function AccountPage() {
   const { user, setUser, logout } = useAuth();
@@ -115,6 +175,8 @@ export function AccountPage() {
           </section>
         </div>
       </section>
+
+      {!user.is_global_admin && <AppearanceSection />}
 
       {!user.is_global_admin && <ImportExportSection />}
     </div>
