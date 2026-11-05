@@ -15,10 +15,19 @@ from .automations import (
     resolve_pending,
     run_for_profile,
 )
+from .investments import (
+    INVESTMENT_TRANSACTION_KINDS,
+    delete_operation,
+    portfolio_summary,
+    recalculate_position,
+    set_investment_account,
+)
 from .models import (
     ZERO,
     Account,
     AutomationExecution,
+    InvestmentOperation,
+    InvestmentPosition,
     Line,
     Notification,
     Profile,
@@ -34,6 +43,15 @@ from .serializers import (
     AutomationExecutionSerializer,
     AutomationSerializer,
     AutomationWriteSerializer,
+    InvestmentAccountSerializer,
+    InvestmentOperationCreateSerializer,
+    InvestmentOperationSerializer,
+    InvestmentOperationUpdateSerializer,
+    InvestmentPositionCreateSerializer,
+    InvestmentPositionSerializer,
+    InvestmentPositionSummarySerializer,
+    InvestmentPositionUpdateSerializer,
+    InvestmentSummarySerializer,
     NotificationSerializer,
     ProfileSerializer,
     SavingsAccountCreateSerializer,
@@ -76,6 +94,7 @@ class DashboardView(FinanceView):
 
         accounts = list(Account.objects.filter(profile=profile))
         savings = list(SavingsAccount.objects.filter(profile=profile))
+        investments = portfolio_summary(profile)
 
         total_balance = sum((account.balance for account in accounts), ZERO)
         total_savings = sum((savings_account.balance for savings_account in savings), ZERO)
@@ -92,7 +111,10 @@ class DashboardView(FinanceView):
         income_total = (
             Transaction.objects.filter(
                 profile=profile,
-                kind=Transaction.Kind.INCOME,
+                kind__in=(
+                    Transaction.Kind.INCOME,
+                    Transaction.Kind.INVESTMENT_DIVIDEND,
+                ),
                 date__gte=start,
                 date__lte=end,
             ).aggregate(total=Sum("amount"))["total"]
@@ -109,15 +131,29 @@ class DashboardView(FinanceView):
         )
         recent = (
             Transaction.objects.filter(profile=profile)
+            .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
             .prefetch_related("lines__account", "lines__savings")
             .order_by("-date", "-id")[:10]
+        )
+        period_realized, period_dividends = self._period_investments(
+            profile, start, end
         )
 
         return Response(
             {
                 "total_balance": f"{total_balance:.2f}",
                 "total_savings": f"{total_savings:.2f}",
-                "total_patrimony": f"{total_balance + total_savings:.2f}",
+                "total_patrimony": (
+                    f"{total_balance + total_savings + investments['total_cost']:.2f}"
+                ),
+                "total_investments_cost": f"{investments['total_cost']:.2f}",
+                "total_investments_value": f"{investments['total_value']:.2f}",
+                "total_investments_unrealized": (
+                    f"{investments['total_unrealized']:.2f}"
+                ),
+                "positions_without_price": investments["positions_without_price"],
+                "period_investments_realized": f"{period_realized:.2f}",
+                "period_dividends": f"{period_dividends:.2f}",
                 "period_balance": f"{period_balance:.2f}",
                 "income_total": f"{income_total:.2f}",
                 "expense_total": f"{expense_total:.2f}",
@@ -127,6 +163,28 @@ class DashboardView(FinanceView):
                 "recent_transactions": TransactionSerializer(recent, many=True).data,
             }
         )
+
+    @staticmethod
+    def _period_investments(profile: Profile, start: date, end: date):
+        realized = ZERO
+        for position in profile.investment_positions.all():
+            for row in recalculate_position(position)["operations"]:
+                operation = row["operation"]
+                if (
+                    operation.kind == InvestmentOperation.Kind.SELL
+                    and start <= operation.date <= end
+                ):
+                    realized += row["realized_gain"]
+        dividends = (
+            InvestmentOperation.objects.filter(
+                profile=profile,
+                kind=InvestmentOperation.Kind.DIVIDEND,
+                date__gte=start,
+                date__lte=end,
+            ).aggregate(total=Sum("cash_amount"))["total"]
+            or ZERO
+        )
+        return realized, dividends
 
     @staticmethod
     def _parse_date(value, default: date) -> date:
@@ -171,11 +229,31 @@ class AccountDetailView(FinanceView):
         account = self.get_object(request, pk)
         serializer = AccountUpdateSerializer(account, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        if serializer.validated_data.get("archived") and account.investment_profiles.exists():
+            return Response(
+                {
+                    "detail": (
+                        "Il conto è il conto degli investimenti: cambia conto "
+                        "prima di archiviarlo."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer.save()
         return Response(AccountSerializer(account).data)
 
     def delete(self, request, pk: int):
         account = self.get_object(request, pk)
+        if account.investment_profiles.exists():
+            return Response(
+                {
+                    "detail": (
+                        "Il conto è il conto degli investimenti: cambia conto "
+                        "prima di eliminarlo."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if account.savings_accounts.exists():
             return Response(
                 {"detail": "Il conto è usato come appoggio di un salvadanaio."},
@@ -276,6 +354,7 @@ class TransactionListCreateView(FinanceView):
         profile = self.get_profile(request)
         queryset = (
             Transaction.objects.filter(profile=profile)
+            .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
             .prefetch_related("lines__account", "lines__savings")
             .order_by("-date", "-id")
         )
@@ -341,6 +420,16 @@ class TransactionDetailView(FinanceView):
 
     def patch(self, request, pk: int):
         operation = self.get_object(request, pk)
+        if operation.kind in INVESTMENT_TRANSACTION_KINDS:
+            return Response(
+                {
+                    "detail": (
+                        "Le operazioni di investimento si modificano dalla "
+                        "pagina Investimenti."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if operation.kind == Transaction.Kind.OPENING:
             return Response(
                 {"detail": "Il movimento di apertura non è modificabile."},
@@ -363,6 +452,16 @@ class TransactionDetailView(FinanceView):
 
     def delete(self, request, pk: int):
         operation = self.get_object(request, pk)
+        if operation.kind in INVESTMENT_TRANSACTION_KINDS:
+            return Response(
+                {
+                    "detail": (
+                        "Le operazioni di investimento si eliminano dalla "
+                        "pagina Investimenti."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if operation.kind == Transaction.Kind.OPENING:
             return Response(
                 {"detail": "Il movimento di apertura non è eliminabile."},
@@ -397,6 +496,163 @@ class TransactionDetailView(FinanceView):
                     )
                 )
             operation.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _get_position(profile: Profile, pk: int) -> InvestmentPosition:
+    try:
+        return InvestmentPosition.objects.get(pk=pk, profile=profile)
+    except InvestmentPosition.DoesNotExist as exc:
+        raise ValidationError({"detail": "Posizione non trovata."}) from exc
+
+
+def _position_ledger(position: InvestmentPosition):
+    ledger = recalculate_position(position)
+    rows = {row["operation"].pk: row for row in ledger["operations"]}
+    return ledger, rows
+
+
+def _operation_payload(operation: InvestmentOperation):
+    _, rows = _position_ledger(operation.position)
+    return InvestmentOperationSerializer(
+        operation, context={"ledger_rows": rows}
+    ).data
+
+
+def _account_payload(account: Account | None):
+    return AccountSerializer(account).data if account is not None else None
+
+
+class InvestmentListCreateView(FinanceView):
+    def get(self, request):
+        profile = self.get_profile(request)
+        positions = list(profile.investment_positions.all())
+        return Response(
+            {
+                "investment_account": _account_payload(profile.investment_account),
+                "summary": InvestmentSummarySerializer(
+                    portfolio_summary(profile)
+                ).data,
+                "positions": InvestmentPositionSerializer(
+                    positions, many=True
+                ).data,
+            }
+        )
+
+    def post(self, request):
+        profile = self.get_profile(request)
+        serializer = InvestmentPositionCreateSerializer(
+            data=request.data, context={"profile": profile}
+        )
+        serializer.is_valid(raise_exception=True)
+        position = serializer.save()
+        return Response(
+            InvestmentPositionSerializer(position).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class InvestmentDetailView(FinanceView):
+    def get_object(self, request, pk: int) -> InvestmentPosition:
+        profile = self.get_profile(request)
+        return _get_position(profile, pk)
+
+    def get(self, request, pk: int):
+        position = self.get_object(request, pk)
+        ledger, rows = _position_ledger(position)
+        operations = position.operations.select_related("transaction").all()
+        return Response(
+            {
+                "position": InvestmentPositionSerializer(
+                    position, context={"_ledger_cache": {position.pk: ledger}}
+                ).data,
+                "summary": InvestmentPositionSummarySerializer(ledger).data,
+                "operations": InvestmentOperationSerializer(
+                    operations, many=True, context={"ledger_rows": rows}
+                ).data,
+            }
+        )
+
+    def patch(self, request, pk: int):
+        position = self.get_object(request, pk)
+        serializer = InvestmentPositionUpdateSerializer(
+            position, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        position = serializer.save()
+        return Response(InvestmentPositionSerializer(position).data)
+
+    def delete(self, request, pk: int):
+        position = self.get_object(request, pk)
+        if position.operations.exists():
+            return Response(
+                {
+                    "detail": (
+                        "La posizione ha operazioni: elimina prima le operazioni."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        position.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class InvestmentAccountView(FinanceView):
+    def put(self, request):
+        profile = self.get_profile(request)
+        data = request.data
+        if "investment_account" in data and "account" not in data:
+            data = {**data, "account": data["investment_account"]}
+        serializer = InvestmentAccountSerializer(
+            data=data, context={"profile": profile}
+        )
+        serializer.is_valid(raise_exception=True)
+        profile = set_investment_account(
+            profile, serializer.validated_data["account"]
+        )
+        return Response(
+            {"investment_account": _account_payload(profile.investment_account)}
+        )
+
+
+class InvestmentOperationCreateView(FinanceView):
+    def post(self, request, pk: int):
+        profile = self.get_profile(request)
+        position = _get_position(profile, pk)
+        serializer = InvestmentOperationCreateSerializer(
+            data=request.data, context={"position": position}
+        )
+        serializer.is_valid(raise_exception=True)
+        operation = serializer.save()
+        return Response(
+            _operation_payload(operation), status=status.HTTP_201_CREATED
+        )
+
+
+class InvestmentOperationDetailView(FinanceView):
+    def get_object(self, request, pk: int) -> InvestmentOperation:
+        profile = self.get_profile(request)
+        try:
+            return InvestmentOperation.objects.select_related(
+                "transaction", "position"
+            ).get(pk=pk, profile=profile)
+        except InvestmentOperation.DoesNotExist as exc:
+            raise ValidationError(
+                {"detail": "Operazione non trovata."}
+            ) from exc
+
+    def patch(self, request, pk: int):
+        operation = self.get_object(request, pk)
+        serializer = InvestmentOperationUpdateSerializer(
+            operation, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        operation = serializer.save()
+        return Response(_operation_payload(operation))
+
+    def delete(self, request, pk: int):
+        operation = self.get_object(request, pk)
+        delete_operation(operation)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

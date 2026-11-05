@@ -17,6 +17,13 @@ class Profile(models.Model):
         related_name="finance_profile",
     )
     display_name = models.CharField(max_length=120, blank=True)
+    investment_account = models.ForeignKey(
+        "Account",
+        on_delete=models.SET_NULL,
+        related_name="investment_profiles",
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -200,6 +207,9 @@ class Transaction(models.Model):
         INCOME = "income", "Entrata"
         EXPENSE = "expense", "Spesa"
         TRANSFER = "transfer", "Trasferimento"
+        INVESTMENT_BUY = "investment_buy", "Acquisto investimento"
+        INVESTMENT_SELL = "investment_sell", "Vendita investimento"
+        INVESTMENT_DIVIDEND = "investment_dividend", "Dividendo"
 
     profile = models.ForeignKey(
         Profile, on_delete=models.CASCADE, related_name="transactions"
@@ -211,7 +221,7 @@ class Transaction(models.Model):
         null=True,
         blank=True,
     )
-    kind = models.CharField(max_length=16, choices=Kind.choices)
+    kind = models.CharField(max_length=19, choices=Kind.choices)
     date = models.DateField()
     description = models.CharField(max_length=255, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
@@ -426,3 +436,126 @@ class Notification(models.Model):
         if self.read_at is None:
             self.read_at = timezone.now()
             self.save(update_fields=("read_at",))
+
+
+class InvestmentPosition(models.Model):
+    """A holding tracked by quantity and unit price (DC-082/DC-083).
+
+    Derived values (quantity, cost, gains) are never stored: they are always
+    rebuilt from the operations by ``finance.investments``.
+    """
+
+    class Category(models.TextChoices):
+        STOCK = "stock", "Azione"
+        ETF = "etf", "ETF"
+        BOND = "bond", "Obbligazione"
+        FUND = "fund", "Fondo"
+        CRYPTO = "crypto", "Crypto"
+        REAL_ESTATE = "real_estate", "Immobile"
+        OTHER = "other", "Altro"
+
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="investment_positions"
+    )
+    name = models.CharField(max_length=120)
+    category = models.CharField(
+        max_length=16, choices=Category.choices, blank=True
+    )
+    identifier = models.CharField(max_length=32, blank=True)
+    current_price = models.DecimalField(
+        max_digits=18, decimal_places=8, null=True, blank=True
+    )
+    price_updated_on = models.DateField(null=True, blank=True)
+    archived = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("name", "id")
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class InvestmentOperation(models.Model):
+    """One movement of an investment position.
+
+    ``cash_amount`` is the signed source of truth for the account movement:
+    always positive, with the direction given by the kind.
+    """
+
+    class Kind(models.TextChoices):
+        OPENING = "opening", "Apertura"
+        BUY = "buy", "Acquisto"
+        SELL = "sell", "Vendita"
+        DIVIDEND = "dividend", "Dividendo"
+
+    profile = models.ForeignKey(
+        Profile, on_delete=models.CASCADE, related_name="investment_operations"
+    )
+    position = models.ForeignKey(
+        InvestmentPosition, on_delete=models.PROTECT, related_name="operations"
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    date = models.DateField()
+    quantity = models.DecimalField(
+        max_digits=24, decimal_places=8, null=True, blank=True
+    )
+    unit_price = models.DecimalField(
+        max_digits=24, decimal_places=8, null=True, blank=True
+    )
+    gross_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    commission = models.DecimalField(
+        max_digits=12, decimal_places=2, default=ZERO
+    )
+    cash_amount = models.DecimalField(max_digits=14, decimal_places=2, default=ZERO)
+    description = models.CharField(max_length=255, blank=True)
+    transaction = models.OneToOneField(
+        Transaction,
+        on_delete=models.PROTECT,
+        related_name="investment_operation",
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("date", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("position",),
+                condition=Q(kind="opening"),
+                name="finance_investment_one_opening_per_position",
+            ),
+            models.CheckConstraint(
+                condition=Q(cash_amount__gte=0),
+                name="finance_investment_cash_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(kind="opening", transaction__isnull=True)
+                    | (~Q(kind="opening") & Q(transaction__isnull=False))
+                ),
+                name="finance_investment_transaction_matches_kind",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(kind="opening", cash_amount=0, commission=0)
+                    | ~Q(kind="opening")
+                ),
+                name="finance_investment_opening_has_no_cash",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(kind="dividend", quantity__isnull=True, unit_price__isnull=True)
+                    | (~Q(kind="dividend") & Q(quantity__gt=0))
+                ),
+                name="finance_investment_quantity_matches_kind",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} {self.position} ({self.date})"

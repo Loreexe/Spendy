@@ -1,19 +1,44 @@
 """Tests for the profile archive export and restore (DC-074)."""
+import csv
+import hashlib
 import io
 import json
 import zipfile
+from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from accounts.models import User
-from .models import Account, Line, SavingsAccount, Transaction
+from .models import (
+    Account,
+    InvestmentOperation,
+    InvestmentPosition,
+    Line,
+    Profile,
+    SavingsAccount,
+    Transaction,
+)
 from .tests import FinanceTestBase
+
+CSV_NAMES = (
+    "conti.csv",
+    "salvadanai.csv",
+    "movimenti.csv",
+    "righe.csv",
+    "posizioni.csv",
+    "operazioni_investimenti.csv",
+)
 
 
 class ArchiveTestBase(FinanceTestBase):
     def export_archive(self):
         response = self.client.get(reverse("finance-export-archive"))
+        self.assertEqual(response.status_code, 200)
+        return response
+
+    def export_investments(self):
+        response = self.client.get(reverse("finance-investment-export"))
         self.assertEqual(response.status_code, 200)
         return response
 
@@ -50,6 +75,47 @@ class ArchiveTestBase(FinanceTestBase):
             {"file": upload},
             format="multipart",
         )
+
+    def csv_rows(self, contents, name):
+        text = contents[name].decode("utf-8-sig")
+        return list(csv.reader(io.StringIO(text), delimiter=";"))
+
+    def write_csv(self, contents, name, rows):
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+        writer.writerows(rows)
+        contents[name] = b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        manifest["file"][name]["righe"] = len(rows) - 1
+        manifest["file"][name]["sha256"] = hashlib.sha256(
+            contents[name]
+        ).hexdigest()
+        manifest["conteggi"][name[:-4]] = len(rows) - 1
+        contents["manifest.json"] = json.dumps(manifest).encode("utf-8")
+
+    def set_cell(self, contents, name, where, column, value):
+        rows = self.csv_rows(contents, name)
+        index = {key: position for position, key in enumerate(rows[0])}
+        for row in rows[1:]:
+            if all(row[index[key]] == expected for key, expected in where.items()):
+                row[index[column]] = value
+                break
+        else:
+            self.fail(f"Riga non trovata in {name}: {where}")
+        self.write_csv(contents, name, rows)
+
+    def as_schema1(self, content):
+        contents = self.unpack(content)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        for name in ("posizioni.csv", "operazioni_investimenti.csv"):
+            del contents[name]
+            del manifest["file"][name]
+            del manifest["conteggi"][name[:-4]]
+        manifest["schema"] = 1
+        manifest.pop("conto_investimenti_id", None)
+        manifest.pop("conto_investimenti", None)
+        contents["manifest.json"] = json.dumps(manifest).encode("utf-8")
+        return self.repack(contents)
 
     def make_data(self):
         account = self.create_account(initial="1000.00").data
@@ -106,6 +172,83 @@ class ArchiveTestBase(FinanceTestBase):
         )
         return account, other, savings
 
+    def make_investment_data(self):
+        account = self.create_account(name="Investimenti", initial="1000.00").data
+        response = self.client.put(
+            reverse("finance-investment-account"),
+            {"account": account["id"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        position = self.client.post(
+            reverse("finance-investments"),
+            {
+                "name": "ETF Mondo",
+                "category": "etf",
+                "identifier": "IE00B4L5Y983",
+                "current_price": "105.20",
+                "opening": {
+                    "date": self.today.isoformat(),
+                    "quantity": "10",
+                    "total_cost": "1000.00",
+                },
+            },
+            format="json",
+        ).data
+        for payload in (
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "102.50",
+                "commission": "1.50",
+                "description": "PAC",
+            },
+            {
+                "kind": "sell",
+                "date": self.today.isoformat(),
+                "quantity": "1",
+                "unit_price": "110.00",
+                "commission": "1.00",
+            },
+            {
+                "kind": "dividend",
+                "date": self.today.isoformat(),
+                "amount": "12.40",
+            },
+        ):
+            response = self.client.post(
+                reverse("finance-investment-operations", args=[position["id"]]),
+                payload,
+                format="json",
+            )
+            self.assertEqual(response.status_code, 201)
+        return account, position
+
+    def other_user(self, email="altro@example.com"):
+        return User.objects.create_user(
+            email=email,
+            password="Spendy-Fondamenta-2026",
+            status=User.Status.ACTIVE,
+        )
+
+    def create_foreign_position(self):
+        other = self.other_user("estero@example.com")
+        profile = Profile.objects.create(user=other)
+        position = InvestmentPosition.objects.create(
+            profile=profile, name="Segreto"
+        )
+        InvestmentOperation.objects.create(
+            profile=profile,
+            position=position,
+            kind=InvestmentOperation.Kind.OPENING,
+            date=self.today,
+            quantity=Decimal("1"),
+            unit_price=Decimal("1"),
+            gross_amount=Decimal("1"),
+        )
+        return other, position
+
 
 class ArchiveExportTests(ArchiveTestBase):
     def test_archive_has_expected_files_and_headers(self):
@@ -119,15 +262,9 @@ class ArchiveExportTests(ArchiveTestBase):
         contents = self.unpack(response.content)
         self.assertEqual(
             set(contents),
-            {
-                "conti.csv",
-                "salvadanai.csv",
-                "movimenti.csv",
-                "righe.csv",
-                "manifest.json",
-            },
+            set(CSV_NAMES) | {"manifest.json"},
         )
-        for name in ("conti.csv", "salvadanai.csv", "movimenti.csv", "righe.csv"):
+        for name in CSV_NAMES:
             self.assertTrue(contents[name].startswith(b"\xef\xbb\xbf"))
             self.assertIn(b"\r\n", contents[name])
         self.assertTrue(
@@ -135,19 +272,38 @@ class ArchiveExportTests(ArchiveTestBase):
                 "id;nome;tipo_codice;tipo_etichetta;saldo_iniziale"
             )
         )
+        self.assertTrue(
+            contents["posizioni.csv"]
+            .decode("utf-8-sig")
+            .splitlines()[0]
+            .startswith("id;nome;categoria_codice;categoria_etichetta")
+        )
+        self.assertTrue(
+            contents["operazioni_investimenti.csv"]
+            .decode("utf-8-sig")
+            .splitlines()[0]
+            .startswith("id;posizione_id;posizione;tipo_codice")
+        )
 
     def test_manifest_counts_and_checksums(self):
         self.make_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 1)
+        self.assertEqual(manifest["schema"], 2)
         self.assertEqual(manifest["scopo"], "backup-profilo")
         self.assertEqual(manifest["valuta"], "EUR")
         self.assertEqual(
             manifest["conteggi"],
-            {"conti": 2, "salvadanai": 1, "movimenti": 7, "righe": 11},
+            {
+                "conti": 2,
+                "salvadanai": 1,
+                "movimenti": 7,
+                "righe": 11,
+                "posizioni": 0,
+                "operazioni_investimenti": 0,
+            },
         )
-        for name in ("conti.csv", "salvadanai.csv", "movimenti.csv", "righe.csv"):
+        for name in CSV_NAMES:
             self.assertIn(name, manifest["file"])
             self.assertIn("sha256", manifest["file"][name])
 
@@ -177,10 +333,72 @@ class ArchiveExportTests(ArchiveTestBase):
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
         self.assertEqual(
             manifest["conteggi"],
-            {"conti": 0, "salvadanai": 0, "movimenti": 0, "righe": 0},
+            {
+                "conti": 0,
+                "salvadanai": 0,
+                "movimenti": 0,
+                "righe": 0,
+                "posizioni": 0,
+                "operazioni_investimenti": 0,
+            },
         )
-        for name in ("conti.csv", "salvadanai.csv", "movimenti.csv", "righe.csv"):
+        for name in CSV_NAMES:
             self.assertEqual(len(contents[name].decode("utf-8-sig").splitlines()), 1)
+
+    def test_schema2_archive_contains_positions_and_operations(self):
+        account, _ = self.make_investment_data()
+        contents = self.unpack(self.export_archive().content)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        self.assertEqual(manifest["schema"], 2)
+        self.assertEqual(manifest["conteggi"]["posizioni"], 1)
+        self.assertEqual(manifest["conteggi"]["operazioni_investimenti"], 4)
+        self.assertEqual(manifest["conto_investimenti_id"], account["id"])
+        self.assertEqual(manifest["conto_investimenti"], "Investimenti")
+
+        positions = self.csv_rows(contents, "posizioni.csv")
+        self.assertEqual(len(positions), 2)
+        self.assertEqual(positions[1][1], "ETF Mondo")
+        self.assertEqual(positions[1][2], "etf")
+        self.assertEqual(positions[1][5], "105,20000000")
+
+        operations = self.csv_rows(contents, "operazioni_investimenti.csv")
+        self.assertEqual(len(operations), 5)
+        header = {key: index for index, key in enumerate(operations[0])}
+        opening = next(
+            row
+            for row in operations[1:]
+            if row[header["tipo_codice"]] == "opening"
+        )
+        self.assertEqual(opening[header["movimento_id"]], "")
+        self.assertEqual(opening[header["conto_id"]], "")
+        self.assertEqual(opening[header["importo_contante"]], "0,00")
+
+    def test_dedicated_export_returns_only_investment_csvs(self):
+        self.make_investment_data()
+        self.create_foreign_position()
+        response = self.export_investments()
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn("spendy-investimenti-", response["Content-Disposition"])
+        contents = self.unpack(response.content)
+        self.assertEqual(
+            set(contents),
+            {"posizioni.csv", "operazioni_investimenti.csv"},
+        )
+        positions = self.csv_rows(contents, "posizioni.csv")
+        self.assertEqual(len(positions), 2)
+        self.assertEqual(positions[1][1], "ETF Mondo")
+        self.assertNotIn("Segreto", contents["posizioni.csv"].decode("utf-8-sig"))
+        operations = self.csv_rows(contents, "operazioni_investimenti.csv")
+        self.assertEqual(len(operations), 5)
+        for name in ("posizioni.csv", "operazioni_investimenti.csv"):
+            self.assertTrue(contents[name].startswith(b"\xef\xbb\xbf"))
+            self.assertIn(b"\r\n", contents[name])
+
+    def test_dedicated_export_requires_profile(self):
+        admin = User.objects.get(is_global_admin=True)
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(reverse("finance-investment-export"))
+        self.assertEqual(response.status_code, 403)
 
 
 class ArchiveRestoreTests(ArchiveTestBase):
@@ -189,13 +407,6 @@ class ArchiveRestoreTests(ArchiveTestBase):
         self.make_data()
         self.content = self.export_archive().content
         self.source_profile = self.user.finance_profile
-
-    def other_user(self, email="altro@example.com"):
-        return User.objects.create_user(
-            email=email,
-            password="Spendy-Fondamenta-2026",
-            status=User.Status.ACTIVE,
-        )
 
     def test_analyze_shows_summary(self):
         self.client.force_authenticate(user=self.other_user())
@@ -206,8 +417,13 @@ class ArchiveRestoreTests(ArchiveTestBase):
         self.assertEqual(response.data["summary"]["savings"], 1)
         self.assertEqual(response.data["summary"]["transactions"], 7)
         self.assertEqual(response.data["summary"]["lines"], 11)
+        self.assertEqual(response.data["summary"]["positions"], 0)
+        self.assertEqual(response.data["summary"]["investment_operations"], 0)
         self.assertEqual(response.data["summary"]["accounts_total"], "1550.00")
         self.assertEqual(response.data["summary"]["savings_total"], "50.00")
+        self.assertEqual(response.data["summary"]["investments_cost"], "0.00")
+        self.assertEqual(response.data["summary"]["investments_value"], "0.00")
+        self.assertEqual(response.data["summary"]["patrimony_total"], "1600.00")
 
     def test_restore_reproduces_counts_and_balances(self):
         target = self.other_user()
@@ -218,8 +434,11 @@ class ArchiveRestoreTests(ArchiveTestBase):
         self.assertEqual(response.data["savings"], 1)
         self.assertEqual(response.data["transactions"], 7)
         self.assertEqual(response.data["lines"], 11)
+        self.assertEqual(response.data["positions"], 0)
+        self.assertEqual(response.data["investment_operations"], 0)
         self.assertEqual(response.data["accounts_total"], "1550.00")
         self.assertEqual(response.data["savings_total"], "50.00")
+        self.assertEqual(response.data["patrimony_total"], "1600.00")
 
         profile = target.finance_profile
         account = Account.objects.get(profile=profile, name="Contanti")
@@ -290,3 +509,156 @@ class ArchiveRestoreTests(ArchiveTestBase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["accounts"], 0)
         self.assertEqual(response.data["transactions"], 0)
+        self.assertEqual(response.data["positions"], 0)
+
+    def test_schema1_archive_is_still_analyzed_and_restored(self):
+        schema1 = self.as_schema1(self.content)
+        target = self.other_user("schema1@example.com")
+        self.client.force_authenticate(user=target)
+
+        analysis = self.analyze(schema1)
+        self.assertEqual(analysis.status_code, 200)
+        self.assertTrue(analysis.data["can_restore"])
+        self.assertEqual(analysis.data["manifest"]["schema"], 1)
+        self.assertEqual(analysis.data["summary"]["positions"], 0)
+        self.assertEqual(analysis.data["summary"]["investments_cost"], "0.00")
+        self.assertEqual(analysis.data["summary"]["accounts_total"], "1550.00")
+
+        restored = self.confirm(schema1)
+        self.assertEqual(restored.status_code, 201)
+        self.assertEqual(restored.data["accounts"], 2)
+        self.assertEqual(restored.data["savings"], 1)
+        self.assertEqual(restored.data["transactions"], 7)
+        self.assertEqual(restored.data["positions"], 0)
+        self.assertEqual(restored.data["investment_operations"], 0)
+        self.assertEqual(restored.data["patrimony_total"], "1600.00")
+
+
+class ArchiveInvestmentRestoreTests(ArchiveTestBase):
+    def setUp(self):
+        super().setUp()
+        self.account, self.position = self.make_investment_data()
+        self.content = self.export_archive().content
+
+    def test_analyze_schema2_summary(self):
+        self.client.force_authenticate(user=self.other_user())
+        response = self.analyze(self.content)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["can_restore"])
+        summary = response.data["summary"]
+        self.assertEqual(summary["accounts"], 1)
+        self.assertEqual(summary["positions"], 1)
+        self.assertEqual(summary["investment_operations"], 4)
+        self.assertEqual(summary["accounts_total"], "914.90")
+        self.assertEqual(summary["investments_cost"], "1105.96")
+        self.assertEqual(summary["investments_value"], "1157.20")
+        self.assertEqual(summary["patrimony_total"], "2020.86")
+        self.assertEqual(
+            response.data["manifest"]["conto_investimenti_id"],
+            self.account["id"],
+        )
+
+    def test_restore_schema2_recreates_positions_operations_and_movements(self):
+        target = self.other_user("ripristino@example.com")
+        self.client.force_authenticate(user=target)
+        response = self.confirm(self.content)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["accounts"], 1)
+        self.assertEqual(response.data["positions"], 1)
+        self.assertEqual(response.data["investment_operations"], 4)
+        self.assertEqual(response.data["transactions"], 4)
+        self.assertEqual(response.data["lines"], 4)
+        self.assertEqual(response.data["investments_cost"], "1105.96")
+        self.assertEqual(response.data["investments_value"], "1157.20")
+        self.assertEqual(response.data["patrimony_total"], "2020.86")
+
+        profile = Profile.objects.get(user=target)
+        account = Account.objects.get(profile=profile, name="Investimenti")
+        self.assertEqual(profile.investment_account, account)
+        self.assertEqual(account.balance, Decimal("914.90"))
+
+        position = InvestmentPosition.objects.get(
+            profile=profile, name="ETF Mondo"
+        )
+        self.assertEqual(position.category, "etf")
+        self.assertEqual(position.identifier, "IE00B4L5Y983")
+        self.assertEqual(position.current_price, Decimal("105.20"))
+        self.assertEqual(position.operations.count(), 4)
+
+        opening = position.operations.get(
+            kind=InvestmentOperation.Kind.OPENING
+        )
+        self.assertIsNone(opening.transaction)
+        self.assertEqual(opening.cash_amount, Decimal("0.00"))
+        self.assertEqual(opening.quantity, Decimal("10.00000000"))
+        self.assertEqual(
+            Transaction.objects.filter(
+                profile=profile,
+                kind__in=(
+                    Transaction.Kind.INVESTMENT_BUY,
+                    Transaction.Kind.INVESTMENT_SELL,
+                    Transaction.Kind.INVESTMENT_DIVIDEND,
+                ),
+            ).count(),
+            3,
+        )
+
+    def test_restore_is_blocked_when_profile_has_positions(self):
+        target = self.other_user("posseduto@example.com")
+        profile = Profile.objects.create(user=target)
+        InvestmentPosition.objects.create(profile=profile, name="Esistente")
+        self.client.force_authenticate(user=target)
+
+        analysis = self.analyze(self.content)
+        self.assertEqual(analysis.status_code, 200)
+        self.assertFalse(analysis.data["can_restore"])
+        self.assertIn("profilo contiene già dati", analysis.data["blocked_reason"])
+        self.assertEqual(self.confirm(self.content).status_code, 400)
+
+    def test_position_reference_must_exist(self):
+        contents = self.unpack(self.content)
+        self.set_cell(
+            contents,
+            "operazioni_investimenti.csv",
+            {"tipo_codice": "buy"},
+            "posizione_id",
+            "9999",
+        )
+        response = self.analyze(self.repack(contents))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("posizione non esiste", str(response.data))
+
+    def test_oversell_is_rejected(self):
+        contents = self.unpack(self.content)
+        self.set_cell(
+            contents,
+            "operazioni_investimenti.csv",
+            {"tipo_codice": "sell"},
+            "quantita",
+            "100,00000000",
+        )
+        response = self.analyze(self.repack(contents))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("vendita superiore", str(response.data))
+
+    def test_incoherent_movement_is_rejected(self):
+        contents = self.unpack(self.content)
+        self.set_cell(
+            contents,
+            "operazioni_investimenti.csv",
+            {"tipo_codice": "buy"},
+            "importo_contante",
+            "1,00",
+        )
+        response = self.analyze(self.repack(contents))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("non è coerente", str(response.data))
+
+    def test_wrong_counts_are_rejected(self):
+        contents = self.unpack(self.content)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        manifest["conteggi"]["posizioni"] = 5
+        contents["manifest.json"] = json.dumps(manifest).encode("utf-8")
+        response = self.analyze(self.repack(contents))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("conteggi", str(response.data))

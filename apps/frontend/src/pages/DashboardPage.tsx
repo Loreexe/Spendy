@@ -175,12 +175,26 @@ export function DashboardPage() {
             <div className="card stat">
               <span className="stat-label">Patrimonio</span>
               <strong>{money(data.total_patrimony)}</strong>
-              <span className="muted small">Conti + salvadanai</span>
+              <span className="muted small">
+                Conti + salvadanai + investimenti al costo
+              </span>
             </div>
             <div className="card stat">
               <span className="stat-label">Salvadanai</span>
               <strong>{money(data.total_savings)}</strong>
               <span className="muted small">Accantonamenti</span>
+            </div>
+            <div className="card stat">
+              <span className="stat-label">Investimenti</span>
+              <strong>{money(data.total_investments_cost)}</strong>
+              <span className="muted small">
+                Costo residuo · valore corrente{" "}
+                {money(data.total_investments_value)}
+                {data.positions_without_price > 0
+                  ? ` · ${data.positions_without_price} senza prezzo`
+                  : ""}
+              </span>
+              <Link to="/investments">Vai agli investimenti</Link>
             </div>
             <div className="card stat">
               <span className="stat-label">Saldo del periodo</span>
@@ -193,6 +207,12 @@ export function DashboardPage() {
               </span>
             </div>
           </section>
+
+          <p className="muted small">
+            Gli acquisti di investimento riducono il saldo del periodo ma non
+            sono spese; i dividendi sono entrate. Le operazioni sono visibili
+            nella pagina Investimenti, non nel registro Movimenti.
+          </p>
 
           <section className="two-columns">
             <div className="card">
@@ -271,6 +291,11 @@ export function DashboardPage() {
             <div className="card stat">
               <span className="stat-label">Entrate del periodo</span>
               <strong className="positive">{money(data.income_total)}</strong>
+              {Number(data.period_dividends) > 0 && (
+                <span className="muted small">
+                  di cui dividendi {money(data.period_dividends)}
+                </span>
+              )}
             </div>
             <div className="card stat">
               <span className="stat-label">Uscite del periodo</span>
