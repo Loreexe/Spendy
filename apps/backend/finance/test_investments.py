@@ -124,6 +124,15 @@ class OpeningTests(InvestmentTestBase):
         self.opening(position)
         self.assertEqual(recalculate_position(position)["quantity"], D("10"))
 
+    def test_edit_opening_without_investment_account(self):
+        # Regression: locking the position must not FOR UPDATE the nullable
+        # investment_account FK through select_related (rejected by PostgreSQL).
+        position = self.make_position()
+        opening = self.opening(position)
+        update_operation(opening, quantity="12")
+        opening.refresh_from_db()
+        self.assertEqual(opening.quantity, D("12"))
+
     def test_only_one_opening_per_position(self):
         position = self.make_position()
         self.opening(position)

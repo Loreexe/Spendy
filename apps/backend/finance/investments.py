@@ -358,11 +358,9 @@ def set_position_archived(position: InvestmentPosition, archived: bool) -> Inves
 
 
 def _lock_position(position: InvestmentPosition) -> InvestmentPosition:
-    return (
-        InvestmentPosition.objects.select_for_update()
-        .select_related("profile__investment_account")
-        .get(pk=position.pk)
-    )
+    # No select_related here: investment_account is a nullable FK and PostgreSQL
+    # rejects FOR UPDATE on the nullable side of an outer join.
+    return InvestmentPosition.objects.select_for_update().get(pk=position.pk)
 
 
 def _create_transaction(position, kind, day, amount, description):
