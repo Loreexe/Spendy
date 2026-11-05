@@ -108,9 +108,9 @@ export function ImportExportSection() {
     <section className="card">
       <h2>Import / Export</h2>
       <p className="muted">
-        Il backup personale del profilo contiene conti, salvadanai e movimenti.
-        È distinto dal backup globale del sistema e può essere usato per
-        trasferire i dati su un altro server.
+        Il backup personale del profilo contiene conti, salvadanai, movimenti e
+        investimenti (posizioni e operazioni). È distinto dal backup globale del
+        sistema e può essere usato per trasferire i dati su un altro server.
       </p>
 
       <div className="two-columns">
@@ -166,6 +166,22 @@ export function ImportExportSection() {
                   <dd>{analysis.summary.lines}</dd>
                 </div>
                 <div>
+                  <dt>Posizioni di investimento</dt>
+                  <dd>{analysis.summary.positions}</dd>
+                </div>
+                <div>
+                  <dt>Operazioni di investimento</dt>
+                  <dd>{analysis.summary.investment_operations}</dd>
+                </div>
+                <div>
+                  <dt>Costo investimenti</dt>
+                  <dd>{money(analysis.summary.investments_cost)}</dd>
+                </div>
+                <div>
+                  <dt>Valore investimenti</dt>
+                  <dd>{money(analysis.summary.investments_value)}</dd>
+                </div>
+                <div>
                   <dt>Saldo conti</dt>
                   <dd>{money(analysis.summary.accounts_total)}</dd>
                 </div>
@@ -214,11 +230,15 @@ export function ImportExportSection() {
             <div className="notice success">
               <p>
                 Ripristino completato: {result.accounts} conti,{" "}
-                {result.savings} salvadanai, {result.transactions} movimenti.
+                {result.savings} salvadanai, {result.transactions} movimenti,{" "}
+                {result.positions} posizioni e {result.investment_operations}{" "}
+                operazioni di investimento.
               </p>
               <p>
                 Saldo conti {money(result.accounts_total)} · salvadanai{" "}
-                {money(result.savings_total)} · patrimonio{" "}
+                {money(result.savings_total)} · investimenti{" "}
+                {money(result.investments_cost)} (valore{" "}
+                {money(result.investments_value)}) · patrimonio{" "}
                 {money(result.patrimony_total)}
               </p>
               <Link className="button secondary" to="/">
@@ -231,9 +251,10 @@ export function ImportExportSection() {
         <div className="stack">
           <h3>Esporta</h3>
           <p className="muted small">
-            Scarica un archivio ZIP con quattro file CSV e un manifesto di
-            controllo. Contiene tutti i dati del profilo, non solo i movimenti
-            filtrati.
+            Scarica un archivio ZIP con sei file CSV e un manifesto di
+            controllo (conti, salvadanai, movimenti, righe, posizioni e
+            operazioni di investimento). Contiene tutti i dati del profilo, non
+            solo i movimenti filtrati.
           </p>
           <div>
             <button

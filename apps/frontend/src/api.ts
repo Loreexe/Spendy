@@ -202,6 +202,12 @@ export interface Dashboard {
   total_balance: string;
   total_savings: string;
   total_patrimony: string;
+  total_investments_cost: string;
+  total_investments_value: string;
+  total_investments_unrealized: string;
+  positions_without_price: number;
+  period_investments_realized: string;
+  period_dividends: string;
   period_balance: string;
   income_total: string;
   expense_total: string;
@@ -449,11 +455,15 @@ export interface ArchiveAnalysis {
     versione_app: string;
     profilo: string;
     valuta: string;
+    conto_investimenti_id: number | null;
+    conto_investimenti: string;
     conteggi: {
       conti: number;
       salvadanai: number;
       movimenti: number;
       righe: number;
+      posizioni: number;
+      operazioni_investimenti: number;
     };
   };
   summary: {
@@ -461,10 +471,14 @@ export interface ArchiveAnalysis {
     savings: number;
     transactions: number;
     lines: number;
+    positions: number;
+    investment_operations: number;
     from: string | null;
     to: string | null;
     accounts_total: string;
     savings_total: string;
+    investments_cost: string;
+    investments_value: string;
     patrimony_total: string;
     balances: {
       accounts: ArchiveBalance[];
@@ -479,8 +493,12 @@ export interface ArchiveRestoreResult {
   savings: number;
   transactions: number;
   lines: number;
+  positions: number;
+  investment_operations: number;
   accounts_total: string;
   savings_total: string;
+  investments_cost: string;
+  investments_value: string;
   patrimony_total: string;
   balances: {
     accounts: ArchiveBalance[];
