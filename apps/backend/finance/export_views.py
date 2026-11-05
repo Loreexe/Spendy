@@ -12,6 +12,7 @@ from datetime import date
 from django.http import HttpResponse
 from django.utils import timezone
 
+from .csv_safety import sanitize_csv_text
 from .investments import INVESTMENT_TRANSACTION_KINDS
 from .models import ZERO, Transaction
 from .views import FinanceView
@@ -75,9 +76,11 @@ class ExportTransactionsView(FinanceView):
                 writer.writerow(
                     [
                         operation.date.strftime("%d-%m-%Y"),
-                        operation.description or operation.get_kind_display(),
+                        sanitize_csv_text(
+                            operation.description or operation.get_kind_display()
+                        ),
                         operation.get_kind_display(),
-                        names[account_pk],
+                        sanitize_csv_text(names[account_pk]),
                         _amount(-net),
                     ]
                 )

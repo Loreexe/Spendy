@@ -28,6 +28,7 @@ from django.db import transaction as db_transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
+from .csv_safety import restore_csv_text, sanitize_csv_text
 from .models import (
     ZERO,
     Account,
@@ -210,10 +211,10 @@ def _position_rows(positions) -> list[list]:
     return [
         [
             position.id,
-            position.name,
+            sanitize_csv_text(position.name),
             position.category,
             position.get_category_display() if position.category else "",
-            position.identifier,
+            sanitize_csv_text(position.identifier),
             _optional_quantity(position.current_price),
             position.price_updated_on.isoformat() if position.price_updated_on else "",
             "1" if position.archived else "0",
@@ -243,7 +244,7 @@ def _operation_rows(operations) -> list[list]:
             [
                 operation.id,
                 operation.position_id,
-                operation.position.name,
+                sanitize_csv_text(operation.position.name),
                 operation.kind,
                 operation.get_kind_display(),
                 operation.date.isoformat(),
@@ -254,8 +255,8 @@ def _operation_rows(operations) -> list[list]:
                 _money(operation.cash_amount),
                 movement_id,
                 account_id,
-                account_name,
-                operation.description,
+                sanitize_csv_text(account_name),
+                sanitize_csv_text(operation.description),
                 _iso(operation.created_at),
                 _iso(operation.updated_at),
             ]
@@ -337,7 +338,7 @@ def build_archive(profile: Profile) -> bytes:
     account_rows = [
         [
             account.id,
-            account.name,
+            sanitize_csv_text(account.name),
             account.type,
             account.get_type_display(),
             _money(account.initial_balance),
@@ -351,9 +352,9 @@ def build_archive(profile: Profile) -> bytes:
     savings_rows = [
         [
             entry.id,
-            entry.name,
+            sanitize_csv_text(entry.name),
             entry.backing_account_id,
-            entry.backing_account.name,
+            sanitize_csv_text(entry.backing_account.name),
             _iso(entry.created_at),
             _iso(entry.updated_at),
         ]
@@ -365,7 +366,7 @@ def build_archive(profile: Profile) -> bytes:
             operation.kind,
             operation.get_kind_display(),
             operation.date.isoformat(),
-            operation.description,
+            sanitize_csv_text(operation.description),
             _money(operation.amount),
             _iso(operation.created_at),
             _iso(operation.updated_at),
@@ -377,9 +378,9 @@ def build_archive(profile: Profile) -> bytes:
             line.id,
             line.transaction_id,
             line.account_id or "",
-            account_names.get(line.account_id, ""),
+            sanitize_csv_text(account_names.get(line.account_id, "")),
             line.savings_id or "",
-            savings_names.get(line.savings_id, ""),
+            sanitize_csv_text(savings_names.get(line.savings_id, "")),
             line.role,
             line.get_role_display(),
             _money(line.amount),
@@ -623,7 +624,7 @@ def _parse_accounts(rows: list[list[str]]) -> list[dict]:
         if account_id in seen:
             _fail(f"{where}: identificativo duplicato.")
         seen.add(account_id)
-        name = row[1].strip()
+        name = restore_csv_text(row[1].strip())
         if not name or len(name) > 100:
             _fail(f"{where}: nome del conto non valido.")
         account_type = row[2].strip()
@@ -655,7 +656,7 @@ def _parse_savings(rows: list[list[str]]) -> list[dict]:
         if savings_id in seen:
             _fail(f"{where}: identificativo duplicato.")
         seen.add(savings_id)
-        name = row[1].strip()
+        name = restore_csv_text(row[1].strip())
         if not name or len(name) > 100:
             _fail(f"{where}: nome del salvadanaio non valido.")
         result.append(
@@ -686,7 +687,7 @@ def _parse_transactions(rows: list[list[str]]) -> list[dict]:
         amount = _parse_decimal(row[5], where)
         if amount <= ZERO:
             _fail(f"{where}: l'importo deve essere maggiore di zero.")
-        description = row[4]
+        description = restore_csv_text(row[4])
         if len(description) > 255:
             _fail(f"{where}: descrizione troppo lunga.")
         result.append(
@@ -747,13 +748,13 @@ def _parse_positions(rows: list[list[str]]) -> list[dict]:
         if position_id in seen:
             _fail(f"{where}: identificativo duplicato.")
         seen.add(position_id)
-        name = row[1].strip()
+        name = restore_csv_text(row[1].strip())
         if not name or len(name) > 120:
             _fail(f"{where}: nome della posizione non valido.")
         category = row[2].strip()
         if category and category not in categories:
             _fail(f"{where}: categoria non valida.")
-        identifier = row[4].strip()
+        identifier = restore_csv_text(row[4].strip())
         if len(identifier) > 32:
             _fail(f"{where}: identificativo troppo lungo.")
         price = _parse_optional_quantity(row[5], where)
@@ -791,7 +792,7 @@ def _parse_investment_operations(rows: list[list[str]]) -> list[dict]:
             _fail(f"{where}: tipo di operazione non valido.")
         movement_id = row[11].strip()
         account_id = row[12].strip()
-        description = row[14]
+        description = restore_csv_text(row[14])
         if len(description) > 255:
             _fail(f"{where}: descrizione troppo lunga.")
         result.append(
@@ -849,6 +850,8 @@ def _validate_investments(
             if operation["commission"] != ZERO:
                 _fail(f"{where}: l'apertura non prevede commissioni.")
         else:
+            if operation["commission"] < ZERO:
+                _fail(f"{where}: la commissione non può essere negativa.")
             if operation["transaction_id"] is None:
                 _fail(f"{where}: manca il movimento collegato.")
             movement = transactions_by_id.get(operation["transaction_id"])

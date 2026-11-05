@@ -662,3 +662,135 @@ class ArchiveInvestmentRestoreTests(ArchiveTestBase):
         response = self.analyze(self.repack(contents))
         self.assertEqual(response.status_code, 400)
         self.assertIn("conteggi", str(response.data))
+
+
+class ArchiveCsvSafetyTests(ArchiveTestBase):
+    def test_formula_cells_are_escaped_and_round_trip_unchanged(self):
+        self.make_data()
+        _, position = self.make_investment_data()
+        profile = Profile.objects.get(user=self.user)
+        Account.objects.filter(profile=profile, name="Contanti").update(
+            name="=SUM(A1)"
+        )
+        SavingsAccount.objects.filter(profile=profile, name="Salute").update(
+            name="+Salute"
+        )
+        Transaction.objects.filter(profile=profile, kind="income").update(
+            description="@Stipendio"
+        )
+        InvestmentPosition.objects.filter(pk=position["id"]).update(
+            name="-ETF", identifier="=IE00"
+        )
+        buy = InvestmentOperation.objects.get(
+            position_id=position["id"], kind=InvestmentOperation.Kind.BUY
+        )
+        InvestmentOperation.objects.filter(pk=buy.pk).update(description="+PAC")
+
+        content = self.export_archive().content
+        contents = self.unpack(content)
+
+        account_names = [row[1] for row in self.csv_rows(contents, "conti.csv")[1:]]
+        self.assertIn("'=SUM(A1)", account_names)
+        savings_rows = self.csv_rows(contents, "salvadanai.csv")[1:]
+        self.assertIn("'+Salute", [row[1] for row in savings_rows])
+        transaction_descriptions = [
+            row[4] for row in self.csv_rows(contents, "movimenti.csv")[1:]
+        ]
+        self.assertIn("'@Stipendio", transaction_descriptions)
+        position_rows = self.csv_rows(contents, "posizioni.csv")[1:]
+        self.assertIn("'-ETF", [row[1] for row in position_rows])
+        self.assertIn("'=IE00", [row[4] for row in position_rows])
+        operation_descriptions = [
+            row[14]
+            for row in self.csv_rows(contents, "operazioni_investimenti.csv")[1:]
+        ]
+        self.assertIn("'+PAC", operation_descriptions)
+        line_rows = self.csv_rows(contents, "righe.csv")[1:]
+        self.assertIn("'=SUM(A1)", [row[3] for row in line_rows])
+        self.assertTrue(
+            any(
+                row[8].startswith("-") and not row[8].startswith("'")
+                for row in line_rows
+            )
+        )
+
+        target = self.other_user("roundtrip@example.com")
+        self.client.force_authenticate(user=target)
+        self.assertEqual(self.confirm(content).status_code, 201)
+
+        target_profile = Profile.objects.get(user=target)
+        self.assertTrue(
+            Account.objects.filter(
+                profile=target_profile, name="=SUM(A1)"
+            ).exists()
+        )
+        self.assertTrue(
+            SavingsAccount.objects.filter(
+                profile=target_profile, name="+Salute"
+            ).exists()
+        )
+        self.assertTrue(
+            Transaction.objects.filter(
+                profile=target_profile,
+                kind="income",
+                description="@Stipendio",
+            ).exists()
+        )
+        restored_position = InvestmentPosition.objects.get(
+            profile=target_profile, name="-ETF"
+        )
+        self.assertEqual(restored_position.identifier, "=IE00")
+        self.assertTrue(
+            InvestmentOperation.objects.filter(
+                position=restored_position,
+                kind=InvestmentOperation.Kind.BUY,
+                description="+PAC",
+            ).exists()
+        )
+
+
+class ArchiveRestoreSafetyTests(ArchiveTestBase):
+    def setUp(self):
+        super().setUp()
+        self.make_investment_data()
+        self.content = self.export_archive().content
+
+    def test_negative_commission_is_rejected(self):
+        for kind in ("buy", "sell"):
+            contents = self.unpack(self.content)
+            self.set_cell(
+                contents,
+                "operazioni_investimenti.csv",
+                {"tipo_codice": kind},
+                "commissione",
+                "-1,00",
+            )
+            response = self.analyze(self.repack(contents))
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("commissione non può essere negativa", str(response.data))
+
+    def test_opening_commission_is_rejected(self):
+        contents = self.unpack(self.content)
+        self.set_cell(
+            contents,
+            "operazioni_investimenti.csv",
+            {"tipo_codice": "opening"},
+            "commissione",
+            "1,00",
+        )
+        response = self.analyze(self.repack(contents))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("apertura non prevede commissioni", str(response.data))
+
+    def test_dividend_commission_is_rejected(self):
+        contents = self.unpack(self.content)
+        self.set_cell(
+            contents,
+            "operazioni_investimenti.csv",
+            {"tipo_codice": "dividend"},
+            "commissione",
+            "1,00",
+        )
+        response = self.analyze(self.repack(contents))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("dividendo non prevede commissioni", str(response.data))

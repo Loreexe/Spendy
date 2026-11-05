@@ -540,3 +540,31 @@ class ExportTests(FinanceTestBase):
         self.client.force_authenticate(user=admin)
         response = self.client.get(reverse("finance-export"))
         self.assertEqual(response.status_code, 403)
+
+    def test_export_neutralizes_formula_cells_but_not_amounts(self):
+        account = self.create_account(name="@Conto", initial="100.00").data
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "=HYPERLINK(\"http://example.com\")",
+                "amount": "1.20",
+                "account": account["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "income",
+                "date": self.today.isoformat(),
+                "description": "+Entrata",
+                "amount": "50.00",
+                "account": account["id"],
+            }
+        )
+        response = self.client.get(reverse("finance-export"))
+        self.assertEqual(response.status_code, 200)
+        lines = response.content.decode("utf-8-sig").splitlines()
+        self.assertTrue(any("'=HYPERLINK" in line for line in lines))
+        self.assertTrue(any(";'+Entrata;Entrata;'@Conto;" in line for line in lines))
+        self.assertTrue(any(line.endswith(";-50,00") for line in lines))
+        self.assertFalse(any("'-50,00" in line for line in lines))

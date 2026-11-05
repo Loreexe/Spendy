@@ -5,7 +5,7 @@ ordered by ``(date, id)`` every time. Money is rounded to 2 decimals with
 commercial rounding (DC-015), quantities and unit prices to 8 decimals.
 """
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
@@ -86,7 +86,14 @@ def _resolve_price(raw_quantity, unit_price, total_amount):
                 "Il prezzo unitario deve essere maggiore di zero.",
                 "invalid_unit_price",
             )
-        gross = money(qty * price)
+        try:
+            gross = money(qty * price)
+        except (InvalidOperation, OverflowError):
+            raise _error(
+                "unit_price",
+                "Il controvalore calcolato è troppo grande.",
+                "invalid_unit_price",
+            )
     elif total_amount is not None:
         gross = money(total_amount)
         if gross <= 0:
@@ -95,7 +102,14 @@ def _resolve_price(raw_quantity, unit_price, total_amount):
                 "Il controvalore deve essere maggiore di zero.",
                 "invalid_total_amount",
             )
-        price = (gross / qty).quantize(QUANTITY, rounding=ROUND_HALF_UP)
+        try:
+            price = (gross / qty).quantize(QUANTITY, rounding=ROUND_HALF_UP)
+        except (InvalidOperation, OverflowError):
+            raise _error(
+                "total_amount",
+                "Il prezzo calcolato è troppo grande.",
+                "invalid_total_amount",
+            )
     else:
         raise _error(
             "unit_price",
