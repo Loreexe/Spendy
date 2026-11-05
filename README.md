@@ -137,7 +137,7 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **270 test backend**, **8 test** del controllo versioni,
+Stato verificato: **271 test backend**, **8 test** del controllo versioni,
 **5 test** dello script di backup, lint e build frontend, configurazione Compose
 valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
 aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
