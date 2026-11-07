@@ -8,7 +8,7 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.0`, che aggiunge le rifiniture dell'interfaccia
+> **Stato:** release `v0.7.1`, che aggiunge le rifiniture dell'interfaccia
 > (profilo e impostazioni separati, foto profilo, cambio password, tema
 > di sistema), la dashboard e il cestino riordinati e nuove funzioni per gli
 > investimenti (fonte anche da salvadanaio, inserimento con due valori su tre,
@@ -176,7 +176,7 @@ Stato verificato: **333 test backend**, **8 test** del controllo versioni,
 **5 test** dello script di backup, lint e build frontend, configurazione Compose
 valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
 aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
-La release `v0.8.0` comprende le rifiniture dell'interfaccia (profilo,
+La release `v0.7.1` comprende le rifiniture dell'interfaccia (profilo,
 impostazioni, tema di sistema, dashboard, cestino) e le estensioni degli
 investimenti (fonte salvadanaio, due valori su tre, archiviazione automatica),
 verificate con test dedicati e prove nel browser; restano incluse le
@@ -322,8 +322,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.0
-./scripts/update.sh v0.8.0
+./scripts/update.sh --dry-run v0.7.1
+./scripts/update.sh v0.7.1
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).
