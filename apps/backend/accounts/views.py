@@ -1,11 +1,13 @@
 from django.conf import settings
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
@@ -21,6 +23,7 @@ from .permissions import IsGlobalAdmin
 from .serializers import (
     GlobalSettingsSerializer,
     LoginSerializer,
+    PasswordChangeSerializer,
     ProfileUpdateSerializer,
     RegisterSerializer,
     SetupSerializer,
@@ -220,7 +223,113 @@ class MeView(APIView):
                 )
             user.email = email or None
             user.save(update_fields=["email", "updated_at"])
+        if "username" in serializer.validated_data:
+            if user.is_global_admin:
+                return Response(
+                    {
+                        "username": [
+                            "Il nome utente dell'amministratore globale non è modificabile."
+                        ]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            user.username = serializer.validated_data["username"] or None
+            user.save(update_fields=["username", "updated_at"])
+        name_fields = [
+            field
+            for field in ("first_name", "last_name")
+            if field in serializer.validated_data
+        ]
+        if name_fields:
+            for field in name_fields:
+                setattr(
+                    user, field, serializer.validated_data[field].strip()
+                )
+            user.save(update_fields=[*name_fields, "updated_at"])
         return Response({"user": UserSerializer(user).data})
+
+
+AVATAR_TYPES = {"image/png", "image/jpeg", "image/webp"}
+MAX_AVATAR_BYTES = 300 * 1024
+
+
+class AvatarView(APIView):
+    """Avatar stored in the database: survives backups with no extra media volume."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if not user.avatar:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        response = HttpResponse(
+            bytes(user.avatar),
+            content_type=user.avatar_content_type or "image/png",
+        )
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
+
+    def post(self, request):
+        upload = request.FILES.get("avatar")
+        if upload is None:
+            return Response(
+                {"avatar": ["Scegli un'immagine."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        content_type = (upload.content_type or "").lower()
+        if content_type not in AVATAR_TYPES:
+            return Response(
+                {"avatar": ["Formato non supportato: usa PNG, JPEG o WebP."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if upload.size > MAX_AVATAR_BYTES:
+            return Response(
+                {"avatar": ["L'immagine supera i 300 KB."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        user.avatar = upload.read()
+        user.avatar_content_type = content_type
+        user.avatar_updated_at = timezone.now()
+        user.save(
+            update_fields=[
+                "avatar",
+                "avatar_content_type",
+                "avatar_updated_at",
+                "updated_at",
+            ]
+        )
+        return Response({"user": UserSerializer(user).data})
+
+    def delete(self, request):
+        user = request.user
+        user.avatar = None
+        user.avatar_content_type = ""
+        user.avatar_updated_at = None
+        user.save(
+            update_fields=[
+                "avatar",
+                "avatar_content_type",
+                "avatar_updated_at",
+                "updated_at",
+            ]
+        )
+        return Response({"user": UserSerializer(user).data})
+
+
+class PasswordChangeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password", "updated_at"])
+        update_session_auth_hash(request, user)
+        return Response({"detail": "Password aggiornata."})
 
 
 class RegisterView(APIView):

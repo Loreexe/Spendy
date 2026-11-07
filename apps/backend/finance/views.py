@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import date
 
 from django.db import transaction
@@ -20,7 +21,7 @@ from .investments import (
     delete_operation,
     portfolio_summary,
     recalculate_position,
-    set_investment_account,
+    set_investment_source,
 )
 from .models import (
     ZERO,
@@ -158,6 +159,31 @@ class DashboardView(FinanceView):
             profile, start, end
         )
 
+        # Valore del periodo per conto (variazione) e totale attuale, che
+        # include i salvadanai con quel conto di appoggio.
+        account_period = {
+            row["account_id"]: row["total"]
+            for row in Line.objects.filter(
+                account__profile=profile,
+                transaction__date__gte=start,
+                transaction__date__lte=end,
+                transaction__is_deleted=False,
+            )
+            .values("account_id")
+            .annotate(total=Sum("amount"))
+        }
+        linked_savings = defaultdict(lambda: ZERO)
+        for savings_account in savings:
+            linked_savings[savings_account.backing_account_id] += (
+                savings_account.balance
+            )
+        accounts_payload = AccountSerializer(accounts, many=True).data
+        for item, account in zip(accounts_payload, accounts):
+            item["period_balance"] = f"{account_period.get(account.id, ZERO):.2f}"
+            item["total_with_savings"] = (
+                f"{account.balance + linked_savings[account.id]:.2f}"
+            )
+
         return Response(
             {
                 "total_balance": f"{total_balance:.2f}",
@@ -177,7 +203,7 @@ class DashboardView(FinanceView):
                 "income_total": f"{income_total:.2f}",
                 "expense_total": f"{expense_total:.2f}",
                 "period": {"start": start.isoformat(), "end": end.isoformat()},
-                "accounts": AccountSerializer(accounts, many=True).data,
+                "accounts": accounts_payload,
                 "savings": SavingsAccountSerializer(savings, many=True).data,
                 "recent_transactions": TransactionSerializer(recent, many=True).data,
             }
@@ -738,12 +764,32 @@ class TagListCreateView(FinanceView):
 
 
 class TagDetailView(FinanceView):
-    def delete(self, request, pk: int):
+    def _get_object(self, request, pk: int) -> Tag:
         profile = self.get_profile(request)
         try:
-            tag = Tag.objects.get(pk=pk, profile=profile)
+            return Tag.objects.get(pk=pk, profile=profile)
         except Tag.DoesNotExist as exc:
             raise ValidationError({"detail": "Tag non trovato."}) from exc
+
+    def patch(self, request, pk: int):
+        tag = self._get_object(request, pk)
+        name = str(request.data.get("name", "")).strip()
+        if not name or len(name) > 30:
+            raise ValidationError(
+                {"name": "Indica un nome da 1 a 30 caratteri."}
+            )
+        if (
+            Tag.objects.filter(profile=tag.profile, name__iexact=name)
+            .exclude(pk=tag.pk)
+            .exists()
+        ):
+            raise ValidationError({"name": "Esiste già questo tag."})
+        tag.name = name
+        tag.save(update_fields=("name",))
+        return Response({"id": tag.id, "name": tag.name})
+
+    def delete(self, request, pk: int):
+        tag = self._get_object(request, pk)
         tag.soft_delete(request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1026,6 +1072,12 @@ def _account_payload(account: Account | None):
     return AccountSerializer(account).data if account is not None else None
 
 
+def _savings_payload(savings: SavingsAccount | None):
+    return (
+        SavingsAccountSerializer(savings).data if savings is not None else None
+    )
+
+
 class InvestmentListCreateView(FinanceView):
     def get(self, request):
         profile = self.get_profile(request)
@@ -1033,6 +1085,7 @@ class InvestmentListCreateView(FinanceView):
         return Response(
             {
                 "investment_account": _account_payload(profile.investment_account),
+                "investment_savings": _savings_payload(profile.investment_savings),
                 "summary": InvestmentSummarySerializer(
                     portfolio_summary(profile)
                 ).data,
@@ -1110,11 +1163,17 @@ class InvestmentAccountView(FinanceView):
             data=data, context={"profile": profile}
         )
         serializer.is_valid(raise_exception=True)
-        profile = set_investment_account(
-            profile, serializer.validated_data["account"]
-        )
+        savings = serializer.validated_data.get("savings")
+        account = serializer.validated_data.get("account")
+        if savings is not None:
+            profile = set_investment_source(profile, savings=savings)
+        else:
+            profile = set_investment_source(profile, account=account)
         return Response(
-            {"investment_account": _account_payload(profile.investment_account)}
+            {
+                "investment_account": _account_payload(profile.investment_account),
+                "investment_savings": _savings_payload(profile.investment_savings),
+            }
         )
 
 

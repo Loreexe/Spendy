@@ -60,12 +60,23 @@ class Profile(models.Model):
     )
     display_name = models.CharField(max_length=120, blank=True)
     theme = models.CharField(
-        max_length=5,
-        choices=[("dark", "Scuro"), ("light", "Chiaro")],
+        max_length=8,
+        choices=[
+            ("dark", "Scuro"),
+            ("light", "Chiaro"),
+            ("system", "Sistema"),
+        ],
         default="dark",
     )
     investment_account = models.ForeignKey(
         "Account",
+        on_delete=models.SET_NULL,
+        related_name="investment_profiles",
+        null=True,
+        blank=True,
+    )
+    investment_savings = models.ForeignKey(
+        "SavingsAccount",
         on_delete=models.SET_NULL,
         related_name="investment_profiles",
         null=True,
@@ -119,26 +130,46 @@ DEFAULT_CATEGORY_NAME = "Altro"
 
 
 def ensure_default_categories(profile: Profile) -> dict[str, Category]:
-    """Create the preset categories (including default "Altro") if missing."""
+    """Seed the preset categories once, on virgin profiles only.
+
+    The presets are created when the profile has no category rows at all
+    (fresh profile or empty restore target). Afterwards the user's set is
+    never touched: deleting or renaming a preset away does NOT bring the
+    old name back (DC-088; BUG-010/BUG-011). "Altro" cannot be renamed or
+    deleted via API, but it is still guaranteed here for hand-made data.
+    """
+    if not Category.all_objects.filter(profile=profile).exists():
+        result = {}
+        for name in DEFAULT_CATEGORIES:
+            result[name] = Category.objects.create(
+                profile=profile,
+                name=name,
+                is_preset=True,
+                is_default=(name == DEFAULT_CATEGORY_NAME),
+            )
+        return result
     existing = {
         category.name: category
         for category in Category.objects.filter(profile=profile)
     }
-    result = dict(existing)
-    for name in DEFAULT_CATEGORIES:
-        if name in result:
-            continue
-        result[name] = Category.objects.create(
+    if DEFAULT_CATEGORY_NAME not in existing and (
+        not Category.all_objects.filter(
             profile=profile,
-            name=name,
+            name=DEFAULT_CATEGORY_NAME,
+            is_deleted=True,
+        ).exists()
+    ):
+        existing[DEFAULT_CATEGORY_NAME] = Category.objects.create(
+            profile=profile,
+            name=DEFAULT_CATEGORY_NAME,
             is_preset=True,
-            is_default=(name == DEFAULT_CATEGORY_NAME),
+            is_default=True,
         )
-    default = result.get(DEFAULT_CATEGORY_NAME)
+    default = existing.get(DEFAULT_CATEGORY_NAME)
     if default is not None and not default.is_default:
         default.is_default = True
         default.save(update_fields=("is_default", "updated_at"))
-    return result
+    return existing
 
 
 class Tag(SoftDeleteModel):

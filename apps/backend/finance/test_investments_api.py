@@ -794,3 +794,278 @@ class IsolationTests(InvestmentApiTestBase):
             reverse("finance-investment-account"), {"account": None}, format="json"
         )
         self.assertEqual(response.status_code, 403)
+
+
+class SavingsInvestmentSourceTests(InvestmentApiTestBase):
+    """Il denaro degli investimenti può arrivare da un salvadanaio."""
+
+    def setUp(self):
+        super().setUp()
+        self.account = self.create_account(initial="1000.00")
+        savings = self.client.post(
+            reverse("finance-savings"),
+            {"name": "Riserva", "backing_account": self.account["id"]},
+            format="json",
+        )
+        self.assertEqual(savings.status_code, 201)
+        self.savings = savings.data
+        moved = self.client.post(
+            reverse("finance-transactions"),
+            {
+                "kind": "transfer",
+                "date": self.today.isoformat(),
+                "amount": "500.00",
+                "from_account": self.account["id"],
+                "to_savings": self.savings["id"],
+            },
+            format="json",
+        )
+        self.assertEqual(moved.status_code, 201)
+        self.position = self.create_position(
+            current_price="110.00",
+            opening={
+                "date": self.today.isoformat(),
+                "quantity": "10",
+                "total_cost": "1000.00",
+            },
+        ).data
+
+    def set_savings(self):
+        return self.client.put(
+            reverse("finance-investment-account"),
+            {"savings": self.savings["id"]},
+            format="json",
+        )
+
+    def balances(self):
+        self.account = self.client.get(
+            reverse("finance-account-detail", args=[self.account["id"]])
+        ).data
+        self.savings = self.client.get(
+            reverse("finance-savings-detail", args=[self.savings["id"]])
+        ).data
+        return D(self.account["balance"]), D(self.savings["balance"])
+
+    def test_selecting_savings_clears_the_account(self):
+        response = self.set_savings()
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["investment_account"])
+        self.assertEqual(response.data["investment_savings"]["id"], self.savings["id"])
+        listing = self.client.get(reverse("finance-investments"))
+        self.assertEqual(listing.data["investment_savings"]["id"], self.savings["id"])
+        self.assertIsNone(listing.data["investment_account"])
+
+    def test_buy_comes_from_savings_and_leaves_account_untouched(self):
+        self.set_savings()
+        account_before, savings_before = self.balances()
+        response = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "100.00",
+                "commission": "1.50",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["cash_amount"], "201.50")
+        account_after, savings_after = self.balances()
+        self.assertEqual(account_after, account_before)
+        self.assertEqual(savings_after, savings_before - D("201.50"))
+        movement = Transaction.objects.get(kind=Transaction.Kind.INVESTMENT_BUY)
+        self.assertEqual(movement.lines.count(), 3)
+        self.assertEqual(
+            movement.lines.get(savings__isnull=False).amount, D("-201.50")
+        )
+
+    def test_sell_returns_money_to_savings(self):
+        self.set_savings()
+        _, savings_before = self.balances()
+        response = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "sell",
+                "date": self.today.isoformat(),
+                "quantity": "1",
+                "unit_price": "120.00",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        _, savings_after = self.balances()
+        self.assertEqual(savings_after, savings_before + D("120.00"))
+
+    def test_insufficient_savings_balance_is_rejected(self):
+        self.set_savings()
+        response = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "100",
+                "unit_price": "100.00",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            InvestmentOperation.objects.filter(kind="buy").count(), 0
+        )
+
+    def test_edit_and_delete_keep_savings_consistent(self):
+        self.set_savings()
+        _, savings_before = self.balances()
+        buy = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "100.00",
+            },
+        )
+        self.assertEqual(buy.status_code, 201)
+        _, after_buy = self.balances()
+        self.assertEqual(after_buy, savings_before - D("200.00"))
+
+        edited = self.client.patch(
+            reverse("finance-investment-operation-detail", args=[buy.data["id"]]),
+            {"quantity": "1"},
+            format="json",
+        )
+        self.assertEqual(edited.status_code, 200)
+        account_after, savings_after = self.balances()
+        self.assertEqual(savings_after, savings_before - D("100.00"))
+        self.assertEqual(account_after, D("500.00"))
+
+        deleted = self.client.delete(
+            reverse("finance-investment-operation-detail", args=[buy.data["id"]])
+        )
+        self.assertEqual(deleted.status_code, 204)
+        _, savings_final = self.balances()
+        self.assertEqual(savings_final, savings_before)
+
+
+class AutoArchiveTests(InvestmentApiTestBase):
+    def setUp(self):
+        super().setUp()
+        self.account = self.create_account(initial="1000.00")
+        self.set_account(self.account["id"])
+        self.position = self.create_position(
+            opening={
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "100.00",
+            }
+        ).data
+
+    def test_selling_everything_archives_the_position(self):
+        sell = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "sell",
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "110.00",
+            },
+        )
+        self.assertEqual(sell.status_code, 201)
+        position = InvestmentPosition.objects.get(pk=self.position["id"])
+        self.assertIs(position.archived, True)
+        listing = self.client.get(reverse("finance-investments"))
+        row = next(p for p in listing.data["positions"] if p["id"] == self.position["id"])
+        self.assertTrue(row["archived"])
+
+    def test_deleting_the_closing_sell_reactivates(self):
+        sell = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "sell",
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "110.00",
+            },
+        ).data
+        deleted = self.client.delete(
+            reverse("finance-investment-operation-detail", args=[sell["id"]])
+        )
+        self.assertEqual(deleted.status_code, 204)
+        position = InvestmentPosition.objects.get(pk=self.position["id"])
+        self.assertIs(position.archived, False)
+
+    def test_new_empty_position_is_not_auto_archived(self):
+        empty = self.create_position(name="Solo idea").data
+        position = InvestmentPosition.objects.get(pk=empty["id"])
+        self.assertIs(position.archived, False)
+
+
+class TwoOfThreeValuesTests(InvestmentApiTestBase):
+    """Quantità, prezzo e totale: bastano due valori, il terzo si ricava."""
+
+    def setUp(self):
+        super().setUp()
+        self.account = self.create_account(initial="5000.00")
+        self.set_account(self.account["id"])
+        self.position = self.create_position(
+            opening={
+                "date": self.today.isoformat(),
+                "quantity": "10",
+                "unit_price": "100.00",
+            }
+        ).data
+
+    def test_buy_with_price_and_total_derives_quantity(self):
+        response = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "unit_price": "100.00",
+                "total_amount": "250.00",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Decimal(response.data["quantity"]), D("2.5"))
+        self.assertEqual(response.data["gross_amount"], "250.00")
+
+    def test_three_values_are_rejected(self):
+        response = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "2",
+                "unit_price": "100.00",
+                "total_amount": "200.00",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_edit_with_price_and_total_derives_quantity(self):
+        buy = self.add_operation(
+            self.position["id"],
+            {
+                "kind": "buy",
+                "date": self.today.isoformat(),
+                "quantity": "1",
+                "unit_price": "100.00",
+            },
+        ).data
+        edited = self.client.patch(
+            reverse("finance-investment-operation-detail", args=[buy["id"]]),
+            {"unit_price": "200.00", "total_amount": "300.00"},
+            format="json",
+        )
+        self.assertEqual(edited.status_code, 200)
+        self.assertEqual(Decimal(edited.data["quantity"]), D("1.5"))
+
+    def test_opening_with_price_and_total(self):
+        response = self.create_position(
+            name="Senza quantità",
+            opening={
+                "date": self.today.isoformat(),
+                "unit_price": "50.00",
+                "total_cost": "500.00",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Decimal(response.data["quantity"]), D("10"))

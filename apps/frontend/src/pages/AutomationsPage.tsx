@@ -7,10 +7,10 @@ import {
   type Automation,
   type AutomationIntervalUnit,
   type AutomationKind,
-  type FinanceNotification,
   type SavingsAccount,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
+import { useMatchedHeight } from "../components/useMatchHeight";
 import { useToast } from "../components/Toast";
 import { money, todayISO } from "../format";
 
@@ -131,14 +131,13 @@ export function AutomationsPage() {
   const { notify } = useToast();
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [executions, setExecutions] = useState<AutomationExecution[]>([]);
-  const [notifications, setNotifications] = useState<FinanceNotification[]>([]);
-  const [unread, setUnread] = useState(0);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [savings, setSavings] = useState<SavingsAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [setListHeight, setFormMeasure] = useMatchedHeight(!loading);
 
   const [kind, setKind] = useState<AutomationKind>("expense");
   const [amount, setAmount] = useState("");
@@ -157,20 +156,16 @@ export function AutomationsPage() {
       const [
         automationData,
         executionData,
-        notificationData,
         accountData,
         savingsData,
       ] = await Promise.all([
         api.automations(),
         api.automationExecutions({ limit: 100 }),
-        api.notifications({ limit: 30 }),
         api.accounts(),
         api.savings(),
       ]);
       setAutomations(automationData.automations);
       setExecutions(executionData.executions);
-      setNotifications(notificationData.notifications);
-      setUnread(notificationData.unread_count);
       const activeAccounts = accountData.accounts.filter(
         (account) => !account.archived,
       );
@@ -303,10 +298,6 @@ export function AutomationsPage() {
         <div>
           <p className="eyebrow">Accantonamenti ricorrenti</p>
           <h1>Automazioni</h1>
-          <p className="muted">
-            Spese ricorrenti e versamenti periodici verso i salvadanai, con
-            recupero delle occorrenze perse e storico delle esecuzioni.
-          </p>
         </div>
         <button
           type="button"
@@ -330,8 +321,8 @@ export function AutomationsPage() {
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
-      <div className="two-columns">
-        <section className="card">
+      <div className="two-columns fill-row">
+        <section className="card" ref={setFormMeasure}>
           <h2>Nuova automazione</h2>
           {activeAccounts.length === 0 ? (
             <p className="muted">
@@ -471,7 +462,7 @@ export function AutomationsPage() {
           )}
         </section>
 
-        <section className="card">
+        <section className="card scroll-list" ref={setListHeight}>
           <h2>Le tue automazioni ({automations.length})</h2>
           {automations.length === 0 ? (
             <p className="muted">Nessuna automazione impostata.</p>
@@ -487,22 +478,17 @@ export function AutomationsPage() {
                     ? automation.description
                     : automation.savings_name;
                 return (
-                  <li className="automation-card" key={automation.id}>
-                    <div className="entity-card-head">
-                      <div>
-                        <strong>
-                          {money(automation.amount)} · {automation.interval_label}
-                        </strong>
-                        <span className="muted small">
-                          {" "}
-                          · {automation.source_account_name ?? "conto mancante"}
-                          {automation.kind === "expense"
-                            ? ` · ${automation.description}`
-                            : ` → ${automation.savings_name}`}
-                        </span>
-                      </div>
-                      <div className="entity-side">
-                        <span className="badge">{automation.kind_label}</span>
+                  <li className="account-row automation-row" key={automation.id}>
+                    <div className="account-line">
+                      <strong>
+                        {money(automation.amount)} · {automation.interval_label}
+                      </strong>
+                      <span className="automation-badges">
+                        {pending.length > 0 && (
+                          <span className="badge pending">
+                            {pending.length} in attesa
+                          </span>
+                        )}
                         <span
                           className={`badge ${
                             automation.status === "active"
@@ -514,16 +500,24 @@ export function AutomationsPage() {
                         >
                           {automation.status_label}
                         </span>
-                      </div>
+                      </span>
                     </div>
-                    <p className="muted small">
+                    <div className="account-line">
+                      <span className="muted small">
+                        {automation.source_account_name ?? "conto mancante"}
+                        {automation.kind === "expense"
+                          ? ` · ${automation.description}`
+                          : ` → ${automation.savings_name}`}
+                      </span>
+                      <span className="badge">{automation.kind_label}</span>
+                    </div>
+                    <p className="muted small automation-next">
                       Prossima esecuzione: {prettyDate(automation.next_run_on)}
-                      {pending.length > 0 && ` · ${pending.length} in attesa`}
                       {automation.advance_notice_days > 0
                         ? ` · avviso ${automation.advance_notice_days} giorni prima`
                         : " · avviso saldo disattivato"}
                     </p>
-                    <div className="inline-form">
+                    <div className="actions">
                       <button
                         type="button"
                         className="secondary"
@@ -593,10 +587,6 @@ export function AutomationsPage() {
                         <strong>
                           Occorrenze perse da scegliere ({pending.length})
                         </strong>
-                        <p className="muted small">
-                          Le selezionate vengono recuperate con la data originale;
-                          le altre vengono saltate.
-                        </p>
                         <ul className="entity-list">
                           {pending.map((execution) => (
                             <li key={execution.id}>
@@ -675,46 +665,6 @@ export function AutomationsPage() {
         )}
       </section>
 
-      <section className="card">
-        <div className="card-heading">
-          <h2>Notifiche</h2>
-          {unread > 0 && (
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={() =>
-                void runAction(async () => {
-                  const result = await api.markNotificationsRead();
-                  setUnread(result.unread_count);
-                }, "Notifiche segnate come lette.")
-              }
-            >
-              Segna tutte come lette ({unread})
-            </button>
-          )}
-        </div>
-        {notifications.length === 0 ? (
-          <p className="muted">Nessuna notifica.</p>
-        ) : (
-          <ul className="entity-list">
-            {notifications.map((notification) => (
-              <li
-                key={notification.id}
-                className={notification.is_read ? "archived" : undefined}
-              >
-                <div>
-                  <span className="badge pending">{notification.kind_label}</span>
-                  <div>{notification.message}</div>
-                </div>
-                <span className="muted small">
-                  {new Date(notification.created_at).toLocaleDateString("it-IT")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }

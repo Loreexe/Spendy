@@ -114,7 +114,7 @@ export function AccountsPage() {
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
-      <div className="two-columns">
+      <div className="two-columns matched">
         <section className="card">
           <h2>Nuovo conto</h2>
           <form onSubmit={handleCreate} className="stack">
@@ -149,35 +149,30 @@ export function AccountsPage() {
                 onChange={(event) => setInitialBalance(event.target.value)}
               />
             </label>
-            <p className="muted small">
-              Se diverso da zero, il saldo iniziale diventa un movimento di
-              apertura.
-            </p>
             <button type="submit" disabled={busy}>
               {busy ? "Creazione…" : "Crea conto"}
             </button>
           </form>
         </section>
 
-        <section className="card">
+        <section className="card scroll-list">
           <h2>I tuoi conti ({accounts.length})</h2>
           {accounts.length === 0 ? (
             <p className="muted">Nessun conto creato.</p>
           ) : (
             <ul className="entity-list">
               {accounts.map((account) => (
-                <li key={account.id} className={account.archived ? "archived" : ""}>
-                  <div>
+                <li key={account.id} className={account.archived ? "archived account-row" : "account-row"}>
+                  <div className="account-line">
                     <strong>{account.name}</strong>
-                    <span className="muted small">
-                      {" "}
-                      · {account.type_label}
-                      {account.archived ? " · archiviato" : ""}
+                    <span className={`money tnum ${amountClass(account.balance)}`}>
+                      {money(account.balance)}
                     </span>
                   </div>
-                  <div className="entity-side">
-                    <span className={amountClass(account.balance)}>
-                      {money(account.balance)}
+                  <div className="account-line">
+                    <span className="muted small">
+                      {account.type_label}
+                      {account.archived ? " · archiviato" : ""}
                     </span>
                     <div className="actions">
                       <button

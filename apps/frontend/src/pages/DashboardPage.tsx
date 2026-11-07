@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "react-router-dom";
 import {
   api,
@@ -32,6 +38,10 @@ function lineLabel(line: Line): string {
   return `${target}${role}`;
 }
 
+function formatDay(iso: string): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("it-IT");
+}
+
 function TransactionRows({ transaction }: { transaction: Transaction }) {
   return (
     <li className="movement-row">
@@ -43,8 +53,7 @@ function TransactionRows({ transaction }: { transaction: Transaction }) {
           </span>
         </div>
         <span className="muted small">
-          {new Date(`${transaction.date}T12:00:00`).toLocaleDateString("it-IT")} ·{" "}
-          {transaction.kind_label}
+          {formatDay(transaction.date)} · {transaction.kind_label}
         </span>
         <ul className="lines">
           {transaction.lines.map((line) => (
@@ -100,12 +109,59 @@ export function DashboardPage() {
     setEnd(to);
   }
 
-  function previousMonth() {
+  function previousMonthData() {
     const now = new Date();
     const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const to = new Date(now.getFullYear(), now.getMonth(), 0);
-    applyPreset(isoDate(from), isoDate(to));
+    return [isoDate(from), isoDate(to)] as const;
   }
+
+  const [prevFrom, prevTo] = previousMonthData();
+  const presets = [
+    { key: "current", label: "Mese corrente", from: firstOfMonthISO(), to: todayISO() },
+    { key: "previous", label: "Mese precedente", from: prevFrom, to: prevTo },
+    {
+      key: "year",
+      label: "Anno corrente",
+      from: `${new Date().getFullYear()}-01-01`,
+      to: todayISO(),
+    },
+    { key: "all", label: "Tutto", from: "2000-01-01", to: todayISO() },
+  ];
+  const activeIndex = presets.findIndex(
+    (preset) => start === preset.from && end === preset.to,
+  );
+
+  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const segmentedRef = useRef<HTMLDivElement | null>(null);
+  const [indicator, setIndicator] = useState({
+    left: 0,
+    width: 0,
+    visible: false,
+  });
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = buttonRefs.current[activeIndex];
+      if (!el || activeIndex < 0) {
+        setIndicator((current) => ({ ...current, visible: false }));
+        return;
+      }
+      setIndicator({
+        left: el.offsetLeft,
+        width: el.offsetWidth,
+        visible: true,
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (segmentedRef.current) observer.observe(segmentedRef.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [activeIndex, loading, user]);
 
   if (!user) return null;
 
@@ -128,106 +184,136 @@ export function DashboardPage() {
   if (loading && !data) return <LoadingScreen />;
 
   return (
-    <div className="stack-page">
+    <div className="stack-page dashboard-page">
       <section className="page-heading">
         <div>
           <p className="eyebrow">Dashboard</p>
           <h1>Le tue finanze</h1>
         </div>
-        <div className="period-controls">
-          <button type="button" className="secondary" onClick={() => applyPreset(firstOfMonthISO(), todayISO())}>
-            Mese corrente
-          </button>
-          <button type="button" className="secondary" onClick={previousMonth}>
-            Mese precedente
-          </button>
+      </section>
+
+      <section className="dash-toolbar">
+        <div
+          className="period-segmented"
+          role="group"
+          aria-label="Periodo rapido"
+          ref={segmentedRef}
+        >
+          <span
+            className={`preset-indicator${indicator.visible ? "" : " hidden"}`}
+            style={{
+              width: `${indicator.width}px`,
+              transform: `translateX(${indicator.left}px)`,
+            }}
+            aria-hidden="true"
+          />
+          {presets.map((preset, index) => (
+            <button
+              key={preset.key}
+              type="button"
+              ref={(el) => {
+                buttonRefs.current[index] = el;
+              }}
+              className={
+                start === preset.from && end === preset.to ? "active" : ""
+              }
+              onClick={() => applyPreset(preset.from, preset.to)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="dash-range">
+          <label>
+            <span>Dal</span>
+            <input
+              type="date"
+              value={start}
+              onChange={(event) => setStart(event.target.value)}
+            />
+          </label>
+          <span className="dash-range-sep" aria-hidden="true">
+            →
+          </span>
+          <label>
+            <span>Al</span>
+            <input
+              type="date"
+              value={end}
+              onChange={(event) => setEnd(event.target.value)}
+            />
+          </label>
           <button
             type="button"
-            className="secondary"
-            onClick={() =>
-              applyPreset(
-                `${new Date().getFullYear()}-01-01`,
-                todayISO(),
-              )
-            }
+            className="secondary dash-apply"
+            onClick={() => void load(start, end)}
           >
-            Anno corrente
-          </button>
-          <button type="button" className="secondary" onClick={() => applyPreset("2000-01-01", todayISO())}>
-            Tutto
+            Applica
           </button>
         </div>
       </section>
 
-      <section className="period-bar card">
-        <label>
-          Dal
-          <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
-        </label>
-        <label>
-          Al
-          <input type="date" value={end} onChange={(event) => setEnd(event.target.value)} />
-        </label>
-        <button type="button" onClick={() => void load(start, end)}>
-          Applica
-        </button>
-      </section>
-
       {error && <p className="error">{error}</p>}
 
+      <div className={`dash-content${loading ? " is-updating" : ""}`}>
       {data && (
         <>
-          <section className="stat-grid">
-            <div className="card stat">
-              <span className="stat-label">Saldo totale</span>
-              <strong className={amountClass(data.total_balance)}>
-                {money(data.total_balance)}
-              </strong>
-              <span className="muted small">Solo conti personali</span>
-            </div>
-            <div className="card stat">
+          <section className="dash-summary">
+            <div className="card dash-hero">
               <span className="stat-label">Patrimonio</span>
-              <strong>{money(data.total_patrimony)}</strong>
-              <span className="muted small">
+              <strong className="dash-big">
+                {money(data.total_patrimony)}
+              </strong>
+              <p className="muted small">
                 Conti + salvadanai + investimenti al costo
-              </span>
+              </p>
+              <div className="dash-breakdown">
+                <div>
+                  <span>Saldo conti</span>
+                  <strong className={amountClass(data.total_balance)}>
+                    {money(data.total_balance)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Salvadanai</span>
+                  <strong>{money(data.total_savings)}</strong>
+                </div>
+                <div>
+                  <span>Investimenti</span>
+                  <strong>{money(data.total_investments_cost)}</strong>
+                  <span className="muted small">
+                    valore {money(data.total_investments_value)}
+                    {data.positions_without_price > 0
+                      ? ` · ${data.positions_without_price} senza prezzo`
+                      : ""}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="card stat">
-              <span className="stat-label">Salvadanai</span>
-              <strong>{money(data.total_savings)}</strong>
-              <span className="muted small">Accantonamenti</span>
-            </div>
-            <div className="card stat">
-              <span className="stat-label">Investimenti</span>
-              <strong>{money(data.total_investments_cost)}</strong>
-              <span className="muted small">
-                Costo residuo · valore corrente{" "}
-                {money(data.total_investments_value)}
-                {data.positions_without_price > 0
-                  ? ` · ${data.positions_without_price} senza prezzo`
-                  : ""}
-              </span>
-              <Link to="/investments">Vai agli investimenti</Link>
-            </div>
-            <div className="card stat">
-              <span className="stat-label">Saldo del periodo</span>
-              <strong className={amountClass(data.period_balance)}>
+
+            <div className="card dash-period">
+              <div className="dash-period-head">
+                <span className="stat-label">Saldo del periodo</span>
+                <span className="muted small">
+                  {formatDay(data.period.start)} – {formatDay(data.period.end)}
+                </span>
+              </div>
+              <strong className="dash-period-amount">
                 {money(data.period_balance)}
               </strong>
-              <span className="muted small">
-                {new Date(`${data.period.start}T12:00:00`).toLocaleDateString("it-IT")} –{" "}
-                {new Date(`${data.period.end}T12:00:00`).toLocaleDateString("it-IT")}
-              </span>
+              {Number(data.period_dividends) > 0 && (
+                <span className="muted small">
+                  di cui dividendi {money(data.period_dividends)}
+                </span>
+              )}
+              <Link className="dash-link" to="/movements">
+                Apri il registro
+              </Link>
             </div>
           </section>
 
-          <p className="muted small">
-            Gli acquisti di investimento riducono il saldo del periodo ma non
-            sono spese; i dividendi sono entrate. Le operazioni sono visibili
-            nella pagina Investimenti, non nel registro Movimenti.
-          </p>
-
-          <section className="card">
+          <section className="card dash-charts">
             <div className="card-heading">
               <h2>Grafici del periodo</h2>
             </div>
@@ -237,22 +323,24 @@ export function DashboardPage() {
                   <h3 className="stat-label">Andamento saldo e patrimonio</h3>
                   <TrendChart points={series.buckets} />
                 </div>
-                <div>
-                  <h3 className="stat-label">Entrate vs uscite</h3>
-                  <InOutBars
-                    income={data.income_total}
-                    expense={data.expense_total}
-                  />
-                </div>
-                <div>
-                  <h3 className="stat-label">Spese per categoria</h3>
-                  <CategoryBars rows={series.by_category} />
+                <div className="dash-charts-row">
+                  <div>
+                    <h3 className="stat-label">Entrate vs uscite</h3>
+                    <InOutBars
+                      income={data.income_total}
+                      expense={data.expense_total}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="stat-label">Spese per categoria</h3>
+                    <CategoryBars rows={series.by_category} />
+                  </div>
                 </div>
               </div>
             )}
           </section>
 
-          <section className="two-columns">
+          <section className="two-columns equal">
             <div className="card">
               <div className="card-heading">
                 <h2>Conti</h2>
@@ -272,8 +360,13 @@ export function DashboardPage() {
                           {account.archived ? " · archiviato" : ""}
                         </span>
                       </div>
-                      <span className={amountClass(account.balance)}>
-                        {money(account.balance)}
+                      <span className="account-amounts">
+                        <span className={amountClass(account.period_balance ?? "0")}>
+                          {money(account.period_balance ?? "0.00")}
+                        </span>
+                        <span className="muted small">
+                          ({money(account.total_with_savings ?? account.balance)})
+                        </span>
                       </span>
                     </li>
                   ))}
@@ -318,30 +411,20 @@ export function DashboardPage() {
               <p className="muted">Nessun movimento registrato.</p>
             ) : (
               <ul className="movement-list">
-                {data.recent_transactions.map((transaction) => (
-                  <TransactionRows key={transaction.id} transaction={transaction} />
-                ))}
+                {data.recent_transactions
+                  .slice(0, 6)
+                  .map((transaction) => (
+                    <TransactionRows
+                      key={transaction.id}
+                      transaction={transaction}
+                    />
+                  ))}
               </ul>
             )}
           </section>
-
-          <section className="stat-grid compact">
-            <div className="card stat">
-              <span className="stat-label">Entrate del periodo</span>
-              <strong className="positive">{money(data.income_total)}</strong>
-              {Number(data.period_dividends) > 0 && (
-                <span className="muted small">
-                  di cui dividendi {money(data.period_dividends)}
-                </span>
-              )}
-            </div>
-            <div className="card stat">
-              <span className="stat-label">Uscite del periodo</span>
-              <strong className="negative">{money(data.expense_total)}</strong>
-            </div>
-          </section>
         </>
       )}
+      </div>
     </div>
   );
 }

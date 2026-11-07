@@ -964,7 +964,11 @@ class InvestmentOperationSerializer(serializers.ModelSerializer):
     def _principal_line(self, obj: InvestmentOperation):
         if obj.transaction_id is None:
             return None
-        return obj.transaction.lines.filter(role=Line.Role.PRINCIPAL).first()
+        return (
+            obj.transaction.lines.filter(
+                role=Line.Role.PRINCIPAL, account__isnull=False
+            ).first()
+        )
 
     def get_account(self, obj: InvestmentOperation):
         line = self._principal_line(obj)
@@ -985,7 +989,9 @@ class InvestmentOperationSerializer(serializers.ModelSerializer):
 
 class InvestmentOpeningSerializer(serializers.Serializer):
     date = serializers.DateField()
-    quantity = serializers.DecimalField(max_digits=24, decimal_places=8)
+    quantity = serializers.DecimalField(
+        max_digits=24, decimal_places=8, required=False, allow_null=True
+    )
     unit_price = serializers.DecimalField(
         max_digits=24, decimal_places=8, required=False, allow_null=True
     )
@@ -1031,7 +1037,7 @@ class InvestmentPositionCreateSerializer(serializers.ModelSerializer):
                 position,
                 kind=InvestmentOperation.Kind.OPENING,
                 date=opening["date"],
-                quantity=opening["quantity"],
+                quantity=opening.get("quantity"),
                 unit_price=opening.get("unit_price"),
                 total_amount=total,
                 description=opening.get("description", ""),
@@ -1076,7 +1082,10 @@ class InvestmentPositionUpdateSerializer(serializers.ModelSerializer):
 
 class InvestmentAccountSerializer(serializers.Serializer):
     account = serializers.PrimaryKeyRelatedField(
-        queryset=Account.objects.all(), allow_null=True
+        queryset=Account.objects.all(), allow_null=True, required=False
+    )
+    savings = serializers.PrimaryKeyRelatedField(
+        queryset=SavingsAccount.objects.all(), allow_null=True, required=False
     )
 
     def validate_account(self, account: Account | None) -> Account | None:
@@ -1089,6 +1098,28 @@ class InvestmentAccountSerializer(serializers.Serializer):
             if account.archived:
                 raise serializers.ValidationError("Il conto è archiviato.")
         return account
+
+    def validate_savings(
+        self, savings: SavingsAccount | None
+    ) -> SavingsAccount | None:
+        if savings is not None:
+            profile = self.context["profile"]
+            if savings.profile_id != profile.id:
+                raise serializers.ValidationError(
+                    "Il salvadanaio non appartiene al profilo."
+                )
+            if savings.backing_account.archived:
+                raise serializers.ValidationError(
+                    "Il conto di appoggio del salvadanaio è archiviato."
+                )
+        return savings
+
+    def validate(self, attrs):
+        if attrs.get("savings") is not None and attrs.get("account") is not None:
+            raise serializers.ValidationError(
+                {"savings": "Scegli un conto oppure un salvadanaio, non entrambi."}
+            )
+        return attrs
 
 
 class InvestmentOperationCreateSerializer(serializers.Serializer):

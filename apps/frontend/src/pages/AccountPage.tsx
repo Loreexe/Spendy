@@ -1,9 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Camera, KeyRound, Trash2, UserRound } from "lucide-react";
 import { api, type UserStatus } from "../api";
 import { useAuth } from "../auth";
-import { applyTheme, type Theme } from "../theme";
-import { ImportExportSection } from "../components/ImportExportSection";
 
 const STATUS_LABEL: Record<UserStatus, string> = {
   pending: "In attesa di approvazione",
@@ -12,173 +10,410 @@ const STATUS_LABEL: Record<UserStatus, string> = {
   disabled: "Disabilitato",
 };
 
-function AppearanceSection() {
-  const [theme, setTheme] = useState<Theme | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api
-      .profile()
-      .then((profile) => setTheme(profile.theme))
-      .catch(() =>
-        setError("Preferenza del tema non caricata: resta quella attiva."),
-      );
-  }, []);
-
-  async function choose(next: Theme) {
-    if (next === theme) return;
-    setError(null);
-    setBusy(true);
-    try {
-      const updated = await api.updateTheme(next);
-      setTheme(updated.theme);
-      applyTheme(updated.theme);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Salvataggio del tema non riuscito.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="card">
-      <h2>Aspetto</h2>
-      <p className="muted">
-        Tema scuro di default, chiaro a parità di qualità. La scelta è
-        sincronizzata tra i tuoi dispositivi.
-      </p>
-      <div className="radio-group" role="radiogroup" aria-label="Tema">
-        {(["dark", "light"] as const).map((value) => (
-          <label key={value} className="checkbox-row">
-            <input
-              type="radio"
-              name="theme"
-              checked={theme === value}
-              disabled={busy || theme === null}
-              onChange={() => void choose(value)}
-            />
-            {value === "dark" ? "Scuro" : "Chiaro"}
-          </label>
-        ))}
-      </div>
-      {error && <p className="error">{error}</p>}
-    </section>
+/** Ridimensiona l'immagine nel browser: l'avatar resta sotto i 300 KB. */
+async function shrinkAvatar(file: File): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  const max = 512;
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return file;
+  context.drawImage(bitmap, 0, 0, width, height);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/webp", 0.85),
   );
+  if (!blob) return file;
+  return new File([blob], "avatar.webp", { type: "image/webp" });
+}
+
+function initials(user: { first_name: string; last_name: string; display_name: string }) {
+  const name = `${user.first_name} ${user.last_name}`.trim() || user.display_name;
+  const parts = name.split(/[\s._@-]+/).filter(Boolean);
+  const letters = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "");
+  return letters.join("") || "?";
 }
 
 export function AccountPage() {
   const { user, setUser, logout } = useAuth();
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const [editing, setEditing] = useState(false);
+  const [firstName, setFirstName] = useState(user?.first_name ?? "");
+  const [lastName, setLastName] = useState(user?.last_name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [username, setUsername] = useState(user?.username ?? "");
+
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: "",
+    new_password: "",
+    new_password_confirm: "",
+  });
+
+  const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!user) return null;
 
-  async function handleEmail(event: FormEvent) {
+  const avatarSrc = user.has_avatar
+    ? `/api/auth/avatar/?v=${encodeURIComponent(user.avatar_updated_at ?? "")}`
+    : null;
+
+  async function handlePersonal(event: FormEvent) {
     event.preventDefault();
-    setError(null);
-    setMessage(null);
+    setProfileError(null);
+    setProfileMessage(null);
     setBusy(true);
     try {
-      const data = await api.updateEmail(email);
+      const data = await api.updateProfile({ first_name: firstName, last_name: lastName });
       setUser(data.user);
-      setMessage("Email aggiornata.");
+      setEditing(false);
+      setProfileMessage("Dati personali aggiornati.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Aggiornamento non riuscito.");
+      setProfileError(err instanceof Error ? err.message : "Aggiornamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAccess(event: FormEvent) {
+    event.preventDefault();
+    setAccessError(null);
+    setAccessMessage(null);
+    setBusy(true);
+    try {
+      const data = await api.updateProfile({
+        email,
+        ...(user?.is_global_admin ? {} : { username }),
+      });
+      setUser(data.user);
+      setUsername(data.user.username ?? "");
+      setAccessMessage("Dati di accesso aggiornati.");
+    } catch (err) {
+      setAccessError(err instanceof Error ? err.message : "Aggiornamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePassword(event: FormEvent) {
+    event.preventDefault();
+    setPasswordError(null);
+    setPasswordMessage(null);
+    setBusy(true);
+    try {
+      await api.changePassword(passwordForm);
+      setPasswordForm({
+        current_password: "",
+        new_password: "",
+        new_password_confirm: "",
+      });
+      setPasswordMessage("Password aggiornata.");
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "Cambio password non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setAvatarError(null);
+    setAvatarMessage(null);
+    setBusy(true);
+    try {
+      const optimized = await shrinkAvatar(file);
+      const data = await api.uploadAvatar(optimized);
+      setUser(data.user);
+      setAvatarMessage("Foto aggiornata.");
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : "Caricamento non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeAvatar() {
+    setAvatarError(null);
+    setAvatarMessage(null);
+    setBusy(true);
+    try {
+      const data = await api.deleteAvatar();
+      setUser(data.user);
+      setAvatarMessage("Foto rimossa.");
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : "Rimozione non riuscita.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="stack-page">
-      <section className="page-heading">
-        <div>
-          <p className="eyebrow">Account</p>
-          <h1>Impostazioni e account</h1>
+    <div className="stack-page profile-page">
+      <section className="profile-hero">
+        <div className="profile-avatar-wrapper">
+          <span className="profile-avatar-large">
+            {avatarSrc ? (
+              <img src={avatarSrc} alt="Foto profilo" />
+            ) : (
+              initials(user)
+            )}
+          </span>
+          <button
+            type="button"
+            className="avatar-edit"
+            title="Cambia foto profilo"
+            aria-label="Cambia foto profilo"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+          >
+            <Camera size={15} aria-hidden="true" />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={(event) => void handleAvatar(event)}
+          />
         </div>
-        {!user.is_global_admin && (
-          <Link className="button secondary" to="/">
-            Torna alla dashboard
-          </Link>
+
+        <div className="profile-identity">
+          <p className="eyebrow">Profilo</p>
+          <h1>{user.display_name || user.email || user.username}</h1>
+          <p className="muted small">
+            {user.email ?? "Nessuna email"}
+            {user.username ? ` · @${user.username}` : ""}
+          </p>
+          <div className="profile-badges">
+            <span className={`badge ${user.status}`}>
+              {STATUS_LABEL[user.status]}
+            </span>
+            <span className="badge">
+              {user.is_global_admin ? "Amministratore globale" : "Utente"}
+            </span>
+            <span className="muted small">
+              Iscritto il{" "}
+              {new Date(user.date_joined).toLocaleDateString("it-IT")}
+            </span>
+          </div>
+          {avatarMessage && <p className="notice success">{avatarMessage}</p>}
+          {avatarError && <p className="error">{avatarError}</p>}
+        </div>
+
+        <div className="profile-hero-actions">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void logout()}
+          >
+            Esci
+          </button>
+        </div>
+      </section>
+
+      <section className="profile-section">
+        <div className="section-heading">
+          <h2>
+            <UserRound size={18} aria-hidden="true" /> Dati personali
+          </h2>
+          {!editing && (
+            <button
+              type="button"
+              className="secondary small-button"
+              onClick={() => {
+                setFirstName(user.first_name);
+                setLastName(user.last_name);
+                setEditing(true);
+              }}
+            >
+              Modifica
+            </button>
+          )}
+        </div>
+
+        {editing ? (
+          <form onSubmit={handlePersonal} className="stack">
+            <div className="form-grid">
+              <label>
+                Nome
+                <input
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  maxLength={80}
+                  autoComplete="given-name"
+                  placeholder="Facoltativo"
+                />
+              </label>
+              <label>
+                Cognome
+                <input
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  maxLength={80}
+                  autoComplete="family-name"
+                  placeholder="Facoltativo"
+                />
+              </label>
+            </div>
+            {user.has_avatar && (
+              <button
+                type="button"
+                className="secondary small-button"
+                onClick={() => void removeAvatar()}
+                disabled={busy}
+              >
+                <Trash2 size={14} aria-hidden="true" /> Rimuovi foto
+              </button>
+            )}
+            {profileError && <p className="error">{profileError}</p>}
+            <div className="actions">
+              <button type="submit" disabled={busy}>
+                {busy ? "Salvataggio…" : "Salva"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setEditing(false);
+                  setProfileError(null);
+                }}
+                disabled={busy}
+              >
+                Annulla
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <dl className="facts profile-facts">
+              <div>
+                <dt>Nome</dt>
+                <dd>{user.first_name || "—"}</dd>
+              </div>
+              <div>
+                <dt>Cognome</dt>
+                <dd>{user.last_name || "—"}</dd>
+              </div>
+            </dl>
+            {profileMessage && <p className="notice success">{profileMessage}</p>}
+          </>
         )}
       </section>
 
-      <section className="stack">
-        <h2>Profilo e accesso</h2>
-        <div className="two-columns">
-          <section className="card">
-            <h2>Profilo</h2>
-            <dl className="facts">
-              <div>
-                <dt>Identificativo</dt>
-                <dd>{user.email ?? user.username}</dd>
-              </div>
-              <div>
-                <dt>Stato</dt>
-                <dd>
-                  <span className={`badge ${user.status}`}>
-                    {STATUS_LABEL[user.status]}
-                  </span>
-                </dd>
-              </div>
-              <div>
-                <dt>Ruolo</dt>
-                <dd>
-                  {user.is_global_admin ? "Amministratore globale" : "Utente"}
-                </dd>
-              </div>
-            </dl>
-            <p className="muted small">
-              {user.is_global_admin
-                ? "L'amministratore globale non ha un profilo finanziario."
-                : "Un account corrisponde a un profilo personale."}
-            </p>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void logout()}
-            >
-              Esci
-            </button>
-          </section>
-
-          <section className="card">
-            <h2>Email</h2>
-            <p className="muted">
-              {user.is_global_admin
-                ? "L'email dell'amministratore è opzionale."
-                : "L'email è il tuo identificativo di accesso."}
-            </p>
-            <form onSubmit={handleEmail} className="stack">
+      <section className="profile-section">
+        <div className="section-heading">
+          <h2>Accesso</h2>
+        </div>
+        <form onSubmit={handleAccess} className="stack">
+          <div className="form-grid">
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required={!user.is_global_admin}
+                autoComplete="email"
+              />
+            </label>
+            {!user.is_global_admin && (
               <label>
-                Email
+                Nome utente
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required={!user.is_global_admin}
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  maxLength={150}
+                  placeholder="Facoltativo"
+                  autoComplete="username"
                 />
               </label>
-              {message && <p className="notice success">{message}</p>}
-              {error && <p className="error">{error}</p>}
-              <button type="submit" disabled={busy}>
-                {busy ? "Salvataggio…" : "Salva email"}
-              </button>
-            </form>
-          </section>
-        </div>
+            )}
+          </div>
+          {accessMessage && <p className="notice success">{accessMessage}</p>}
+          {accessError && <p className="error">{accessError}</p>}
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              {busy ? "Salvataggio…" : "Salva accesso"}
+            </button>
+          </div>
+        </form>
       </section>
 
-      {!user.is_global_admin && <AppearanceSection />}
-
-      {!user.is_global_admin && <ImportExportSection />}
+      <section className="profile-section">
+        <div className="section-heading">
+          <h2>
+            <KeyRound size={18} aria-hidden="true" /> Password
+          </h2>
+        </div>
+        <form onSubmit={handlePassword} className="stack">
+          <label>
+            Password attuale
+            <input
+              type="password"
+              value={passwordForm.current_password}
+              onChange={(event) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  current_password: event.target.value,
+                })
+              }
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Nuova password
+              <input
+                type="password"
+                value={passwordForm.new_password}
+                onChange={(event) =>
+                  setPasswordForm({
+                    ...passwordForm,
+                    new_password: event.target.value,
+                  })
+                }
+                autoComplete="new-password"
+                required
+              />
+            </label>
+            <label>
+              Ripeti nuova password
+              <input
+                type="password"
+                value={passwordForm.new_password_confirm}
+                onChange={(event) =>
+                  setPasswordForm({
+                    ...passwordForm,
+                    new_password_confirm: event.target.value,
+                  })
+                }
+                autoComplete="new-password"
+                required
+              />
+            </label>
+          </div>
+          {passwordMessage && <p className="notice success">{passwordMessage}</p>}
+          {passwordError && <p className="error">{passwordError}</p>}
+          <div className="actions">
+            <button type="submit" disabled={busy}>
+              {busy ? "Aggiornamento…" : "Cambia password"}
+            </button>
+          </div>        </form>
+      </section>
     </div>
   );
 }

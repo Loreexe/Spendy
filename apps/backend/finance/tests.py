@@ -67,9 +67,19 @@ class ProfileTests(FinanceTestBase):
             Profile.objects.get(user=self.user).theme, "light"
         )
 
+    def test_theme_can_follow_the_system(self):
+        response = self.client.patch(
+            reverse("finance-profile"), {"theme": "system"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["theme"], "system")
+        self.assertEqual(
+            Profile.objects.get(user=self.user).theme, "system"
+        )
+
     def test_theme_rejects_unknown_values(self):
         response = self.client.patch(
-            reverse("finance-profile"), {"theme": "auto"}, format="json"
+            reverse("finance-profile"), {"theme": "sepia"}, format="json"
         )
         self.assertEqual(response.status_code, 400)
 
@@ -450,6 +460,32 @@ class DashboardAndIsolationTests(FinanceTestBase):
             response.data["period_balance"], response.data["total_balance"]
         )
         self.assertEqual(response.data["period_balance"], "970.00")
+
+    def test_accounts_expose_period_value_and_total_with_savings(self):
+        account = self.create_account(initial="1000.00").data
+        savings = self.create_savings(account["id"]).data
+        self.create_transaction(
+            {
+                "kind": "transfer",
+                "date": self.today.isoformat(),
+                "amount": "200.00",
+                "from_account": account["id"],
+                "to_savings": savings["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "50.00",
+                "account": account["id"],
+            }
+        )
+        response = self.client.get(reverse("finance-dashboard"))
+        row = response.data["accounts"][0]
+        self.assertEqual(row["period_balance"], "750.00")
+        # Saldo effettivo (750) + salvadanaio collegato (200).
+        self.assertEqual(row["total_with_savings"], "950.00")
 
     def test_month_filter(self):
         response = self.client.get(

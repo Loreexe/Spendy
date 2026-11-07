@@ -82,8 +82,7 @@ export function SetupPage() {
       <AuthHero />
       <h1>Imposta la password di admin</h1>
       <p className="muted">
-        L'account globale <code>admin</code> non ha una password finché non la
-        imposti qui. Dopo il setup questa pagina viene disabilitata.
+        L&apos;account globale <code>admin</code> non ha ancora una password.
       </p>
       <form onSubmit={handleSubmit} className="stack">
         <label>

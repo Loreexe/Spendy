@@ -28,6 +28,8 @@ export function TrashPage() {
   const { notify } = useToast();
   const [items, setItems] = useState<TrashItem[]>([]);
   const [filterType, setFilterType] = useState<"" | TrashType>("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,8 +84,7 @@ export function TrashPage() {
     }
   }
 
-  async function handleEmpty() {
-    setError(null);
+  async function handleEmpty() {    setError(null);
     setBusy(true);
     try {
       const result = await api.emptyTrash();
@@ -96,6 +97,16 @@ export function TrashPage() {
       setBusy(false);
     }
   }
+
+  const visibleItems = items.filter((item) => {
+    if (!filterFrom && !filterTo) return true;
+    if (!item.deleted_at) return false;
+    const day = item.deleted_at.slice(0, 10);
+    if (filterFrom && day < filterFrom) return false;
+    if (filterTo && day > filterTo) return false;
+    return true;
+  });
+  const hasFilters = Boolean(filterType || filterFrom || filterTo);
 
   return (
     <div className="stack-page">
@@ -118,17 +129,10 @@ export function TrashPage() {
 
       {error && <p className="error">{error}</p>}
 
-      <p className="muted small">
-        Gli elementi restano qui per <strong>30 giorni</strong> e non incidono
-        su saldi, dashboard, esportazioni o automazioni. Il ripristino li
-        rimette al loro posto; l&apos;eliminazione definitiva non si può
-        annullare.
-      </p>
-
       <section className="card">
-        <div className="inline-form">
+        <div className="filters">
           <label>
-            Tipo
+            <span className="small muted">Tipo</span>
             <select
               value={filterType}
               onChange={(event) =>
@@ -143,14 +147,47 @@ export function TrashPage() {
               ))}
             </select>
           </label>
+          <label>
+            <span className="small muted">Dal</span>
+            <input
+              type="date"
+              value={filterFrom}
+              onChange={(event) => setFilterFrom(event.target.value)}
+            />
+          </label>
+          <label>
+            <span className="small muted">Al</span>
+            <input
+              type="date"
+              value={filterTo}
+              onChange={(event) => setFilterTo(event.target.value)}
+            />
+          </label>
+          {hasFilters && (
+            <div className="actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setFilterType("");
+                  setFilterFrom("");
+                  setFilterTo("");
+                }}
+              >
+                Mostra tutto
+              </button>
+            </div>
+          )}
         </div>
         {loading ? (
           <p className="muted">Caricamento…</p>
         ) : items.length === 0 ? (
           <p className="muted">Il cestino è vuoto.</p>
+        ) : visibleItems.length === 0 ? (
+          <p className="muted">Nessun elemento per questo filtro.</p>
         ) : (
           <ul className="entity-list">
-            {items.map((item) => (
+            {visibleItems.map((item) => (
               <li key={`${item.type}-${item.id}`}>
                 <div>
                   <strong>{item.label}</strong>

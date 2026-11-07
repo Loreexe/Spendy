@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
@@ -20,6 +21,7 @@ from core.system import is_newer, parse_version
 from .models import GlobalSettings, User
 
 VALID_PASSWORD = "Spendy-Fondamenta-2026"
+NEW_PASSWORD = "Spendy-Nuova-Password-2026"
 
 
 def complete_setup(password: str = VALID_PASSWORD) -> User:
@@ -537,6 +539,151 @@ class AuthTests(APITestCase):
         self.client.force_authenticate(user=self.user)
         response = self.client.patch(reverse("auth-me"), {"email": ""})
         self.assertEqual(response.status_code, 400)
+
+    def test_user_can_set_username_and_login_with_it(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.patch(
+            reverse("auth-me"), {"username": "persona.uno"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["user"]["username"], "persona.uno")
+        self.client.force_authenticate(user=None)
+        login = self.client.post(
+            reverse("auth-login"),
+            {"identifier": "persona.uno", "password": VALID_PASSWORD},
+        )
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(login.data["user"]["username"], "persona.uno")
+
+    def test_username_must_be_unique_case_insensitive(self):
+        User.objects.create_user(
+            username="occupato",
+            email="altro@example.com",
+            password=VALID_PASSWORD,
+            status=User.Status.ACTIVE,
+        )
+        self.client.force_authenticate(user=self.user)
+        response = self.client.patch(
+            reverse("auth-me"), {"username": "OCCUPATO"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("username", response.data)
+
+    def test_username_validation_rules(self):
+        self.client.force_authenticate(user=self.user)
+        for bad in ("ab", "con spazio", "admin", "simbolo@!"):
+            response = self.client.patch(
+                reverse("auth-me"), {"username": bad}, format="json"
+            )
+            self.assertEqual(
+                response.status_code, 400, f"{bad} doveva essere rifiutato"
+            )
+
+    def test_username_is_case_insensitive_at_login(self):
+        self.client.force_authenticate(user=self.user)
+        self.client.patch(
+            reverse("auth-me"), {"username": "PersonaUno"}, format="json"
+        )
+        self.client.force_authenticate(user=None)
+        login = self.client.post(
+            reverse("auth-login"),
+            {"identifier": "personauno", "password": VALID_PASSWORD},
+        )
+        self.assertEqual(login.status_code, 200)
+
+    def test_admin_username_is_not_editable(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(
+            reverse("auth-me"), {"username": "nuovo-admin"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.username, "admin")
+
+    def test_names_are_saved_and_exposed(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.patch(
+            reverse("auth-me"),
+            {"first_name": "Ada", "last_name": "Lovelace"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["user"]["first_name"], "Ada")
+        self.assertEqual(response.data["user"]["display_name"], "Ada Lovelace")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.get_full_name(), "Ada Lovelace")
+
+    def test_avatar_upload_validation_and_delete(self):
+        self.client.force_authenticate(user=self.user)
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+            b"\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+            b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        upload = SimpleUploadedFile("avatar.png", png, content_type="image/png")
+        response = self.client.post(
+            reverse("auth-avatar"), {"avatar": upload}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["user"]["has_avatar"])
+        image = self.client.get(reverse("auth-avatar"))
+        self.assertEqual(image.status_code, 200)
+        self.assertEqual(image["Content-Type"], "image/png")
+
+        bad_type = SimpleUploadedFile(
+            "avatar.txt", b"not-an-image", content_type="text/plain"
+        )
+        rejected = self.client.post(
+            reverse("auth-avatar"), {"avatar": bad_type}, format="multipart"
+        )
+        self.assertEqual(rejected.status_code, 400)
+
+        removed = self.client.delete(reverse("auth-avatar"))
+        self.assertEqual(removed.status_code, 200)
+        self.assertFalse(removed.data["user"]["has_avatar"])
+        self.assertEqual(
+            self.client.get(reverse("auth-avatar")).status_code, 404
+        )
+
+    def test_password_change(self):
+        self.client.force_authenticate(user=self.user)
+        wrong = self.client.post(
+            reverse("auth-password"),
+            {
+                "current_password": "sbagliata",
+                "new_password": NEW_PASSWORD,
+                "new_password_confirm": NEW_PASSWORD,
+            },
+            format="json",
+        )
+        self.assertEqual(wrong.status_code, 400)
+
+        mismatch = self.client.post(
+            reverse("auth-password"),
+            {
+                "current_password": VALID_PASSWORD,
+                "new_password": NEW_PASSWORD,
+                "new_password_confirm": "diversa",
+            },
+            format="json",
+        )
+        self.assertEqual(mismatch.status_code, 400)
+
+        ok = self.client.post(
+            reverse("auth-password"),
+            {
+                "current_password": VALID_PASSWORD,
+                "new_password": NEW_PASSWORD,
+                "new_password_confirm": NEW_PASSWORD,
+            },
+            format="json",
+        )
+        self.assertEqual(ok.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(NEW_PASSWORD))
+        # La sessione resta valida dopo il cambio.
+        self.assertIsNotNone(self.client.get(reverse("auth-me")).data["user"])
 
 
 class HealthTests(APITestCase):

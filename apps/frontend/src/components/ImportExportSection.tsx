@@ -1,5 +1,6 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
+import { Download, FileSpreadsheet, PackageOpen, Upload } from "lucide-react";
 import {
   api,
   ApiError,
@@ -21,6 +22,12 @@ function dateLabel(value: string | null): string {
     dateStyle: "short",
     timeStyle: "short",
   });
+}
+
+function visible(query: string, keywords: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return keywords.toLowerCase().includes(needle);
 }
 
 function BalanceList({
@@ -46,8 +53,14 @@ function BalanceList({
   );
 }
 
-export function ImportExportSection() {
+function PanelIcon({ children }: { children: React.ReactNode }) {
+  return <span className="panel-icon">{children}</span>;
+}
+
+export function ImportExportSection({ query = "" }: { query?: string }) {
   const [exporting, setExporting] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportingInvestments, setExportingInvestments] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -68,8 +81,31 @@ export function ImportExportSection() {
     }
   }
 
-  async function chooseArchive(event: ChangeEvent<HTMLInputElement>) {
-    const selected = event.target.files?.[0] ?? null;
+  async function downloadCsv() {
+    setError(null);
+    setExportingCsv(true);
+    try {
+      await api.exportTransactions();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setExportingCsv(false);
+    }
+  }
+
+  async function downloadInvestments() {
+    setError(null);
+    setExportingInvestments(true);
+    try {
+      await api.exportInvestments();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setExportingInvestments(false);
+    }
+  }
+
+  async function chooseArchive(event: ChangeEvent<HTMLInputElement>) {    const selected = event.target.files?.[0] ?? null;
     setFile(selected);
     setAnalysis(null);
     setResult(null);
@@ -104,159 +140,30 @@ export function ImportExportSection() {
     }
   }
 
+  if (
+    !visible(
+      query,
+      "import export esporta ripristina archivio csv backup importa movimenti zip",
+    )
+  ) {
+    return null;
+  }
+
   return (
-    <section className="card">
-      <h2>Import / Export</h2>
-      <p className="muted">
-        Il backup personale del profilo contiene conti, salvadanai, movimenti e
-        investimenti (posizioni e operazioni). È distinto dal backup globale del
-        sistema e può essere usato per trasferire i dati su un altro server.
-      </p>
+    <section className="profile-section">
+      <div className="section-heading">
+        <h2>Import ed export</h2>
+      </div>
 
-      <div className="two-columns">
-        <div className="stack">
-          <h3>Importa</h3>
-          <p className="muted small">
-            I movimenti da un file CSV si importano con anteprima e controllo
-            dei duplicati.
-          </p>
-          <div>
-            <Link className="button secondary" to="/import">
-              Importa movimenti CSV
-            </Link>
+      <div className="settings-row">
+        <article className="export-panel">
+          <div className="export-panel-head">
+            <PanelIcon>
+              <Download size={18} aria-hidden="true" />
+            </PanelIcon>
+            <h3>Esporta archivio</h3>
           </div>
-
-          <h3>Ripristina un archivio</h3>
-          <p className="muted small">
-            Carica lo ZIP creato con «Scarica archivio». Il ripristino è
-            consentito solo su un profilo vuoto.
-          </p>
-          <input
-            ref={input}
-            type="file"
-            accept=".zip,application/zip"
-            aria-label="Archivio ZIP da ripristinare"
-            onChange={chooseArchive}
-            disabled={analyzing || restoring}
-          />
-          {analyzing && <p className="muted">Analisi dell&apos;archivio…</p>}
-          {analysis && (
-            <div className="notice">
-              <p>
-                <strong>{analysis.manifest.profilo || "Profilo"}</strong>
-                {" · "}
-                {dateLabel(analysis.manifest.generato_il)}
-                {" · "}v{analysis.manifest.versione_app}
-              </p>
-              <dl className="facts">
-                <div>
-                  <dt>Conti</dt>
-                  <dd>{analysis.summary.accounts}</dd>
-                </div>
-                <div>
-                  <dt>Salvadanai</dt>
-                  <dd>{analysis.summary.savings}</dd>
-                </div>
-                <div>
-                  <dt>Movimenti</dt>
-                  <dd>{analysis.summary.transactions}</dd>
-                </div>
-                <div>
-                  <dt>Righe contabili</dt>
-                  <dd>{analysis.summary.lines}</dd>
-                </div>
-                <div>
-                  <dt>Posizioni di investimento</dt>
-                  <dd>{analysis.summary.positions}</dd>
-                </div>
-                <div>
-                  <dt>Operazioni di investimento</dt>
-                  <dd>{analysis.summary.investment_operations}</dd>
-                </div>
-                <div>
-                  <dt>Costo investimenti</dt>
-                  <dd>{money(analysis.summary.investments_cost)}</dd>
-                </div>
-                <div>
-                  <dt>Valore investimenti</dt>
-                  <dd>{money(analysis.summary.investments_value)}</dd>
-                </div>
-                <div>
-                  <dt>Saldo conti</dt>
-                  <dd>{money(analysis.summary.accounts_total)}</dd>
-                </div>
-                <div>
-                  <dt>Saldo salvadanai</dt>
-                  <dd>{money(analysis.summary.savings_total)}</dd>
-                </div>
-                <div>
-                  <dt>Patrimonio</dt>
-                  <dd>{money(analysis.summary.patrimony_total)}</dd>
-                </div>
-                <div>
-                  <dt>Periodo</dt>
-                  <dd>
-                    {analysis.summary.from ?? "—"} →{" "}
-                    {analysis.summary.to ?? "—"}
-                  </dd>
-                </div>
-              </dl>
-              <BalanceList
-                title="Saldi dei conti"
-                items={analysis.summary.balances.accounts}
-              />
-              <BalanceList
-                title="Saldi dei salvadanai"
-                items={analysis.summary.balances.savings}
-              />
-              {analysis.warnings.map((warning) => (
-                <p className="muted small" key={warning}>
-                  {warning}
-                </p>
-              ))}
-              {!analysis.can_restore && (
-                <p className="error">{analysis.blocked_reason}</p>
-              )}
-              <button
-                type="button"
-                onClick={() => void confirmRestore()}
-                disabled={!analysis.can_restore || restoring}
-              >
-                {restoring ? "Ripristino…" : "Ripristina archivio"}
-              </button>
-            </div>
-          )}
-          {result && (
-            <div className="notice success">
-              <p>
-                Ripristino completato: {result.accounts} conti,{" "}
-                {result.savings} salvadanai, {result.transactions} movimenti,{" "}
-                {result.positions} posizioni e {result.investment_operations}{" "}
-                operazioni di investimento.
-              </p>
-              <p>
-                Saldo conti {money(result.accounts_total)} · salvadanai{" "}
-                {money(result.savings_total)} · investimenti{" "}
-                {money(result.investments_cost)} (valore{" "}
-                {money(result.investments_value)}) · patrimonio{" "}
-                {money(result.patrimony_total)}
-              </p>
-              <Link className="button secondary" to="/">
-                Vai alla dashboard
-              </Link>
-            </div>
-          )}
-        </div>
-
-        <div className="stack">
-          <h3>Esporta</h3>
-          <p className="muted small">
-            Scarica un archivio ZIP con sei file CSV e un manifesto di
-            controllo (conti, salvadanai, movimenti, righe, posizioni e
-            operazioni di investimento). Contiene tutti i dati del profilo, non
-            solo i movimenti filtrati.
-          </p>
-          <div>
+          <div className="actions">
             <button
               type="button"
               onClick={() => void downloadArchive()}
@@ -265,12 +172,198 @@ export function ImportExportSection() {
               {exporting ? "Preparazione…" : "Scarica archivio CSV (ZIP)"}
             </button>
           </div>
-          <p className="muted small">
-            Il registro filtrato si esporta dalla pagina Movimenti. Questo
-            archivio non sostituisce il backup globale del database.
-          </p>
-        </div>
+        </article>
+
+        <article className="export-panel">
+          <div className="export-panel-head">
+            <PanelIcon>
+              <Upload size={18} aria-hidden="true" />
+            </PanelIcon>
+            <h3>Ripristina archivio</h3>
+          </div>
+          <label className="file-field">
+            <Upload size={16} aria-hidden="true" />
+            <span>{file ? file.name : "Scegli un archivio ZIP"}</span>
+            <input
+              ref={input}
+              type="file"
+              accept=".zip,application/zip"
+              aria-label="Archivio ZIP da ripristinare"
+              onChange={chooseArchive}
+              disabled={analyzing || restoring}
+            />
+          </label>
+          {analyzing && <p className="muted small">Analisi dell&apos;archivio…</p>}
+        </article>
       </div>
+
+      <article className="export-panel">
+        <div className="export-panel-head">
+          <PanelIcon>
+            <FileSpreadsheet size={18} aria-hidden="true" />
+          </PanelIcon>
+          <h3>Importa ed esporta CSV</h3>
+        </div>
+        <div className="actions">
+          <Link className="button secondary" to="/import">
+            Importa movimenti CSV
+          </Link>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void downloadCsv()}
+            disabled={exportingCsv}
+          >
+            {exportingCsv ? "Preparazione…" : "Esporta movimenti CSV"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void downloadInvestments()}
+            disabled={exportingInvestments}
+          >
+            {exportingInvestments ? "Preparazione…" : "Esporta investimenti CSV"}
+          </button>
+        </div>
+      </article>
+
+      {analysis && (
+        <article className="export-panel export-preview">
+          <div className="export-panel-head">
+            <PanelIcon>
+              <PackageOpen size={18} aria-hidden="true" />
+            </PanelIcon>
+            <h3>Anteprima archivio</h3>
+          </div>
+          <p className="muted small">
+            <strong>{analysis.manifest.profilo || "Profilo"}</strong>
+            {" · "}
+            {dateLabel(analysis.manifest.generato_il)}
+            {" · "}v{analysis.manifest.versione_app}
+          </p>
+          <div className="preview-grid">
+            <div>
+              <span>Conti</span>
+              <strong>{analysis.summary.accounts}</strong>
+            </div>
+            <div>
+              <span>Salvadanai</span>
+              <strong>{analysis.summary.savings}</strong>
+            </div>
+            <div>
+              <span>Movimenti</span>
+              <strong>{analysis.summary.transactions}</strong>
+            </div>
+            <div>
+              <span>Righe contabili</span>
+              <strong>{analysis.summary.lines}</strong>
+            </div>
+            <div>
+              <span>Posizioni</span>
+              <strong>{analysis.summary.positions}</strong>
+            </div>
+            <div>
+              <span>Operazioni</span>
+              <strong>{analysis.summary.investment_operations}</strong>
+            </div>
+          </div>
+          <dl className="facts">
+            <div>
+              <dt>Costo investimenti</dt>
+              <dd>{money(analysis.summary.investments_cost)}</dd>
+            </div>
+            <div>
+              <dt>Valore investimenti</dt>
+              <dd>{money(analysis.summary.investments_value)}</dd>
+            </div>
+            <div>
+              <dt>Saldo conti</dt>
+              <dd>{money(analysis.summary.accounts_total)}</dd>
+            </div>
+            <div>
+              <dt>Saldo salvadanai</dt>
+              <dd>{money(analysis.summary.savings_total)}</dd>
+            </div>
+            <div>
+              <dt>Patrimonio</dt>
+              <dd>{money(analysis.summary.patrimony_total)}</dd>
+            </div>
+            <div>
+              <dt>Periodo</dt>
+              <dd>
+                {analysis.summary.from ?? "—"} → {analysis.summary.to ?? "—"}
+              </dd>
+            </div>
+          </dl>
+          <BalanceList
+            title="Saldi dei conti"
+            items={analysis.summary.balances.accounts}
+          />
+          <BalanceList
+            title="Saldi dei salvadanai"
+            items={analysis.summary.balances.savings}
+          />
+          {analysis.warnings.map((warning) => (
+            <p className="muted small" key={warning}>
+              {warning}
+            </p>
+          ))}
+          {!analysis.can_restore && (
+            <p className="error">{analysis.blocked_reason}</p>
+          )}
+          <div className="actions">
+            <button
+              type="button"
+              onClick={() => void confirmRestore()}
+              disabled={!analysis.can_restore || restoring}
+            >
+              {restoring ? "Ripristino…" : "Ripristina archivio"}
+            </button>
+          </div>
+        </article>
+      )}
+
+      {result && (
+        <article className="export-panel export-preview">
+          <div className="export-panel-head">
+            <PanelIcon>
+              <PackageOpen size={18} aria-hidden="true" />
+            </PanelIcon>
+            <h3>Ripristino completato</h3>
+          </div>
+          <p className="muted small">
+            {result.accounts} conti, {result.savings} salvadanai,{" "}
+            {result.transactions} movimenti, {result.positions} posizioni e{" "}
+            {result.investment_operations} operazioni di investimento.
+          </p>
+          <dl className="facts">
+            <div>
+              <dt>Saldo conti</dt>
+              <dd>{money(result.accounts_total)}</dd>
+            </div>
+            <div>
+              <dt>Saldo salvadanai</dt>
+              <dd>{money(result.savings_total)}</dd>
+            </div>
+            <div>
+              <dt>Investimenti</dt>
+              <dd>
+                {money(result.investments_cost)} (valore{" "}
+                {money(result.investments_value)})
+              </dd>
+            </div>
+            <div>
+              <dt>Patrimonio</dt>
+              <dd>{money(result.patrimony_total)}</dd>
+            </div>
+          </dl>
+          <div className="actions">
+            <Link className="button secondary" to="/">
+              Vai alla dashboard
+            </Link>
+          </div>
+        </article>
+      )}
 
       {error && <p className="error">{error}</p>}
     </section>

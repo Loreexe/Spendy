@@ -17,9 +17,10 @@ from .models import (
     InvestmentPosition,
     Line,
     Profile,
+    SavingsAccount,
     Transaction,
 )
-from .services import assert_accounts_non_negative
+from .services import assert_accounts_non_negative, savings_balance
 
 MONEY = Decimal("0.01")
 QUANTITY = Decimal("0.00000001")
@@ -70,15 +71,31 @@ def _validate_commission(raw) -> Decimal:
 
 
 def _resolve_price(raw_quantity, unit_price, total_amount):
-    """Return quantity, unit price (8 dec) and gross amount (2 dec)."""
-    qty = _validate_quantity(raw_quantity)
-    if unit_price is not None and total_amount is not None:
+    """Return quantity, unit price (8 dec) and gross amount (2 dec).
+
+    Servono due valori su tre (quantità, prezzo unitario, controvalore); il
+    terzo si ricava sempre.
+    """
+    provided = [
+        value
+        for value in (raw_quantity, unit_price, total_amount)
+        if value is not None
+    ]
+    if len(provided) < 2:
+        raise _error(
+            "quantity",
+            "Indica due valori tra quantità, prezzo unitario e controvalore.",
+            "missing_price",
+        )
+    if len(provided) > 2:
         raise _error(
             "unit_price",
-            "Indica il prezzo unitario oppure il controvalore, non entrambi.",
+            "Indica solo due valori tra quantità, prezzo unitario e controvalore.",
             "ambiguous_price",
         )
-    if unit_price is not None:
+
+    if raw_quantity is not None and unit_price is not None:
+        qty = _validate_quantity(raw_quantity)
         price = quantity(unit_price)
         if price <= 0:
             raise _error(
@@ -94,7 +111,8 @@ def _resolve_price(raw_quantity, unit_price, total_amount):
                 "Il controvalore calcolato è troppo grande.",
                 "invalid_unit_price",
             )
-    elif total_amount is not None:
+    elif raw_quantity is not None:
+        qty = _validate_quantity(raw_quantity)
         gross = money(total_amount)
         if gross <= 0:
             raise _error(
@@ -111,11 +129,34 @@ def _resolve_price(raw_quantity, unit_price, total_amount):
                 "invalid_total_amount",
             )
     else:
-        raise _error(
-            "unit_price",
-            "Indica il prezzo unitario o il controvalore.",
-            "missing_price",
-        )
+        price = quantity(unit_price)
+        if price <= 0:
+            raise _error(
+                "unit_price",
+                "Il prezzo unitario deve essere maggiore di zero.",
+                "invalid_unit_price",
+            )
+        gross = money(total_amount)
+        if gross <= 0:
+            raise _error(
+                "total_amount",
+                "Il controvalore deve essere maggiore di zero.",
+                "invalid_total_amount",
+            )
+        try:
+            qty = (gross / price).quantize(QUANTITY, rounding=ROUND_HALF_UP)
+        except (InvalidOperation, OverflowError):
+            raise _error(
+                "quantity",
+                "La quantità calcolata è troppo grande.",
+                "invalid_quantity",
+            )
+        if qty <= 0:
+            raise _error(
+                "quantity",
+                "La quantità calcolata deve essere maggiore di zero.",
+                "invalid_quantity",
+            )
     if gross <= 0:
         raise _error(
             "total_amount",
@@ -177,12 +218,24 @@ def _description(position, kind, description) -> str:
     return description or f"{position.name} · {KIND_LABEL[kind]}"
 
 
-def _investment_account(profile: Profile) -> Account:
+def _investment_source(profile: Profile) -> tuple[str, SavingsAccount | None, Account]:
+    """Fonte del denaro: un conto, oppure un salvadanaio (via conto di appoggio)."""
+    if profile.investment_savings_id is not None:
+        savings = profile.investment_savings
+        account = savings.backing_account
+        if account.archived:
+            raise _error(
+                "account",
+                "Il conto di appoggio del salvadanaio è archiviato.",
+                "archived_investment_account",
+            )
+        return "savings", savings, account
     account = profile.investment_account
     if account is None:
         raise _error(
             "account",
-            "Scegli un conto per gli investimenti prima di registrare l'operazione.",
+            "Scegli un conto (o un salvadanaio) per gli investimenti prima di "
+            "registrare l'operazione.",
             "missing_investment_account",
         )
     if account.archived:
@@ -191,7 +244,7 @@ def _investment_account(profile: Profile) -> Account:
             "Il conto degli investimenti è archiviato.",
             "archived_investment_account",
         )
-    return account
+    return "account", None, account
 
 
 def _signed_cash(kind, cash: Decimal) -> Decimal:
@@ -201,7 +254,13 @@ def _signed_cash(kind, cash: Decimal) -> Decimal:
 
 
 def _operation_account(operation: InvestmentOperation) -> Account:
-    line = operation.transaction.lines.get(role=Line.Role.PRINCIPAL)
+    line = (
+        operation.transaction.lines.filter(
+            role=Line.Role.PRINCIPAL, account__isnull=False
+        )
+        .order_by("-id")
+        .first()
+    )
     return line.account
 
 
@@ -318,9 +377,31 @@ def portfolio_summary(profile: Profile) -> dict:
     }
 
 
-def set_investment_account(profile: Profile, account) -> Profile:
+def set_investment_source(profile: Profile, *, account=None, savings=None) -> Profile:
+    """Imposta la fonte unica del denaro: un conto oppure un salvadanaio."""
     with transaction.atomic():
         locked = Profile.objects.select_for_update().get(pk=profile.pk)
+        if savings is not None:
+            if not isinstance(savings, SavingsAccount):
+                savings = SavingsAccount.objects.get(pk=savings)
+            if savings.profile_id != locked.pk:
+                raise _error(
+                    "savings",
+                    "Il salvadanaio deve appartenere allo stesso profilo.",
+                    "savings_profile_mismatch",
+                )
+            if savings.backing_account.archived:
+                raise _error(
+                    "savings",
+                    "Il conto di appoggio del salvadanaio è archiviato.",
+                    "archived_investment_account",
+                )
+            locked.investment_savings = savings
+            locked.investment_account = None
+            locked.save(
+                update_fields=("investment_savings", "investment_account")
+            )
+            return locked
         if account is not None:
             if not isinstance(account, Account):
                 account = Account.objects.get(pk=account)
@@ -337,8 +418,13 @@ def set_investment_account(profile: Profile, account) -> Profile:
                     "archived_investment_account",
                 )
         locked.investment_account = account
-        locked.save(update_fields=("investment_account",))
+        locked.investment_savings = None
+        locked.save(update_fields=("investment_account", "investment_savings"))
         return locked
+
+
+def set_investment_account(profile: Profile, account) -> Profile:
+    return set_investment_source(profile, account=account)
 
 
 def set_position_archived(position: InvestmentPosition, archived: bool) -> InvestmentPosition:
@@ -363,10 +449,26 @@ def _lock_position(position: InvestmentPosition) -> InvestmentPosition:
     return InvestmentPosition.objects.select_for_update().get(pk=position.pk)
 
 
+def _sync_archived(position: InvestmentPosition) -> None:
+    """Una posizione chiusa (quantità zero) si archivia da sola.
+
+    Riaprirla con un'operazione o eliminare la vendita che l'aveva chiusa la
+    riporta tra le attive.
+    """
+    ledger = recalculate_position(position)
+    quantity = ledger["quantity"]
+    if quantity == 0 and position.operations.exists():
+        if not position.archived:
+            position.archived = True
+            position.save(update_fields=("archived",))
+    elif quantity > 0 and position.archived:
+        position.archived = False
+        position.save(update_fields=("archived",))
+
+
 def _create_transaction(position, kind, day, amount, description):
-    account = _investment_account(position.profile)
+    source_kind, savings, account = _investment_source(position.profile)
     signed = _signed_cash(kind, amount)
-    assert_accounts_non_negative([(account, signed, day)])
     movement = Transaction.objects.create(
         profile=position.profile,
         kind=KIND_TRANSACTION[kind],
@@ -374,6 +476,38 @@ def _create_transaction(position, kind, day, amount, description):
         description=_description(position, kind, description),
         amount=amount,
     )
+    if source_kind == "savings" and savings is not None:
+        # Come una spesa dal salvadanaio: il conto di appoggio fa da ponte
+        # (uscite tecniche compensate), il saldo del salvadanaio cambia.
+        if signed < ZERO:
+            available = savings_balance(savings)
+            if available < amount:
+                raise _error(
+                    "savings",
+                    "Saldo del salvadanaio insufficiente: disponibili "
+                    f"{available:.2f}.",
+                    "insufficient_savings",
+                )
+        Line.objects.create(
+            transaction=movement,
+            savings=savings,
+            amount=signed,
+            role=Line.Role.PRINCIPAL,
+        )
+        Line.objects.create(
+            transaction=movement,
+            account=account,
+            amount=-signed,
+            role=Line.Role.TECHNICAL,
+        )
+        Line.objects.create(
+            transaction=movement,
+            account=account,
+            amount=signed,
+            role=Line.Role.PRINCIPAL,
+        )
+        return movement
+    assert_accounts_non_negative([(account, signed, day)])
     Line.objects.create(
         transaction=movement,
         account=account,
@@ -432,6 +566,7 @@ def create_operation(
             )
         operation.save()
         recalculate_position(locked)
+        _sync_archived(locked)
         return operation
 
 
@@ -462,26 +597,43 @@ def update_operation(operation: InvestmentOperation, **changes) -> InvestmentOpe
                 amount=changes.get("amount", locked.cash_amount),
             )
         else:
-            if "unit_price" in changes and "total_amount" in changes:
+            explicit = {
+                key: changes[key]
+                for key in ("quantity", "unit_price", "total_amount")
+                if key in changes
+            }
+            if len(explicit) == 3:
                 raise _error(
                     "unit_price",
-                    "Indica il prezzo unitario oppure il controvalore, non entrambi.",
+                    "Indica solo due valori tra quantità, prezzo unitario e "
+                    "controvalore.",
                     "ambiguous_price",
                 )
-            raw_quantity = changes.get("quantity", locked.quantity)
-            if "total_amount" in changes:
-                price_input, total_input = None, changes["total_amount"]
-            elif "unit_price" in changes:
-                price_input, total_input = changes["unit_price"], None
-            elif "quantity" in changes:
-                price_input, total_input = locked.unit_price, None
+            if len(explicit) == 2:
+                q_input = explicit.get("quantity")
+                p_input = explicit.get("unit_price")
+                t_input = explicit.get("total_amount")
+            elif "quantity" in explicit:
+                q_input = explicit["quantity"]
+                p_input = locked.unit_price
+                t_input = None
+            elif "unit_price" in explicit:
+                q_input = locked.quantity
+                p_input = explicit["unit_price"]
+                t_input = None
+            elif "total_amount" in explicit:
+                q_input = locked.quantity
+                p_input = None
+                t_input = explicit["total_amount"]
             else:
-                price_input, total_input = None, locked.gross_amount
+                q_input = locked.quantity
+                p_input = None
+                t_input = locked.gross_amount
             values = _operation_values(
                 kind,
-                quantity_value=raw_quantity,
-                unit_price=price_input,
-                total_amount=total_input,
+                quantity_value=q_input,
+                unit_price=p_input,
+                total_amount=t_input,
                 commission=changes.get("commission", locked.commission),
                 amount=None,
             )
@@ -490,15 +642,34 @@ def update_operation(operation: InvestmentOperation, **changes) -> InvestmentOpe
         if movement is not None:
             account = _operation_account(locked)
             signed = _signed_cash(kind, values["cash_amount"])
-            assert_accounts_non_negative(
-                [(account, signed, day)], exclude_transaction=movement
+            savings_line = (
+                movement.lines.filter(savings__isnull=False).first()
             )
+            if savings_line is None:
+                assert_accounts_non_negative(
+                    [(account, signed, day)], exclude_transaction=movement
+                )
+            elif signed < ZERO:
+                available = savings_balance(
+                    savings_line.savings, exclude_transaction=movement
+                )
+                if available < -signed:
+                    raise _error(
+                        "savings",
+                        "Saldo del salvadanaio insufficiente: disponibili "
+                        f"{available:.2f}.",
+                        "insufficient_savings",
+                    )
             movement.date = day
             movement.amount = values["cash_amount"]
             if "description" in changes:
                 movement.description = _description(position, kind, description)
             movement.save(update_fields=("date", "amount", "description"))
-            movement.lines.update(amount=signed)
+            for line in movement.lines.all():
+                line.amount = (
+                    -signed if line.role == Line.Role.TECHNICAL else signed
+                )
+                line.save(update_fields=("amount",))
 
         for field, value in values.items():
             setattr(locked, field, value)
@@ -506,6 +677,7 @@ def update_operation(operation: InvestmentOperation, **changes) -> InvestmentOpe
         locked.description = description
         locked.save()
         recalculate_position(position)
+        _sync_archived(position)
         return locked
 
 
@@ -525,3 +697,4 @@ def delete_operation(operation: InvestmentOperation, user=None) -> None:
         if movement is not None:
             movement.soft_delete(user)
         recalculate_position(position)
+        _sync_archived(position)

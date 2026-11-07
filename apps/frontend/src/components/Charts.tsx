@@ -1,3 +1,5 @@
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+
 export interface SeriesPoint {
   date: string;
   saldo: string;
@@ -138,40 +140,49 @@ export function InOutBars({
 }) {
   const inc = Number(income);
   const exp = Number(expense);
-  const max = Math.max(inc, exp, 1);
-  const rows = [
-    { label: "Entrate", value: inc, color: "var(--up)" },
-    { label: "Uscite", value: exp, color: "var(--down)" },
-  ];
+  const total = inc + exp;
+  const incShare = total > 0 ? (inc / total) * 100 : 0;
+  const expShare = total > 0 ? (exp / total) * 100 : 0;
+  const pct = (value: number) =>
+    `${value.toLocaleString("it-IT", { maximumFractionDigits: 0 })}%`;
   return (
-    <div className="chart-bars">
-      {rows.map((row) => (
-        <div key={row.label} className="chart-bar-row">
-          <span className="muted small" style={{ minWidth: "4.5rem" }}>
-            {row.label}
+    <div className="inout">
+      <div className="inout-cards">
+        <div className="inout-card up">
+          <span className="inout-card-head">
+            <ArrowDownLeft size={14} aria-hidden="true" /> Entrate
           </span>
-          <div
-            className="chart-bar-track"
-            role="img"
-            aria-label={`${row.label}: ${row.value.toLocaleString("it-IT")} euro`}
-          >
-            <div
-              className="chart-bar-fill"
-              style={{
-                width: `${(row.value / max) * 100}%`,
-                background: row.color,
-              }}
-            />
-          </div>
-          <strong className="small tnum">
-            {row.value.toLocaleString("it-IT", {
+          <strong>
+            {inc.toLocaleString("it-IT", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}{" "}
             €
           </strong>
+          <span className="muted">{pct(incShare)} del totale</span>
         </div>
-      ))}
+        <div className="inout-card down">
+          <span className="inout-card-head">
+            <ArrowUpRight size={14} aria-hidden="true" /> Uscite
+          </span>
+          <strong>
+            {exp.toLocaleString("it-IT", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}{" "}
+            €
+          </strong>
+          <span className="muted">{pct(expShare)} del totale</span>
+        </div>
+      </div>
+      <div
+        className="inout-track"
+        role="img"
+        aria-label={`Entrate ${pct(incShare)}, uscite ${pct(expShare)}`}
+      >
+        <div className="inout-seg up" style={{ width: `${incShare}%` }} />
+        <div className="inout-seg down" style={{ width: `${expShare}%` }} />
+      </div>
     </div>
   );
 }
@@ -185,9 +196,7 @@ export function CategoryBars({ rows }: { rows: CategoryTotal[] }) {
     <div className="chart-bars">
       {rows.map((row) => (
         <div key={row.id} className="chart-bar-row">
-          <span className="muted small" style={{ minWidth: "4.5rem" }}>
-            {row.name}
-          </span>
+          <span className="chart-bar-label">{row.name}</span>
           <div
             className="chart-bar-track"
             role="img"
@@ -201,7 +210,7 @@ export function CategoryBars({ rows }: { rows: CategoryTotal[] }) {
               }}
             />
           </div>
-          <strong className="small tnum">
+          <strong className="chart-bar-value">
             {Number(row.total).toLocaleString("it-IT", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,

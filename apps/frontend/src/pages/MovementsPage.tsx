@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Tags, X } from "lucide-react";
 import {
   api,
   ApiError,
@@ -152,6 +152,23 @@ export function MovementsPage() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingTagId, setEditingTagId] = useState<number | null>(null);
+  const [editingTagName, setEditingTagName] = useState("");
+  const [taxonomyOpen, setTaxonomyOpen] = useState(false);
+
+  useEffect(() => {
+    if (!taxonomyOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTaxonomyOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [taxonomyOpen]);
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -233,22 +250,6 @@ export function MovementsPage() {
 
   function reload() {
     return load(Math.max(200, transactions.length));
-  }
-
-  async function exportCsv() {
-    setError(null);
-    try {
-      await api.exportTransactions({
-        account: filterAccount ? Number(filterAccount) : undefined,
-        savings: filterSavings ? Number(filterSavings) : undefined,
-        start: filterStart || undefined,
-        end: filterEnd || undefined,
-        category: filterCategory ? Number(filterCategory) : undefined,
-        tag: filterTag || undefined,
-      });
-    } catch (err) {
-      setError(errorMessage(err));
-    }
   }
 
   async function suggestForDescription(value: string) {
@@ -340,6 +341,21 @@ export function MovementsPage() {
       });
       if (String(category.id) === categoryId) setCategoryId("");
       if (String(category.id) === filterCategory) setFilterCategory("");
+      await refreshTaxonomy();
+      await reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function handleRenameTag(tag: Tag) {
+    const name = editingTagName.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      await api.updateTag(tag.id, name);
+      setEditingTagId(null);
+      setEditingTagName("");
       await refreshTaxonomy();
       await reload();
     } catch (err) {
@@ -608,13 +624,6 @@ export function MovementsPage() {
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
-      <p className="muted small">
-        Le operazioni di investimento (aperture, acquisti, vendite, dividendi)
-        non compaiono in questo registro: le trovi nella{" "}
-        <Link to="/investments">pagina Investimenti</Link>. Gli effetti su saldo
-        e patrimonio sono inclusi nella dashboard.
-      </p>
-
       <section className="card">
         <div className="card-heading">
           <h2>{editingId ? "Modifica movimento" : "Nuovo movimento"}</h2>
@@ -666,23 +675,34 @@ export function MovementsPage() {
                 placeholder="Facoltativa"
               />
             </label>
-            <label>
-              Categoria
-              <select
-                value={categoryId}
-                onChange={(event) => {
-                  setCategoryId(event.target.value);
-                  setSuggestion(null);
-                }}
-              >
-                <option value="">Altro (automatica)</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="form-field">
+              <span>Categoria</span>
+              <span className="field-row">
+                <select
+                  value={categoryId}
+                  onChange={(event) => {
+                    setCategoryId(event.target.value);
+                    setSuggestion(null);
+                  }}
+                >
+                  <option value="">Altro (automatica)</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="Gestisci categorie e tag"
+                  aria-label="Gestisci categorie e tag"
+                  onClick={() => setTaxonomyOpen(true)}
+                >
+                  <Tags size={18} aria-hidden="true" />
+                </button>
+              </span>
+            </div>
             <label>
               Tag (separati da virgola)
               <input
@@ -878,10 +898,6 @@ export function MovementsPage() {
                   </label>
                 )}
               </div>
-              <p className="muted small">
-                I trasferimenti non sono entrate né uscite. Il trasferimento
-                diretto tra salvadanai non è ammesso.
-              </p>
             </>
           )}
 
@@ -903,7 +919,7 @@ export function MovementsPage() {
               ? `(${transactions.length} di ${total})`
               : `(${total})`}
           </h2>
-          <div className="inline-form">
+          <div className="filters">
             <label>
               <span className="small muted">Conto</span>
               <select
@@ -976,36 +992,24 @@ export function MovementsPage() {
                 placeholder="Tutti i tag"
               />
             </label>
-            {(filterAccount ||
-              filterSavings ||
-              filterStart ||
-              filterEnd ||
-              filterCategory ||
-              filterTag) && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={clearFilters}
-              >
-                Mostra tutto
-              </button>
-            )}
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => void exportCsv()}
-            >
-              Esporta CSV
-            </button>
+            <div className="actions">
+              {(filterAccount ||
+                filterSavings ||
+                filterStart ||
+                filterEnd ||
+                filterCategory ||
+                filterTag) && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={clearFilters}
+                >
+                  Mostra tutto
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        <p className="muted small">
-          Un movimento appartiene a un conto oppure a un salvadanaio: scegliendo
-          un filtro l&apos;altro viene azzerato. «Dal» e «Al» limitano il periodo
-          e possono essere usati da soli o insieme agli altri filtri. «Categoria»
-          e «Tag» filtrano per classificazione. «Esporta CSV» scarica i movimenti
-          filtrati. Il registro mostra prima i movimenti più recenti.
-        </p>
         {transactions.length === 0 ? (
           <p className="muted">
             {filterAccount || filterSavings || filterCategory || filterTag
@@ -1042,17 +1046,27 @@ export function MovementsPage() {
         )}
       </section>
 
-      <section className="card">
-        <div className="card-heading">
-          <h2>Categorie e tag</h2>
-        </div>
-        <p className="muted small">
-          Ogni movimento ha una categoria (i nuovi movimenti senza categoria
-          vanno su «Altro») e zero o più tag. «Altro» non si può rinominare né
-          eliminare; eliminando una categoria i suoi movimenti passano ad
-          «Altro».
-        </p>
-        <ul className="entity-list">
+      {taxonomyOpen && (
+        <div className="modal-backdrop" onClick={() => setTaxonomyOpen(false)}>
+          <div
+            className="modal modal-wide"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Categorie e tag"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="card-heading">
+              <h2>Categorie e tag</h2>
+              <button
+                type="button"
+                className="modal-close"
+                aria-label="Chiudi gestione categorie"
+                onClick={() => setTaxonomyOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            <ul className="entity-list">
           {categories.map((category) => (
             <li key={category.id}>
               {editingCategoryId === category.id ? (
@@ -1132,28 +1146,67 @@ export function MovementsPage() {
               <h2>Tag usati</h2>
             </div>
             <p className="small">
-              {allTags.map((tag) => (
-                <span
-                  key={tag.id}
-                  className="badge"
-                  style={{ marginRight: "0.25rem" }}
-                >
-                  {tag.name}{" "}
-                  <button
-                    type="button"
-                    className="link-button"
-                    aria-label={`Elimina tag ${tag.name}`}
-                    onClick={() => void handleDeleteTag(tag)}
-                    style={{ color: "inherit", fontWeight: 700 }}
+              {allTags.map((tag) =>
+                editingTagId === tag.id ? (
+                  <span key={tag.id} className="inline-form">
+                    <input
+                      value={editingTagName}
+                      onChange={(event) =>
+                        setEditingTagName(event.target.value)
+                      }
+                      maxLength={30}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleRenameTag(tag)}
+                    >
+                      Salva
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setEditingTagId(null)}
+                    >
+                      Annulla
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    key={tag.id}
+                    className="badge"
+                    style={{ marginRight: "0.25rem" }}
                   >
-                    ×
-                  </button>
-                </span>
-              ))}
+                    {tag.name}{" "}
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-label={`Rinomina tag ${tag.name}`}
+                      onClick={() => {
+                        setEditingTagId(tag.id);
+                        setEditingTagName(tag.name);
+                      }}
+                      style={{ color: "inherit", fontWeight: 700 }}
+                    >
+                      ✎
+                    </button>{" "}
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-label={`Elimina tag ${tag.name}`}
+                      onClick={() => void handleDeleteTag(tag)}
+                      style={{ color: "inherit", fontWeight: 700 }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ),
+              )}
             </p>
           </>
         )}
-      </section>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

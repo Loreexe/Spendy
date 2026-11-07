@@ -18,6 +18,7 @@ import {
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
 import { AccountPage } from "./pages/AccountPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { AccountsPage } from "./pages/AccountsPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -140,6 +141,14 @@ export function App() {
                 element={
                   <ProtectedRoute>
                     <AccountPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute>
+                    <SettingsPage />
                   </ProtectedRoute>
                 }
               />

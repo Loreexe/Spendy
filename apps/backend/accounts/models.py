@@ -41,6 +41,11 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     username = models.CharField(max_length=150, null=True, blank=True, unique=True)
     email = models.EmailField(null=True, blank=True)
+    first_name = models.CharField(max_length=80, blank=True)
+    last_name = models.CharField(max_length=80, blank=True)
+    avatar = models.BinaryField(null=True, blank=True)
+    avatar_content_type = models.CharField(max_length=40, blank=True)
+    avatar_updated_at = models.DateTimeField(null=True, blank=True)
     is_global_admin = models.BooleanField(default=False)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
@@ -88,10 +93,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.is_global_admin
 
     def get_full_name(self) -> str:
-        return self.email or self.username or ""
+        name = f"{self.first_name} {self.last_name}".strip()
+        return name or self.email or self.username or ""
 
     def get_short_name(self) -> str:
-        return self.get_full_name()
+        return self.first_name or self.get_full_name()
 
 
 class ExternalIdentity(models.Model):

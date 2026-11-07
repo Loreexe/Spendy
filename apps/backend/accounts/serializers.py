@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
@@ -6,17 +8,31 @@ from .models import GlobalSettings, User
 
 
 class UserSerializer(serializers.ModelSerializer):
+    has_avatar = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
             "id",
             "email",
             "username",
+            "first_name",
+            "last_name",
+            "display_name",
+            "has_avatar",
+            "avatar_updated_at",
             "status",
             "is_global_admin",
             "date_joined",
         )
         read_only_fields = fields
+
+    def get_has_avatar(self, obj: User) -> bool:
+        return obj.avatar is not None
+
+    def get_display_name(self, obj: User) -> str:
+        return obj.get_full_name()
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -75,6 +91,15 @@ class SetupSerializer(serializers.Serializer):
 
 class ProfileUpdateSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
+    username = serializers.CharField(
+        required=False, allow_blank=True, max_length=150
+    )
+    first_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=80
+    )
+    last_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=80
+    )
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
@@ -86,6 +111,64 @@ class ProfileUpdateSerializer(serializers.Serializer):
         if queryset.exists():
             raise serializers.ValidationError("Esiste già un account con questa email.")
         return email
+
+    def validate_username(self, value: str) -> str:
+        username = value.strip()
+        if not username:
+            return ""
+        if len(username) < 3:
+            raise serializers.ValidationError(
+                "Il nome utente deve avere almeno 3 caratteri."
+            )
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", username):
+            raise serializers.ValidationError(
+                "Usa solo lettere, numeri, punto, trattino e underscore."
+            )
+        if username.lower() == "admin" and not self.context[
+            "request"
+        ].user.is_global_admin:
+            raise serializers.ValidationError("Questo nome utente è riservato.")
+        queryset = User.objects.filter(username__iexact=username)
+        if self.context["request"].user.pk:
+            queryset = queryset.exclude(pk=self.context["request"].user.pk)
+        if queryset.exists():
+            raise serializers.ValidationError(
+                "Esiste già un account con questo nome utente."
+            )
+        return username
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(
+        write_only=True, trim_whitespace=False
+    )
+    new_password = serializers.CharField(
+        write_only=True, trim_whitespace=False
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True, trim_whitespace=False
+    )
+
+    def validate_current_password(self, value: str) -> str:
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("La password attuale non è corretta.")
+        return value
+
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["new_password_confirm"]:
+            raise serializers.ValidationError(
+                {"new_password_confirm": "Le password non coincidono."}
+            )
+        try:
+            validate_password(
+                attrs["new_password"], user=self.context["request"].user
+            )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                {"new_password": list(exc.messages)}
+            ) from exc
+        return attrs
 
 
 class GlobalSettingsSerializer(serializers.ModelSerializer):

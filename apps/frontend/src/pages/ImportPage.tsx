@@ -227,12 +227,6 @@ export function ImportPage() {
         <>
           <section className="card">
             <h2 className="card-heading">1. Scarica il modello</h2>
-            <p className="muted">
-              Il file di esempio contiene l&apos;intestazione e due righe
-              marcate <code>ESEMPIO</code>: cancellale e inserisci i tuoi
-              movimenti. Il formato di data, separatore e decimali viene
-              rilevato automaticamente e puoi correggerlo nell&apos;anteprima.
-            </p>
             <button type="button" onClick={downloadTemplate}>
               Scarica modello CSV
             </button>
@@ -240,11 +234,6 @@ export function ImportPage() {
 
           <section className="card">
             <h2 className="card-heading">2. Carica il file compilato</h2>
-            <p className="muted">
-              Il file viene analizzato prima di scrivere qualsiasi dato: puoi
-              correggere gli errori, scartare righe e vedere il riepilogo prima
-              della conferma.
-            </p>
             <input
               ref={fileInput}
               type="file"
@@ -253,15 +242,6 @@ export function ImportPage() {
               disabled={reading}
             />
             {reading && <p className="muted small">Analisi in corso…</p>}
-          </section>
-
-          <section className="card">
-            <h2 className="card-heading">Regole dei saldi</h2>
-            <p className="muted small">
-              Il saldo di ogni conto non può mai andare sotto zero, in nessun
-              punto della cronologia. La prima riga per data di un nuovo conto è
-              la sua apertura e deve essere negativa (entrata).
-            </p>
           </section>
         </>
       )}
@@ -329,10 +309,6 @@ export function ImportPage() {
                     <option value=".">Punto (1234.56)</option>
                   </select>
                 </label>
-                <p className="muted small">
-                  Formato rilevato automaticamente: correggilo se le date o gli
-                  importi sono letti male.
-                </p>
                 {format.ambiguous && (
                   <p className="error-text">
                     Date ambigue: giorno e mese sono entrambi ≤ 12. Verifica il
@@ -464,11 +440,6 @@ export function ImportPage() {
                 </tbody>
               </table>
             </div>
-
-            <p className="muted small">
-              La colonna «Categoria» è ignorata: non esiste ancora un campo per
-              le categorie.
-            </p>
           </section>
 
           <div className="two-columns">
@@ -596,10 +567,7 @@ export function ImportPage() {
             <p className="muted small">
               Totale disponibile: {money(analysis.summary.available_total)} =
               aperture {money(analysis.summary.openings_total)} + entrate{" "}
-              {money(analysis.summary.income_total)}. Il netto importato è il
-              totale disponibile meno le uscite: le uscite possono superare le
-              entrate del periodo quando la differenza è coperta dal saldo
-              iniziale.
+              {money(analysis.summary.income_total)}.
             </p>
 
             <h3>Saldi dopo l&apos;import</h3>

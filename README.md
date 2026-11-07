@@ -8,24 +8,46 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.6.0`, che aggiunge la sezione **Investimenti** e
-> mantiene automazioni per salvadanai e spese ricorrenti, periodicità
-> personalizzata e avviso anticipato di saldo insufficiente. Il progetto è in
-> sviluppo attivo: gruppi, MCP e notifiche push/email non sono ancora implementati.
+> **Stato:** release `v0.8.0`, che aggiunge le rifiniture dell'interfaccia
+> (profilo e impostazioni separati, foto profilo, cambio password, tema
+> di sistema), la dashboard e il cestino riordinati e nuove funzioni per gli
+> investimenti (fonte anche da salvadanaio, inserimento con due valori su tre,
+> archiviazione automatica delle posizioni chiuse). Il progetto è in sviluppo
+> attivo: gruppi, MCP e notifiche push/email non sono ancora implementati.
+
+## Screenshot
+
+Immagini catturate dall'ambiente demo (dati finti):
+
+| | |
+| :---: | :---: |
+| ![Dashboard](docs/screenshots/01-dashboard.jpg) | ![Movimenti](docs/screenshots/02-movimenti.jpg) |
+| **Dashboard** | **Movimenti** |
+| ![Conti](docs/screenshots/03-conti.jpg) | ![Salvadanai](docs/screenshots/04-salvadanai.jpg) |
+| **Conti** | **Salvadanai** |
+| ![Automazioni](docs/screenshots/05-automazioni.jpg) | ![Investimenti](docs/screenshots/06-investimenti.jpg) |
+| **Automazioni** | **Investimenti** |
+| ![Profilo](docs/screenshots/07-profilo.jpg) | ![Impostazioni](docs/screenshots/08-impostazioni.jpg) |
+| **Profilo** | **Impostazioni** |
+| ![Cestino](docs/screenshots/09-cestino.jpg) | ![Importa movimenti](docs/screenshots/10-importa.jpg) |
+| **Cestino** | **Importa movimenti** |
 
 ## Funzionalità
 
-- **Dashboard** con saldo totale, patrimonio, saldo del periodo, entrate e uscite.
+- **Dashboard** con saldo totale, patrimonio, saldo del periodo, entrate e uscite, grafici e ultimi movimenti.
 - **Conti personali** con nome, tipo, saldo iniziale e archiviazione.
-- **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento.
+- **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento, con categorie e tag.
 - **Salvadanai** con conto di appoggio, versamenti e prelievi.
 - **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
-- **Investimenti**: posizioni con quantità e prezzo, apertura di posizioni già possedute senza movimento di conto, acquisti, vendite e dividendi; costo storico a costo medio ponderato, commissioni incluse, valore corrente mostrato separatamente.
-- **Automazioni periodiche**: trasferimenti ricorrenti verso i salvadanai e spese ricorrenti come abbonamenti, affitto o palestra, con periodicità personalizzata, recupero delle occorrenze perse, gestione dei fallimenti, storico delle esecuzioni e notifiche in-app.
+- **Investimenti**: posizioni con quantità e prezzo, apertura di posizioni già possedute senza movimento, acquisti, vendite e dividendi; costo storico a costo medio ponderato, commissioni incluse, valore corrente mostrato separatamente. La fonte del denaro può essere un conto personale oppure un salvadanaio; per gli importi bastano due valori su tre (quantità, prezzo unitario, controvalore) e le posizioni chiuse vengono archiviate da sole.
+- **Automazioni periodiche**: trasferimenti ricorrenti verso i salvadanai e spese ricorrenti come abbonamenti, affitto o palestra, con periodicità personalizzata, recupero delle occorrenze perse, gestione dei fallimenti e storico delle esecuzioni.
 - **Avviso anticipato di saldo insufficiente**: qualche giorno prima della scadenza Spendy calcola il saldo previsto e avvisa se l'addebito rischia di non riuscire.
 - **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima correggibile, controllo dei duplicati e riepilogo prima della conferma.
+- **Esportazione** di movimenti, investimenti e archivio personale completo (ZIP con CSV e manifesto).
 - **Backup personale del profilo**: archivio ZIP con conti, salvadanai, movimenti, righe contabili, posizioni e operazioni di investimento in CSV, manifesto con checksum e ripristino guidato su un profilo vuoto. Distinto dal backup globale del database.
+- **Profilo e impostazioni**: nome, cognome, foto profilo, email, nome utente e cambio password; tema scuro, chiaro o di sistema; ricerca interna alle impostazioni.
+- **Cestino** con ripristino, annullamento immediato e filtri per tipo e data.
 - **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero viene rifiutata con il saldo disponibile.
 - **Isolamento tra profili**: ogni account normale ha il proprio spazio finanziario; l'admin globale non ha un profilo finanziario.
 - **Autenticazione** email/password, registrazione con approvazione e setup iniziale protetto.
@@ -129,6 +151,19 @@ npm run dev
 
 Vite serve `http://localhost:5173` e proxya `/api` su `http://localhost:8000`.
 
+## Ambiente demo
+
+Per prove e dimostrazioni è disponibile un database demo con dati finti
+(conti, salvadanai, quattro mesi di movimenti, automazioni, cestino e sei
+posizioni di investimento). Lo snapshot è in `demo/` ed è escluso da Git.
+
+```bash
+./scripts/load_demo.sh
+```
+
+Credenziali: `demo@spendy.test` / `Demo-Preview-2026` (admin globale:
+`admin` / `Admin-Preview-2026`). Dettagli in [demo/README.md](demo/README.md).
+
 ## Test e controlli
 
 ```bash
@@ -137,16 +172,17 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **271 test backend**, **8 test** del controllo versioni,
+Stato verificato: **333 test backend**, **8 test** del controllo versioni,
 **5 test** dello script di backup, lint e build frontend, configurazione Compose
 valida, configurazione Nginx e pagina di manutenzione verificate, procedura di
 aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
-La release `v0.6.0` aggiunge la sezione Investimenti, verificata con test
-dedicati su modello contabile, API, dashboard, archivio personale e build
-frontend; restano incluse le automazioni per salvadanai e spese ricorrenti, la
-sezione Sistema, il backup globale e l'hardening pre-esposizione delle release
-precedenti. Backup reale su Backblaze B2, test di ripristino automatico e
-ripristino completo su host pulito eseguiti con successo.
+La release `v0.8.0` comprende le rifiniture dell'interfaccia (profilo,
+impostazioni, tema di sistema, dashboard, cestino) e le estensioni degli
+investimenti (fonte salvadanaio, due valori su tre, archiviazione automatica),
+verificate con test dedicati e prove nel browser; restano incluse le
+funzionalità delle release precedenti. Backup reale su Backblaze B2, test di
+ripristino automatico e ripristino completo su host pulito eseguiti con
+successo.
 
 ## Automazioni periodiche
 
@@ -183,21 +219,25 @@ alla cancellazione della regola restano da confermare.
 Dalla pagina **Investimenti** puoi seguire le posizioni e le operazioni del
 profilo:
 
-- scegli un **conto personale** per gli investimenti; resta utilizzabile anche
-  come conto normale e puoi cambiarlo in seguito, senza riscrivere lo storico;
+- scegli la **fonte del denaro**: un conto personale oppure un salvadanaio
+  (in questo caso il movimento passa dal conto di appoggio, come una spesa dal
+  salvadanaio). La fonte si può cambiare senza riscrivere lo storico;
 - crea una **posizione** con nome, categoria e identificativo opzionali,
   quantità e prezzo;
-- registra **acquisti**, **vendite** e **dividendi**; per acquisti e vendite puoi
-  inserire quantità e prezzo unitario oppure il controvalore totale, con
-  commissione separata;
-- se possiedi già una posizione, usa l'**apertura** con quantità e costo storico:
-  il conto non cambia e il patrimonio include il costo;
+- registra **acquisti**, **vendite** e **dividendi**; per gli importi basta
+  indicare **due valori su tre** tra quantità, prezzo unitario e controvalore
+  totale: il terzo viene calcolato. La commissione è separata;
+- se possiedi già una posizione, usa l'**apertura** con costo storico: la fonte
+  non cambia e il patrimonio include il costo;
 - aggiorna a mano il **prezzo corrente**: il valore corrente è mostrato a parte,
   insieme alla plusvalenza non realizzata; il patrimonio usa il **costo
   residuo** a costo medio ponderato, non il valore di mercato;
 - acquisti e vendite possono essere modificati o eliminati, con ricalcolo del
   costo medio e delle plusvalenze; non puoi vendere più di quanto possiedi né
-  portare un conto sotto zero.
+  portare un conto sotto zero;
+- quando la quantità scende a zero la posizione viene **archiviata da sola** e
+  torna attiva se la riapri; le archiviate si consultano da un'icona accanto al
+  titolo «Posizioni». Il dettaglio si apre in sovrimpressione.
 
 Gli acquisti di investimenti **non sono spese**: riducono il saldo del periodo
 ma non le uscite. I dividendi sono entrate. Le operazioni di investimento
@@ -210,7 +250,7 @@ rendimenti percentuali, i prezzi automatici e lo storico del valore corrente.
 
 ## Importazione dei movimenti
 
-Dalla pagina **Account → Import / Export** puoi scaricare un modello CSV e
+Dalla pagina **Impostazioni → Import ed export** puoi scaricare un modello CSV e
 caricare il tuo registro storico. Il file viene analizzato **prima** di scrivere
 qualsiasi dato: le righe con errori si possono correggere o scartare, e solo dopo
 la conferma l'importazione avviene in modo atomico.
@@ -244,7 +284,7 @@ questo export: si esportano dalla pagina Investimenti.
 
 ### Backup personale del profilo
 
-Da **Account → Import / Export** puoi scaricare un archivio ZIP con tutti i dati
+Da **Impostazioni → Import ed export** puoi scaricare un archivio ZIP con tutti i dati
 del profilo:
 
 - `conti.csv`, `salvadanai.csv`, `movimenti.csv`, `righe.csv`, `posizioni.csv`, `operazioni_investimenti.csv`;
@@ -282,8 +322,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.6.0
-./scripts/update.sh v0.6.0
+./scripts/update.sh --dry-run v0.8.0
+./scripts/update.sh v0.8.0
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

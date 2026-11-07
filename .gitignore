@@ -32,3 +32,7 @@ maintenance/on
 .spendy-wiki/
 AGENTS.md
 .opencode/skills/
+
+# Demo locale: snapshot del database (mai in Git)
+demo/*.sqlite3
+demo/*.sqlite3-*

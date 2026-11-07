@@ -75,6 +75,45 @@ class CategoryTests(FinanceTestBase):
             [tag.name for tag in transaction.tags.all()], ["lavoro"]
         )
 
+    def test_renaming_preset_away_does_not_create_a_copy(self):
+        shopping = next(
+            item
+            for item in self.list_categories().data
+            if item["name"] == "Shopping"
+        )
+        renamed = self.client.patch(
+            reverse("finance-category-detail", args=[shopping["id"]]),
+            {"name": "Negozi miei"},
+            format="json",
+        )
+        self.assertEqual(renamed.status_code, 200)
+        names = [item["name"] for item in self.list_categories().data]
+        self.assertIn("Negozi miei", names)
+        self.assertNotIn("Shopping", names)
+        self.assertEqual(
+            Category.objects.filter(profile__user=self.user).count(),
+            len(names),
+        )
+
+    def test_deleted_preset_category_is_not_resurrected_by_listing(self):
+        shopping = next(
+            item
+            for item in self.list_categories().data
+            if item["name"] == "Shopping"
+        )
+        deleted = self.client.delete(
+            reverse("finance-category-detail", args=[shopping["id"]])
+        )
+        self.assertEqual(deleted.status_code, 204)
+        names = [item["name"] for item in self.list_categories().data]
+        self.assertNotIn("Shopping", names)
+        self.assertEqual(
+            Category.all_objects.filter(
+                profile__user=self.user, name="Shopping", is_deleted=True
+            ).count(),
+            1,
+        )
+
     def test_transaction_without_category_defaults_to_altro(self):
         movement = self.create_transaction(
             {
@@ -256,6 +295,50 @@ class TagTests(FinanceTestBase):
             reverse("finance-tags"), {"name": "   "}, format="json"
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_tag_can_be_renamed(self):
+        created = self.client.post(
+            reverse("finance-tags"), {"name": "lavoro"}, format="json"
+        )
+        renamed = self.client.patch(
+            reverse("finance-tag-detail", args=[created.data["id"]]),
+            {"name": "ufficio"},
+            format="json",
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.data["name"], "ufficio")
+        self.assertTrue(
+            Tag.objects.filter(
+                profile__user=self.user, name="ufficio"
+            ).exists()
+        )
+
+    def test_tag_rename_rejects_blank_long_and_duplicate_names(self):
+        first = self.client.post(
+            reverse("finance-tags"), {"name": "casa"}, format="json"
+        )
+        second = self.client.post(
+            reverse("finance-tags"), {"name": "mare"}, format="json"
+        )
+        for bad in ("   ", "x" * 31):
+            response = self.client.patch(
+                reverse("finance-tag-detail", args=[first.data["id"]]),
+                {"name": bad},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400)
+        duplicate = self.client.patch(
+            reverse("finance-tag-detail", args=[second.data["id"]]),
+            {"name": "CASA"},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        missing = self.client.patch(
+            reverse("finance-tag-detail", args=[999999]),
+            {"name": "altrove"},
+            format="json",
+        )
+        self.assertEqual(missing.status_code, 400)
 
 
 class ImportCategoryTests(FinanceTestBase):

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Archive, X } from "lucide-react";
 import {
   api,
   type Account,
@@ -11,6 +12,7 @@ import {
   type InvestmentPositionDetail,
   type InvestmentPositionPayload,
   type InvestmentPositionUpdatePayload,
+  type SavingsAccount,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
 import { ConfirmModal } from "../components/ConfirmModal";
@@ -48,17 +50,6 @@ function priceText(value: string | null): string {
   return value === null ? "—" : money(value);
 }
 
-function positionStatus(position: InvestmentPosition): {
-  label: string;
-  className: string;
-} {
-  if (position.archived) return { label: "Archiviata", className: "disabled" };
-  if (Number(position.quantity) === 0) {
-    return { label: "Chiusa", className: "pending" };
-  }
-  return { label: "Aperta", className: "ok" };
-}
-
 function NewPositionForm({
   busy,
   onCreate,
@@ -75,7 +66,36 @@ function NewPositionForm({
   const [hasOpening, setHasOpening] = useState(false);
   const [openingDate, setOpeningDate] = useState(todayISO());
   const [openingQuantity, setOpeningQuantity] = useState("");
+  const [openingPrice, setOpeningPrice] = useState("");
   const [openingCost, setOpeningCost] = useState("");
+  const [openingError, setOpeningError] = useState<string | null>(null);
+
+  const qtyNum =
+    openingQuantity.trim() === "" ? null : Number(openingQuantity);
+  const priceNum = openingPrice.trim() === "" ? null : Number(openingPrice);
+  const costNum = openingCost.trim() === "" ? null : Number(openingCost);
+  const openingCount = [qtyNum, priceNum, costNum].filter(
+    (value) => value !== null,
+  ).length;
+  let openingHint: { label: string; value: string } | null = null;
+  if (openingCount === 2) {
+    if (qtyNum !== null && priceNum !== null) {
+      openingHint = {
+        label: "Totale",
+        value: money(String(qtyNum * priceNum)),
+      };
+    } else if (qtyNum !== null && costNum !== null) {
+      openingHint = {
+        label: "Prezzo",
+        value: qtyNum > 0 ? formatQuantity(String(costNum / qtyNum)) : "—",
+      };
+    } else if (priceNum !== null && costNum !== null) {
+      openingHint = {
+        label: "Quantità",
+        value: priceNum > 0 ? formatQuantity(String(costNum / priceNum)) : "—",
+      };
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -84,11 +104,16 @@ function NewPositionForm({
     if (identifier.trim()) payload.identifier = identifier.trim();
     if (currentPrice.trim()) payload.current_price = currentPrice;
     if (hasOpening) {
-      payload.opening = {
-        date: openingDate,
-        quantity: openingQuantity,
-        total_cost: openingCost,
-      };
+      if (openingCount !== 2) {
+        setOpeningError(
+          "Inserisci due valori tra quantità, prezzo unitario e costo totale.",
+        );
+        return;
+      }
+      payload.opening = { date: openingDate };
+      if (qtyNum !== null) payload.opening.quantity = openingQuantity;
+      if (priceNum !== null) payload.opening.unit_price = openingPrice;
+      if (costNum !== null) payload.opening.total_cost = openingCost;
     }
     const created = await onCreate(payload);
     if (created) {
@@ -98,7 +123,9 @@ function NewPositionForm({
       setCurrentPrice("");
       setHasOpening(false);
       setOpeningQuantity("");
+      setOpeningPrice("");
       setOpeningCost("");
+      setOpeningError(null);
     }
   }
 
@@ -161,11 +188,6 @@ function NewPositionForm({
       </label>
       {hasOpening && (
         <>
-          <p className="muted small">
-            L&apos;apertura registra una posizione già posseduta: il conto
-            investimenti non viene movimentato e il patrimonio aumenta del costo
-            storico.
-          </p>
           <div className="form-grid">
             <label>
               Data di apertura
@@ -184,7 +206,16 @@ function NewPositionForm({
                 min="0"
                 value={openingQuantity}
                 onChange={(event) => setOpeningQuantity(event.target.value)}
-                required
+              />
+            </label>
+            <label>
+              Prezzo unitario
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={openingPrice}
+                onChange={(event) => setOpeningPrice(event.target.value)}
               />
             </label>
             <label>
@@ -192,13 +223,24 @@ function NewPositionForm({
               <input
                 type="number"
                 step="0.01"
-                min="0.01"
+                min="0"
                 value={openingCost}
                 onChange={(event) => setOpeningCost(event.target.value)}
-                required
               />
             </label>
           </div>
+          {openingHint ? (
+            <p className="operation-preview">
+              {openingHint.label}{" "}
+              {openingHint.label === "Quantità" ? "calcolata" : "calcolato"}:{" "}
+              <strong>{openingHint.value}</strong>
+            </p>
+          ) : (
+            <p className="muted small">
+              Compila due valori su tre: il terzo viene calcolato.
+            </p>
+          )}
+          {openingError && <p className="error">{openingError}</p>}
         </>
       )}
 
@@ -234,12 +276,11 @@ function OperationForm({
 }) {
   const [date, setDate] = useState(editing?.date ?? todayISO());
   const [quantity, setQuantity] = useState(editing?.quantity ?? "");
-  const [priceMode, setPriceMode] = useState<"unit" | "total">("total");
   const [unitPrice, setUnitPrice] = useState(
     editing?.kind === "opening" ? "" : (editing?.unit_price ?? ""),
   );
   const [totalAmount, setTotalAmount] = useState(
-    editing?.kind === "dividend" ? "" : (editing?.gross_amount ?? ""),
+    editing?.kind === "opening" ? (editing?.gross_amount ?? "") : "",
   );
   const [commission, setCommission] = useState(
     editing?.kind === "opening" || editing?.kind === "dividend"
@@ -251,16 +292,48 @@ function OperationForm({
   );
   const [description, setDescription] = useState(editing?.description ?? "");
 
-  const gross =
-    priceMode === "unit"
-      ? Number(quantity || 0) * Number(unitPrice || 0)
-      : Number(totalAmount || 0);
+  const num = (value: string): number | null => {
+    if (value.trim() === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const qtyValue = num(quantity);
+  const priceValue = num(unitPrice);
+  const totalValue = num(totalAmount);
+  const providedCount = [qtyValue, priceValue, totalValue].filter(
+    (value) => value !== null,
+  ).length;
+
+  let pairError: string | null = null;
+  let derivedLabel = "";
+  let derivedValue = "";
+  let grossValue = 0;
+  if (providedCount === 3) {
+    pairError = "Inserisci solo due valori su tre.";
+  } else if (providedCount < 2) {
+    pairError = "Inserisci due valori tra quantità, prezzo unitario e totale.";
+  } else if (qtyValue !== null && priceValue !== null) {
+    grossValue = qtyValue * priceValue;
+    derivedLabel = "Totale";
+    derivedValue = money(String(grossValue));
+  } else if (qtyValue !== null && totalValue !== null) {
+    grossValue = totalValue;
+    derivedLabel = "Prezzo";
+    derivedValue =
+      qtyValue > 0 ? formatQuantity(String(totalValue / qtyValue)) : "—";
+  } else if (priceValue !== null && totalValue !== null) {
+    grossValue = totalValue;
+    derivedLabel = "Quantità";
+    derivedValue =
+      priceValue > 0 ? formatQuantity(String(totalValue / priceValue)) : "—";
+  }
   const fee = kind === "buy" || kind === "sell" ? Number(commission || 0) : 0;
   const previewTotal =
-    kind === "buy" ? gross + fee : kind === "sell" ? gross - fee : gross;
+    kind === "buy" ? grossValue + fee : kind === "sell" ? grossValue - fee : grossValue;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (kind !== "dividend" && pairError) return;
     const payload: InvestmentOperationPayload = {
       kind,
       date,
@@ -268,14 +341,11 @@ function OperationForm({
     };
     if (kind === "dividend") {
       payload.amount = amount;
-    } else if (kind === "opening") {
-      payload.quantity = quantity;
-      payload.total_amount = totalAmount;
     } else {
-      payload.quantity = quantity;
-      payload.commission = commission || "0";
-      if (priceMode === "unit") payload.unit_price = unitPrice;
-      else payload.total_amount = totalAmount;
+      if (qtyValue !== null) payload.quantity = quantity;
+      if (priceValue !== null) payload.unit_price = unitPrice;
+      if (totalValue !== null) payload.total_amount = totalAmount;
+      if (kind !== "opening") payload.commission = commission || "0";
     }
     await onSubmit(payload);
   }
@@ -305,73 +375,38 @@ function OperationForm({
             />
           </label>
         ) : (
-          <label>
-            Quantità
-            <input
-              type="number"
-              step="any"
-              min="0"
-              value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
-              required
-            />
-          </label>
-        )}
-      </div>
-
-      {kind !== "dividend" && (
-        <>
-          {kind === "opening" ? (
+          <>
             <label>
-              Costo totale
+              Quantità
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </label>
+            <label>
+              Prezzo unitario
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={unitPrice}
+                onChange={(event) => setUnitPrice(event.target.value)}
+              />
+            </label>
+            <label>
+              Controvalore totale
               <input
                 type="number"
                 step="0.01"
-                min="0.01"
+                min="0"
                 value={totalAmount}
                 onChange={(event) => setTotalAmount(event.target.value)}
-                required
               />
             </label>
-          ) : (
-            <div className="form-grid">
-              <label>
-                Inserisci
-                <select
-                  value={priceMode}
-                  onChange={(event) =>
-                    setPriceMode(event.target.value as "unit" | "total")
-                  }
-                >
-                  <option value="unit">Prezzo unitario</option>
-                  <option value="total">Controvalore totale</option>
-                </select>
-              </label>
-              {priceMode === "unit" ? (
-                <label>
-                  Prezzo unitario
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={unitPrice}
-                    onChange={(event) => setUnitPrice(event.target.value)}
-                    required
-                  />
-                </label>
-              ) : (
-                <label>
-                  Controvalore totale
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={totalAmount}
-                    onChange={(event) => setTotalAmount(event.target.value)}
-                    required
-                  />
-                </label>
-              )}
+            {kind !== "opening" && (
               <label>
                 Commissione
                 <input
@@ -382,10 +417,23 @@ function OperationForm({
                   onChange={(event) => setCommission(event.target.value)}
                 />
               </label>
-            </div>
-          )}
+            )}
+          </>
+        )}
+      </div>
+
+      {kind !== "dividend" &&
+        (pairError ? (
+          <p className="error">{pairError}</p>
+        ) : (
           <p className="operation-preview">
-            Totale: <strong>{money(previewTotal)}</strong>
+            Totale: <strong>{money(String(previewTotal))}</strong>
+            <span className="muted small">
+              {" "}
+              · {derivedLabel}{" "}
+              {derivedLabel === "Quantità" ? "calcolata" : "calcolato"}:{" "}
+              {derivedValue}
+            </span>
             {kind === "buy" && (
               <span className="muted small"> · esce dal conto</span>
             )}
@@ -393,8 +441,7 @@ function OperationForm({
               <span className="muted small"> · entra nel conto</span>
             )}
           </p>
-        </>
-      )}
+        ))}
 
       <label>
         Descrizione (opzionale)
@@ -406,7 +453,7 @@ function OperationForm({
       </label>
 
       <div className="actions">
-        <button type="submit" disabled={busy}>
+        <button type="submit" disabled={busy || (kind !== "dividend" && Boolean(pairError))}>
           {busy ? "Salvataggio…" : editing ? "Salva operazione" : "Registra"}
         </button>
         <button
@@ -650,8 +697,6 @@ function PositionDetail({
     }
   }
 
-  const status = positionStatus(position);
-
   return (
     <section className="card" id="position-detail">
       <div className="card-heading">
@@ -659,8 +704,13 @@ function PositionDetail({
           <h2>{position.name}</h2>
           <p className="muted small">
             {position.category_label || "Senza categoria"}
-            {position.identifier ? ` · ${position.identifier}` : ""} ·{" "}
-            <span className={`badge ${status.className}`}>{status.label}</span>
+            {position.identifier ? ` · ${position.identifier}` : ""}
+            {position.archived && (
+              <>
+                {" "}
+                · <span className="badge disabled">Archiviata</span>
+              </>
+            )}
           </p>
         </div>
         <div className="actions">
@@ -800,9 +850,6 @@ function PositionDetail({
               />
             </label>
           </div>
-          <p className="muted small">
-            Aggiornando il prezzo, la data del prezzo diventa oggi.
-          </p>
           <div className="actions">
             <button type="submit" disabled={busy}>
               {busy ? "Salvataggio…" : "Salva posizione"}
@@ -852,10 +899,6 @@ function PositionDetail({
               {operationForm.editing ? "Modifica" : "Nuova"}{" "}
               {KINDS.find((option) => option.value === operationForm.kind)?.label}
             </h3>
-            <span className="muted small">
-              Il tipo di operazione non è modificabile: per cambiarlo elimina e
-              ricrea l&apos;operazione.
-            </span>
           </div>
           <OperationForm
             key={`${operationForm.kind}-${operationForm.editing?.id ?? "new"}`}
@@ -868,97 +911,87 @@ function PositionDetail({
         </div>
       )}
 
-      <div className="table-wrap">
-        <table className="position-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Tipo</th>
-              <th>Quantità</th>
-              <th>Prezzo</th>
-              <th>Commissione</th>
-              <th>Cassa</th>
-              <th>Costo rimosso</th>
-              <th>Plusvalenza</th>
-              <th>Descrizione</th>
-              <th>Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {operations.length === 0 && (
-              <tr>
-                <td colSpan={10} className="muted">
-                  {loadingDetail
-                    ? "Caricamento operazioni…"
-                    : "Nessuna operazione registrata."}
-                </td>
-              </tr>
-            )}
-            {operations.map((operation) => (
-              <tr key={operation.id}>
-                <td>{prettyDate(operation.date)}</td>
-                <td>{operation.kind_label}</td>
-                <td>{formatQuantity(operation.quantity)}</td>
-                <td>
-                  {operation.unit_price === null
-                    ? "—"
-                    : money(operation.unit_price)}
-                </td>
-                <td>
-                  {operation.kind === "dividend" || operation.kind === "opening"
-                    ? "—"
-                    : money(operation.commission)}
-                </td>
-                <td>
-                  {operation.kind === "opening"
-                    ? "—"
-                    : signedMoney(
-                        operation.kind === "buy"
-                          ? -Number(operation.cash_amount)
-                          : operation.cash_amount,
-                      )}
-                </td>
-                <td>
-                  {operation.kind === "sell"
-                    ? money(operation.cost_removed)
-                    : "—"}
-                </td>
-                <td>
-                  {operation.kind === "sell"
-                    ? signedMoney(operation.realized_gain)
-                    : "—"}
-                </td>
-                <td>{operation.description}</td>
-                <td>
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() =>
-                        setOperationForm({
-                          kind: operation.kind,
-                          editing: operation,
-                        })
-                      }
-                      disabled={busy || archived}
-                    >
-                      Modifica
-                    </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() => setConfirmDeleteOperation(operation)}
-                      disabled={busy}
-                    >
-                      Elimina
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="detail-ops-head">
+        <h3>Operazioni ({operations.length})</h3>
       </div>
+      {loadingDetail ? (
+        <p className="muted">Caricamento operazioni…</p>
+      ) : operations.length === 0 ? (
+        <p className="muted">Nessuna operazione registrata.</p>
+      ) : (
+        <ul className="entity-list operation-list">
+          {operations.map((operation) => {
+            const details: string[] = [];
+            const quantity =
+              operation.quantity === null
+                ? ""
+                : `${formatQuantity(operation.quantity)} quote`;
+            const price =
+              operation.unit_price === null
+                ? ""
+                : `a ${money(operation.unit_price)}`;
+            if (quantity || price) {
+              details.push([quantity, price].filter(Boolean).join(" "));
+            }
+            if (operation.kind === "buy" || operation.kind === "sell") {
+              details.push(`commissione ${money(operation.commission)}`);
+            }
+            if (operation.description) details.push(operation.description);
+            const cash =
+              operation.kind === "opening"
+                ? null
+                : operation.kind === "buy"
+                  ? -Number(operation.cash_amount)
+                  : Number(operation.cash_amount);
+            return (
+              <li className="operation-row" key={operation.id}>
+                <div className="operation-main">
+                  <strong>
+                    {operation.kind_label} · {prettyDate(operation.date)}
+                  </strong>
+                  {details.length > 0 && (
+                    <span className="muted small">{details.join(" · ")}</span>
+                  )}
+                  {operation.kind === "sell" && (
+                    <span className="muted small">
+                      Costo rimosso {money(operation.cost_removed)} · plusvalenza{" "}
+                      {signedMoney(operation.realized_gain)}
+                    </span>
+                  )}
+                </div>
+                {cash !== null && (
+                  <span className={cash < 0 ? "negative" : "positive"}>
+                    {signedMoney(cash.toFixed(2))}
+                  </span>
+                )}
+                <span className="position-actions">
+                  <button
+                    type="button"
+                    className="secondary small-button"
+                    onClick={() =>
+                      setOperationForm({
+                        kind: operation.kind,
+                        editing: operation,
+                      })
+                    }
+                    disabled={busy || archived}
+                  >
+                    Modifica
+                  </button>
+                  <button
+                    type="button"
+                    className="danger small-button"
+                    onClick={() => setConfirmDeleteOperation(operation)}
+                    disabled={busy}
+                  >
+                    Elimina
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {confirmDeletePosition && (
         <ConfirmModal
           title={`Eliminare la posizione «${position.name}»?`}
@@ -991,9 +1024,10 @@ function PositionDetail({
 export function InvestmentsPage() {
   const [portfolio, setPortfolio] = useState<InvestmentPortfolio | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountChoice, setAccountChoice] = useState("");
+  const [savings, setSavings] = useState<SavingsAccount[]>([]);
+  const [sourceChoice, setSourceChoice] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -1001,12 +1035,14 @@ export function InvestmentsPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [portfolioData, accountsData] = await Promise.all([
+    const [portfolioData, accountsData, savingsData] = await Promise.all([
       api.investments(),
       api.accounts(),
+      api.savings(),
     ]);
     setPortfolio(portfolioData);
     setAccounts(accountsData.accounts);
+    setSavings(savingsData.savings);
   }, []);
 
   useEffect(() => {
@@ -1029,12 +1065,17 @@ export function InvestmentsPage() {
   }, [refresh]);
 
   useEffect(() => {
-    setAccountChoice(
-      portfolio?.investment_account
-        ? String(portfolio.investment_account.id)
-        : "",
-    );
-  }, [portfolio?.investment_account?.id]);
+    if (portfolio?.investment_savings) {
+      setSourceChoice(`savings:${portfolio.investment_savings.id}`);
+    } else if (portfolio?.investment_account) {
+      setSourceChoice(`account:${portfolio.investment_account.id}`);
+    } else {
+      setSourceChoice("");
+    }
+  }, [
+    portfolio?.investment_account?.id,
+    portfolio?.investment_savings?.id,
+  ]);
 
   useEffect(() => {
     if (
@@ -1046,7 +1087,22 @@ export function InvestmentsPage() {
     }
   }, [portfolio, selectedId]);
 
-  async function reload() {
+  useEffect(() => {
+    if (selectedId === null && !archiveOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedId(null);
+        setArchiveOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [selectedId, archiveOpen]);  async function reload() {
     try {
       await refresh();
     } catch (err) {
@@ -1060,10 +1116,12 @@ export function InvestmentsPage() {
     setError(null);
     setMessage(null);
     try {
-      await api.setInvestmentAccount(
-        accountChoice ? Number(accountChoice) : null,
+      const [kind, rawId] = sourceChoice.split(":");
+      const id = rawId ? Number(rawId) : null;
+      await api.setInvestmentSource(
+        kind === "savings" ? { savings: id } : { account: id },
       );
-      setMessage("Conto investimenti aggiornato.");
+      setMessage("Fonte degli investimenti aggiornata.");
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Salvataggio non riuscito.");
@@ -1093,20 +1151,6 @@ export function InvestmentsPage() {
     }
   }
 
-  async function exportCsv() {
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await api.exportInvestments();
-      setMessage("Export investimenti scaricato.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Export non riuscito.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (loading) return <LoadingScreen />;
 
   const summary = portfolio?.summary ?? null;
@@ -1117,7 +1161,10 @@ export function InvestmentsPage() {
       (investmentAccount !== null && account.id === investmentAccount.id),
   );
   const visiblePositions = (portfolio?.positions ?? []).filter(
-    (position) => showArchived || !position.archived,
+    (position) => !position.archived,
+  );
+  const archivedPositions = (portfolio?.positions ?? []).filter(
+    (position) => position.archived,
   );
   const selectedPosition =
     portfolio?.positions.find((position) => position.id === selectedId) ?? null;
@@ -1132,63 +1179,15 @@ export function InvestmentsPage() {
         <div className="actions">
           <button
             type="button"
-            className="secondary"
-            onClick={() => void exportCsv()}
-            disabled={busy}
-          >
-            Esporta CSV investimenti (ZIP)
-          </button>
-          <button
-            type="button"
             onClick={() => setShowNew((value) => !value)}
             disabled={busy}
           >
             {showNew ? "Chiudi" : "Nuova posizione"}
           </button>
-        </div>
-      </section>
+        </div>      </section>
 
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
-
-      <section className="card">
-        <div className="card-heading">
-          <h2>Conto investimenti</h2>
-          {investmentAccount && (
-            <span className="badge ok">{investmentAccount.name}</span>
-          )}
-        </div>
-        <form className="investment-account" onSubmit={saveAccount}>
-          <label>
-            Conto usato per acquisti, vendite e dividendi
-            <select
-              value={accountChoice}
-              onChange={(event) => setAccountChoice(event.target.value)}
-            >
-              <option value="">Nessun conto</option>
-              {activeAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" disabled={busy}>
-            Salva
-          </button>
-        </form>
-        {!investmentAccount && (
-          <p className="notice warning">
-            Scegli un conto per registrare acquisti, vendite e dividendi. Senza
-            conto queste operazioni sono bloccate, ma puoi comunque aprire
-            posizioni già possedute.
-          </p>
-        )}
-        <p className="muted small">
-          Il conto è personale e può essere cambiato: le operazioni già
-          registrate restano sul conto usato allora.
-        </p>
-      </section>
 
       {showNew && (
         <section className="card">
@@ -1202,35 +1201,43 @@ export function InvestmentsPage() {
       )}
 
       {summary && (
-        <section className="stat-grid">
-          <div className="stat card">
-            <span className="stat-label">Costo investito</span>
-            <strong>{money(summary.total_cost)}</strong>
-          </div>
-          <div className="stat card">
+        <section className="card invest-summary">
+          <div className="invest-summary-main">
             <span className="stat-label">Valore corrente</span>
-            <strong>{money(summary.total_value)}</strong>
-            <span className="muted small">solo posizioni con prezzo</span>
+            <strong className="dash-big">{money(summary.total_value)}</strong>
+            <span className="muted small">
+              Costo investito {money(summary.total_cost)}
+            </span>
           </div>
-          <div className="stat card">
-            <span className="stat-label">Plusvalenza non realizzata</span>
-            <strong className={Number(summary.total_unrealized) < 0 ? "negative" : "positive"}>
-              {signedMoney(summary.total_unrealized)}
-            </strong>
-          </div>
-          <div className="stat card">
-            <span className="stat-label">Plusvalenze realizzate</span>
-            <strong className={Number(summary.realized_gain) < 0 ? "negative" : "positive"}>
-              {signedMoney(summary.realized_gain)}
-            </strong>
-          </div>
-          <div className="stat card">
-            <span className="stat-label">Dividendi incassati</span>
-            <strong>{money(summary.dividends)}</strong>
-          </div>
-          <div className="stat card">
-            <span className="stat-label">Posizioni senza prezzo</span>
-            <strong>{summary.positions_without_price}</strong>
+          <div className="invest-summary-side">
+            <div>
+              <span>Plusvalenza non realizzata</span>
+              <strong
+                className={
+                  Number(summary.total_unrealized) < 0 ? "negative" : "positive"
+                }
+              >
+                {signedMoney(summary.total_unrealized)}
+              </strong>
+            </div>
+            <div>
+              <span>Plusvalenze realizzate</span>
+              <strong
+                className={
+                  Number(summary.realized_gain) < 0 ? "negative" : "positive"
+                }
+              >
+                {signedMoney(summary.realized_gain)}
+              </strong>
+            </div>
+            <div>
+              <span>Dividendi incassati</span>
+              <strong>{money(summary.dividends)}</strong>
+            </div>
+            <div>
+              <span>Posizioni senza prezzo</span>
+              <strong>{summary.positions_without_price}</strong>
+            </div>
           </div>
         </section>
       )}
@@ -1238,115 +1245,222 @@ export function InvestmentsPage() {
       <section className="card">
         <div className="card-heading">
           <h2>Posizioni ({visiblePositions.length})</h2>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => setShowArchived(event.target.checked)}
-            />
-            Mostra archiviate
-          </label>
+          {archivedPositions.length > 0 && (
+            <button
+              type="button"
+              className="icon-button"
+              title="Posizioni archiviate"
+              aria-label="Posizioni archiviate"
+              onClick={() => setArchiveOpen(true)}
+            >
+              <Archive size={16} aria-hidden="true" />
+            </button>
+          )}
         </div>
         {visiblePositions.length === 0 ? (
           <p className="muted">
             {portfolio?.positions.length
-              ? "Nessuna posizione da mostrare con questo filtro."
+              ? "Nessuna posizione attiva."
               : "Nessuna posizione: crea la prima con “Nuova posizione”."}
           </p>
         ) : (
-          <div className="table-wrap">
-            <table className="position-table">
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Categoria</th>
-                  <th>Quantità</th>
-                  <th>Costo medio</th>
-                  <th>Costo residuo</th>
-                  <th>Prezzo corrente</th>
-                  <th>Valore corrente</th>
-                  <th>Plusvalenza</th>
-                  <th>Stato</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visiblePositions.map((position) => {
-                  const status = positionStatus(position);
-                  return (
-                    <tr
-                      key={position.id}
-                      className={position.id === selectedId ? "selected" : ""}
-                    >
-                      <td>
-                        <strong>{position.name}</strong>
-                        {position.identifier && (
-                          <span className="muted small">
-                            {" "}
-                            · {position.identifier}
-                          </span>
-                        )}
-                      </td>
-                      <td>{position.category_label || "—"}</td>
-                      <td>{formatQuantity(position.quantity)}</td>
-                      <td>{money(position.average_cost)}</td>
-                      <td>{money(position.cost)}</td>
-                      <td>
-                        {priceText(position.current_price)}
-                        {position.price_updated_on && (
-                          <span className="muted small">
-                            {" "}
-                            · {prettyDate(position.price_updated_on)}
-                          </span>
-                        )}
-                      </td>
-                      <td>{priceText(position.current_value)}</td>
-                      <td
-                        className={
-                          position.unrealized_gain === null
-                            ? ""
-                            : Number(position.unrealized_gain) < 0
-                              ? "negative"
-                              : "positive"
-                        }
-                      >
-                        {position.unrealized_gain === null
-                          ? "—"
-                          : signedMoney(position.unrealized_gain)}
-                      </td>
-                      <td>
-                        <span className={`badge ${status.className}`}>
-                          {status.label}
+          <ul className="entity-list position-list">
+            {visiblePositions.map((position) => {
+              return (
+                <li
+                  key={position.id}
+                  className={
+                    position.id === selectedId ? "position-row selected" : "position-row"
+                  }
+                >
+                  <div className="position-main">
+                    <strong>
+                      {position.name}
+                      {position.identifier && (
+                        <span className="muted small">
+                          {" "}· {position.identifier}
                         </span>
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => setSelectedId(position.id)}
-                        >
-                          Apri
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                    </strong>
+                    <span className="muted small">
+                      {position.category_label || "Senza categoria"} ·{" "}
+                      {formatQuantity(position.quantity)} quote · costo medio{" "}
+                      {money(position.average_cost)}
+                    </span>
+                    <span className="muted small">
+                      Costo residuo {money(position.cost)} · prezzo{" "}
+                      {priceText(position.current_price)}
+                      {position.price_updated_on
+                        ? ` (${prettyDate(position.price_updated_on)})`
+                        : ""}
+                    </span>
+                  </div>
+                  <div className="position-values">
+                    <span className="position-total">
+                      {priceText(position.current_value)}
+                    </span>
+                    <span
+                      className={
+                        position.unrealized_gain === null
+                          ? "muted small"
+                          : Number(position.unrealized_gain) < 0
+                            ? "negative small"
+                            : "positive small"
+                      }
+                    >
+                      {position.unrealized_gain === null
+                        ? "senza prezzo"
+                        : signedMoney(position.unrealized_gain)}
+                    </span>
+                  </div>
+                  <span className="position-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setSelectedId(position.id)}
+                    >
+                      Apri
+                    </button>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 
+      <details className="card invest-source">
+        <summary>
+          <span className="invest-source-label">
+            <span className="stat-label">Fonte investimenti</span>
+            <strong>
+              {investmentAccount?.name ??
+                portfolio?.investment_savings?.name ??
+                "Nessuna"}
+            </strong>
+          </span>
+          <span className="muted small">Modifica</span>
+        </summary>
+        <form className="investment-account" onSubmit={saveAccount}>
+          <label>
+            Conto o salvadanaio
+            <select
+              value={sourceChoice}
+              onChange={(event) => setSourceChoice(event.target.value)}
+            >
+              <option value="">Nessuna fonte</option>
+              <optgroup label="Conti">
+                {activeAccounts.map((account) => (
+                  <option
+                    key={`account-${account.id}`}
+                    value={`account:${account.id}`}
+                  >
+                    {account.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Salvadanai">
+                {savings.map((item) => (
+                  <option
+                    key={`savings-${item.id}`}
+                    value={`savings:${item.id}`}
+                  >
+                    {item.name} · appoggio {item.backing_account_name}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+          <button type="submit" disabled={busy}>
+            Salva
+          </button>
+        </form>
+        {!investmentAccount && !portfolio?.investment_savings && (
+          <p className="notice warning">
+            Scegli un conto o un salvadanaio per registrare acquisti, vendite e
+            dividendi.
+          </p>
+        )}
+      </details>
+
       {selectedPosition && (
-        <PositionDetail
-          key={selectedPosition.id}
-          position={selectedPosition}
-          onChanged={reload}
-          onDeleted={async () => {
-            setSelectedId(null);
-            await reload();
-          }}
-        />
+        <div className="modal-backdrop" onClick={() => setSelectedId(null)}>
+          <div
+            className="modal modal-wide position-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={selectedPosition.name}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modal-close position-modal-close"
+              aria-label="Chiudi dettaglio"
+              onClick={() => setSelectedId(null)}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+            <PositionDetail
+              key={selectedPosition.id}
+              position={selectedPosition}
+              onChanged={reload}
+              onDeleted={async () => {
+                setSelectedId(null);
+                await reload();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {archiveOpen && (
+        <div className="modal-backdrop" onClick={() => setArchiveOpen(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Posizioni archiviate"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="card-heading">
+              <h2>Posizioni archiviate</h2>
+              <button
+                type="button"
+                className="modal-close"
+                aria-label="Chiudi archivio"
+                onClick={() => setArchiveOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            <ul className="entity-list">
+              {archivedPositions.map((position) => (
+                <li key={position.id}>
+                  <div>
+                    <strong>{position.name}</strong>
+                    <span className="muted small">
+                      {" "}
+                      · {position.category_label || "Senza categoria"}
+                      {position.identifier ? ` · ${position.identifier}` : ""}
+                    </span>
+                  </div>
+                  <span className="position-actions">
+                    <button
+                      type="button"
+                      className="secondary small-button"
+                      onClick={() => {
+                        setArchiveOpen(false);
+                        setSelectedId(position.id);
+                      }}
+                    >
+                      Apri
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
     </div>
   );

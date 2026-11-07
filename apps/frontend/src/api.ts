@@ -4,6 +4,11 @@ export interface User {
   id: number;
   email: string | null;
   username: string | null;
+  first_name: string;
+  last_name: string;
+  display_name: string;
+  has_avatar: boolean;
+  avatar_updated_at: string | null;
   status: UserStatus;
   is_global_admin: boolean;
   date_joined: string;
@@ -30,7 +35,7 @@ export interface Settings {
 export interface FinanceProfile {
   id: number;
   display_name: string;
-  theme: "dark" | "light";
+  theme: "dark" | "light" | "system";
   created_at: string;
 }
 
@@ -91,6 +96,10 @@ export interface Account {
   currency: string;
   archived: boolean;
   balance: string;
+  /** Solo nella dashboard: variazione del conto nel periodo scelto. */
+  period_balance?: string;
+  /** Solo nella dashboard: saldo attuale + salvadanai collegati. */
+  total_with_savings?: string;
   created_at: string;
   updated_at: string;
 }
@@ -358,6 +367,7 @@ export interface InvestmentOperation {
 
 export interface InvestmentPortfolio {
   investment_account: Account | null;
+  investment_savings: SavingsAccount | null;
   summary: InvestmentSummary;
   positions: InvestmentPosition[];
 }
@@ -370,7 +380,7 @@ export interface InvestmentPositionDetail {
 
 export interface InvestmentOpeningPayload {
   date: string;
-  quantity: string;
+  quantity?: string;
   unit_price?: string;
   total_cost?: string;
   total_amount?: string;
@@ -702,17 +712,44 @@ export const api = {
 
   profile: () => request<FinanceProfile>("/api/finance/profile/"),
 
-  updateTheme: (theme: "dark" | "light") =>
+  updateTheme: (theme: "dark" | "light" | "system") =>
     request<FinanceProfile>("/api/finance/profile/", {
       method: "PATCH",
       body: JSON.stringify({ theme }),
     }),
 
-  updateEmail: (email: string) =>
+  updateProfile: (data: {
+    email?: string;
+    username?: string;
+    first_name?: string;
+    last_name?: string;
+  }) =>
     request<{ user: User }>("/api/auth/me/", {
       method: "PATCH",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify(data),
     }),
+
+  changePassword: (data: {
+    current_password: string;
+    new_password: string;
+    new_password_confirm: string;
+  }) =>
+    request<{ detail: string }>("/api/auth/password/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  uploadAvatar: (file: File) => {
+    const body = new FormData();
+    body.append("avatar", file);
+    return request<{ user: User }>("/api/auth/avatar/", {
+      method: "POST",
+      body,
+    });
+  },
+
+  deleteAvatar: () =>
+    request<{ user: User }>("/api/auth/avatar/", { method: "DELETE" }),
 
   register: (email: string, password: string, passwordConfirm: string) =>
     request<RegisterResult>("/api/auth/register/", {
@@ -830,14 +867,17 @@ export const api = {
   deleteInvestmentPosition: (id: number) =>
     request<void>(`/api/finance/investments/${id}/`, { method: "DELETE" }),
 
-  setInvestmentAccount: (account: number | null) =>
-    request<{ investment_account: Account | null }>(
-      "/api/finance/investments/account/",
-      {
-        method: "PUT",
-        body: JSON.stringify({ account }),
-      },
-    ),
+  setInvestmentSource: (source: {
+    account?: number | null;
+    savings?: number | null;
+  }) =>
+    request<{
+      investment_account: Account | null;
+      investment_savings: SavingsAccount | null;
+    }>("/api/finance/investments/account/", {
+      method: "PUT",
+      body: JSON.stringify(source),
+    }),
 
   createInvestmentOperation: (
     positionId: number,
@@ -1022,6 +1062,12 @@ export const api = {
 
   deleteTag: (id: number) =>
     request<void>(`/api/finance/tags/${id}/`, { method: "DELETE" }),
+
+  updateTag: (id: number, name: string) =>
+    request<Tag>(`/api/finance/tags/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
 
   trash: (type?: TrashType) =>
     request<{ items: TrashItem[]; count: number }>(

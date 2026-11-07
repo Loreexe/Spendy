@@ -104,20 +104,29 @@ function SavingsCard({
   }
 
   return (
-    <li className="entity-card">
-      <div className="entity-card-head">
-        <div>
-          <strong>{savings.name}</strong>
-          <span className="muted small">
-            {" "}
-            · appoggio {savings.backing_account_name}
-          </span>
-        </div>
-        <span className={`money ${amountClass(savings.balance)}`}>
+    <li className="account-row">
+      <div className="account-line">
+        <strong>{savings.name}</strong>
+        <span className={`money tnum ${amountClass(savings.balance)}`}>
           {money(savings.balance)}
         </span>
       </div>
-      <form onSubmit={operate} className="inline-form">
+      <div className="account-line">
+        <span className="muted small">
+          appoggio {savings.backing_account_name}
+        </span>
+        <span className="actions">
+          <button
+            type="button"
+            className="danger"
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+          >
+            Elimina
+          </button>
+        </span>
+      </div>
+      <form onSubmit={operate} className="inline-form savings-operate">
         <select
           value={direction}
           onChange={(event) => setDirection(event.target.value as "in" | "out")}
@@ -147,14 +156,6 @@ function SavingsCard({
         />
         <button type="submit" disabled={busy}>
           Registra
-        </button>
-        <button
-          type="button"
-          className="danger"
-          onClick={() => setConfirming(true)}
-          disabled={busy}
-        >
-          Elimina
         </button>
       </form>
       {confirming && (
@@ -243,7 +244,7 @@ export function SavingsPage() {
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
-      <div className="two-columns">
+      <div className="two-columns matched">
         <section className="card">
           <h2>Nuovo salvadanaio</h2>
           {accounts.length === 0 ? (
@@ -275,9 +276,6 @@ export function SavingsPage() {
                   ))}
                 </select>
               </label>
-              <p className="muted small">
-                Il conto di appoggio non è modificabile in questa versione.
-              </p>
               <button type="submit" disabled={busy}>
                 {busy ? "Creazione…" : "Crea salvadanaio"}
               </button>
@@ -285,7 +283,7 @@ export function SavingsPage() {
           )}
         </section>
 
-        <section className="card">
+        <section className="card scroll-list">
           <h2>I tuoi salvadanai ({savings.length})</h2>
           {savings.length === 0 ? (
             <p className="muted">Nessun salvadanaio creato.</p>
