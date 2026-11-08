@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,8 +58,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.model.CategoryTotal
 import com.loreexe.spendy.data.model.DashboardData
@@ -108,7 +110,6 @@ fun MainScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var selected by rememberSaveable { mutableIntStateOf(0) }
     val tabs = listOf(
         MainTab(R.string.nav_dashboard) { Icon(Icons.Outlined.Dashboard, contentDescription = null) },
         MainTab(R.string.nav_movements) { Icon(Icons.AutoMirrored.Outlined.ReceiptLong, contentDescription = null) },
@@ -116,6 +117,8 @@ fun MainScreen(
         MainTab(R.string.nav_investments) { Icon(Icons.AutoMirrored.Outlined.TrendingUp, contentDescription = null) },
         MainTab(R.string.nav_more) { Icon(Icons.Outlined.MoreHoriz, contentDescription = null) },
     )
+    val pagerState = rememberPagerState(pageCount = { tabs.size })
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -151,8 +154,10 @@ fun MainScreen(
             ) {
                 tabs.forEachIndexed { index, tab ->
                     NavigationBarItem(
-                        selected = selected == index,
-                        onClick = { selected = index },
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            scope.launch { pagerState.animateScrollToPage(index) }
+                        },
                         icon = tab.icon,
                         label = {
                             Text(
@@ -171,38 +176,46 @@ fun MainScreen(
             }
         },
     ) { padding ->
-        when (selected) {
-            0 -> DashboardContent(
-                state = state,
-                onRetry = viewModel::load,
-                onOpenAccounts = onAccounts,
-                onOpenMovements = { selected = 1 },
-                modifier = Modifier.padding(padding),
-            )
-            1 -> MovementsScreen(
-                onBack = null,
-                showTopBar = false,
-                modifier = Modifier.padding(padding),
-            )
-            2 -> SavingsScreen(
-                showTopBar = false,
-                modifier = Modifier.padding(padding),
-            )
-            3 -> InvestmentsScreen(
-                showTopBar = false,
-                modifier = Modifier.padding(padding),
-            )
-            4 -> MoreContent(
-                onAccounts = onAccounts,
-                onCategories = onCategories,
-                onSearch = onSearch,
-                onAutomations = onAutomations,
-                onTrash = onTrash,
-                onData = onData,
-                onProfile = onProfile,
-                onSettings = onSettings,
-                modifier = Modifier.padding(padding),
-            )
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize().padding(padding),
+            beyondViewportPageCount = 1,
+        ) { page ->
+            when (page) {
+                0 -> DashboardContent(
+                    state = state,
+                    onRetry = viewModel::load,
+                    onOpenAccounts = onAccounts,
+                    onOpenMovements = {
+                        scope.launch { pagerState.animateScrollToPage(1) }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                1 -> MovementsScreen(
+                    onBack = null,
+                    showTopBar = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                2 -> SavingsScreen(
+                    showTopBar = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                3 -> InvestmentsScreen(
+                    showTopBar = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                4 -> MoreContent(
+                    onAccounts = onAccounts,
+                    onCategories = onCategories,
+                    onSearch = onSearch,
+                    onAutomations = onAutomations,
+                    onTrash = onTrash,
+                    onData = onData,
+                    onProfile = onProfile,
+                    onSettings = onSettings,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
