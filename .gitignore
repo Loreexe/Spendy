@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 *.sqlite3
+*.sqlite3.bak.*
 staticfiles/
 
 # Node
@@ -35,4 +36,5 @@ AGENTS.md
 
 # Demo locale: snapshot del database (mai in Git)
 demo/*.sqlite3
+*.sqlite3.bak.*
 demo/*.sqlite3-*
