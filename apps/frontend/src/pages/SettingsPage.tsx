@@ -3,6 +3,7 @@ import { Monitor, Moon, Search, Sun, X } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { applyTheme, type Theme } from "../theme";
+import { DevicesSection } from "../components/DevicesSection";
 import { ImportExportSection } from "../components/ImportExportSection";
 
 function matches(query: string, keywords: string): boolean {
@@ -98,7 +99,11 @@ export function SettingsPage() {
     query,
     "import export esporta ripristina archivio csv backup importa movimenti zip",
   );
-  const nothing = !appearance && !data;
+  const devices = matches(
+    query,
+    "dispositivi device qr pairing token revoca accesso telefono",
+  );
+  const nothing = !appearance && !data && !devices;
 
   return (
     <div className="stack-page profile-page">
@@ -130,6 +135,8 @@ export function SettingsPage() {
       </section>
 
       {!user.is_global_admin && <AppearanceSection query={query} />}
+
+      {!user.is_global_admin && <DevicesSection query={query} />}
 
       {!user.is_global_admin && <ImportExportSection query={query} />}
 

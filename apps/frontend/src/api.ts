@@ -14,6 +14,45 @@ export interface User {
   date_joined: string;
 }
 
+
+export interface DeviceToken {
+  id: number;
+  name: string;
+  platform: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  is_current: boolean;
+}
+
+export type PairingStatus =
+  | "pending"
+  | "claimed"
+  | "approved"
+  | "consumed"
+  | "rejected"
+  | "expired";
+
+export interface DevicePairing {
+  id: string;
+  status: PairingStatus;
+  created_at: string;
+  expires_at: string;
+  new_device_name: string;
+  new_device_platform: string;
+  claimed_at: string | null;
+  approved_at: string | null;
+  consumed_at: string | null;
+}
+
+export interface PairingCreated {
+  pairing: DevicePairing;
+  code: string;
+  server_url: string;
+  qr_payload: string;
+}
+
 export interface SetupStatus {
   setup_required: boolean;
   can_setup: boolean;
@@ -709,6 +748,36 @@ export const api = {
     request<{ detail: string }>("/api/auth/logout/", { method: "POST" }),
 
   me: () => request<{ user: User | null }>("/api/auth/me/"),
+
+  devices: () => request<{ devices: DeviceToken[] }>("/api/auth/devices/"),
+
+  renameDevice: (id: number, name: string) =>
+    request<DeviceToken>(`/api/auth/devices/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  revokeDevice: (id: number) =>
+    request<{ detail?: string }>(`/api/auth/devices/${id}/`, {
+      method: "DELETE",
+    }),
+
+  pairings: () =>
+    request<{ pairings: DevicePairing[] }>("/api/auth/pairings/"),
+
+  createPairing: () =>
+    request<PairingCreated>("/api/auth/pairings/", { method: "POST" }),
+
+  approvePairing: (id: string) =>
+    request<DevicePairing>(`/api/auth/pairings/${id}/approve/`, {
+      method: "POST",
+    }),
+
+  rejectPairing: (id: string) =>
+    request<DevicePairing>(`/api/auth/pairings/${id}/reject/`, {
+      method: "POST",
+    }),
+
 
   profile: () => request<FinanceProfile>("/api/finance/profile/"),
 
