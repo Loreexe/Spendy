@@ -27,7 +27,15 @@ class HealthView(APIView):
                 {"status": "error", "database": "unavailable"},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        return Response({"status": "ok", "database": "ok"})
+        return Response(
+            {
+                "status": "ok",
+                "database": "ok",
+                "service": "spendy",
+                "version": getattr(settings, "SPENDY_VERSION", "0.0.0"),
+                "api_version": "v1",
+            }
+        )
 
 
 class AdminSystemView(APIView):

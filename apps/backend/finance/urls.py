@@ -33,6 +33,7 @@ from .views import (
     ProfileView,
     SavingsAccountDetailView,
     SavingsAccountListCreateView,
+    SearchView,
     CategoryDetailView,
     CategoryListCreateView,
     SuggestCategoryView,
@@ -49,6 +50,7 @@ from .views import (
 urlpatterns = [
     path("profile/", ProfileView.as_view(), name="finance-profile"),
     path("dashboard/", DashboardView.as_view(), name="finance-dashboard"),
+    path("search/", SearchView.as_view(), name="finance-search"),
     path(
         "dashboard/series/",
         DashboardSeriesView.as_view(),

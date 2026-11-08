@@ -37,7 +37,21 @@ def money(value: Decimal) -> str:
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ("id", "display_name", "theme", "created_at")
+        fields = ("id", "uuid", "display_name", "theme", "created_at")
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ("id", "uuid", "name", "is_preset", "is_default")
+        read_only_fields = fields
+
+
+class TagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tag
+        fields = ("id", "uuid", "name")
+        read_only_fields = fields
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -48,6 +62,7 @@ class AccountSerializer(serializers.ModelSerializer):
         model = Account
         fields = (
             "id",
+            "uuid",
             "name",
             "type",
             "type_label",
@@ -113,6 +128,7 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
         model = SavingsAccount
         fields = (
             "id",
+            "uuid",
             "name",
             "backing_account",
             "backing_account_name",
@@ -164,6 +180,7 @@ class AutomationSerializer(serializers.ModelSerializer):
         model = Automation
         fields = (
             "id",
+            "uuid",
             "kind",
             "kind_label",
             "savings",
@@ -325,6 +342,7 @@ class AutomationExecutionSerializer(serializers.ModelSerializer):
         model = AutomationExecution
         fields = (
             "id",
+            "uuid",
             "automation",
             "automation_ref",
             "automation_name",
@@ -418,6 +436,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         model = Transaction
         fields = (
             "id",
+            "uuid",
             "kind",
             "kind_label",
             "date",
@@ -437,6 +456,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             return None
         return {
             "id": obj.category_id,
+            "uuid": str(obj.category.uuid),
             "name": obj.category.name,
             "is_default": obj.category.is_default,
         }
@@ -846,6 +866,7 @@ class InvestmentPositionSerializer(serializers.ModelSerializer):
         model = InvestmentPosition
         fields = (
             "id",
+            "uuid",
             "name",
             "category",
             "category_label",
@@ -917,6 +938,7 @@ class InvestmentOperationSerializer(serializers.ModelSerializer):
         model = InvestmentOperation
         fields = (
             "id",
+            "uuid",
             "position",
             "kind",
             "kind_label",

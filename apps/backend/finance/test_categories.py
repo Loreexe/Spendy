@@ -489,7 +489,7 @@ class ArchiveCategoryTests(FinanceTestBase):
         manifest_names = json.loads(
             self.unpack(self.export_bytes())["manifest.json"].decode("utf-8")
         )
-        self.assertEqual(manifest_names["schema"], 3)
+        self.assertEqual(manifest_names["schema"], 4)
 
     def test_schema2_restore_assigns_default_category(self):
         import csv as csv_module
@@ -501,6 +501,43 @@ class ArchiveCategoryTests(FinanceTestBase):
         from accounts.models import User
 
         contents = self.unpack(self.export_bytes())
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        for obsolete in (
+            "categorie.csv",
+            "tag.csv",
+            "movimento_tag.csv",
+            "automazioni.csv",
+            "esecuzioni_automazioni.csv",
+            "profilo.json",
+        ):
+            del contents[obsolete]
+            manifest["conteggi"].pop(obsolete.removesuffix(".csv"), None)
+            manifest["file"].pop(obsolete, None)
+        # Schema 2 non ha UUID: rimuove l'ultima colonna dai CSV.
+        for name in (
+            "conti.csv",
+            "salvadanai.csv",
+            "movimenti.csv",
+            "posizioni.csv",
+            "operazioni_investimenti.csv",
+        ):
+            rows = list(
+                csv_module.reader(
+                    io.StringIO(contents[name].decode("utf-8-sig")),
+                    delimiter=";",
+                )
+            )
+            stripped = [row[:-1] for row in rows]
+            buffer = io.StringIO()
+            writer = csv_module.writer(
+                buffer, delimiter=";", lineterminator="\r\n"
+            )
+            writer.writerows(stripped)
+            contents[name] = b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
+            manifest["file"][name]["sha256"] = hashlib.sha256(
+                contents[name]
+            ).hexdigest()
+            manifest["file"][name]["righe"] = len(stripped) - 1
         rows = list(
             csv_module.reader(
                 io.StringIO(contents["movimenti.csv"].decode("utf-8-sig")),
@@ -514,20 +551,7 @@ class ArchiveCategoryTests(FinanceTestBase):
         contents["movimenti.csv"] = (
             b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
         )
-        for obsolete in ("categorie.csv", "tag.csv", "movimento_tag.csv"):
-            del contents[obsolete]
-        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
         manifest["schema"] = 2
-        for obsolete in ("categorie", "tag", "movimento_tag"):
-            manifest["conteggi"].pop(obsolete, None)
-            manifest["file"].pop(
-                {
-                    "categorie": "categorie.csv",
-                    "tag": "tag.csv",
-                    "movimento_tag": "movimento_tag.csv",
-                }[obsolete],
-                None,
-            )
         manifest["file"]["movimenti.csv"]["sha256"] = hashlib.sha256(
             contents["movimenti.csv"]
         ).hexdigest()

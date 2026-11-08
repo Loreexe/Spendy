@@ -12,6 +12,8 @@ from django.urls import reverse
 from accounts.models import User
 from .models import (
     Account,
+    Automation,
+    AutomationExecution,
     InvestmentOperation,
     InvestmentPosition,
     Line,
@@ -31,6 +33,8 @@ CSV_NAMES = (
     "categorie.csv",
     "tag.csv",
     "movimento_tag.csv",
+    "automazioni.csv",
+    "esecuzioni_automazioni.csv",
 )
 
 
@@ -116,10 +120,28 @@ class ArchiveTestBase(FinanceTestBase):
             "categorie.csv",
             "tag.csv",
             "movimento_tag.csv",
+            "automazioni.csv",
+            "esecuzioni_automazioni.csv",
+            "profilo.json",
         ):
             del contents[name]
-            del manifest["file"][name]
-            del manifest["conteggi"][name[:-4]]
+            manifest["file"].pop(name, None)
+            manifest["conteggi"].pop(name[:-4], None)
+        # Rimuove la colonna UUID dallo schema 4.
+        for name in ("conti.csv", "salvadanai.csv", "movimenti.csv"):
+            rows = self.csv_rows(contents, name)
+            stripped = [row[:-1] for row in rows]
+            buffer = io.StringIO()
+            writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+            writer.writerows(stripped)
+            contents[name] = (
+                b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
+            )
+            manifest["file"][name]["sha256"] = hashlib.sha256(
+                contents[name]
+            ).hexdigest()
+            manifest["file"][name]["righe"] = len(stripped) - 1
+            manifest["conteggi"][name[:-4]] = len(stripped) - 1
         rows = self.csv_rows(contents, "movimenti.csv")
         stripped = [row[:8] for row in rows]
         buffer = io.StringIO()
@@ -284,7 +306,7 @@ class ArchiveExportTests(ArchiveTestBase):
         contents = self.unpack(response.content)
         self.assertEqual(
             set(contents),
-            set(CSV_NAMES) | {"manifest.json"},
+            set(CSV_NAMES) | {"manifest.json", "profilo.json"},
         )
         for name in CSV_NAMES:
             self.assertTrue(contents[name].startswith(b"\xef\xbb\xbf"))
@@ -311,7 +333,7 @@ class ArchiveExportTests(ArchiveTestBase):
         self.make_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 3)
+        self.assertEqual(manifest["schema"], 4)
         self.assertEqual(manifest["scopo"], "backup-profilo")
         self.assertEqual(manifest["valuta"], "EUR")
         self.assertEqual(
@@ -326,6 +348,8 @@ class ArchiveExportTests(ArchiveTestBase):
                 "categorie": 9,
                 "tag": 0,
                 "movimento_tag": 0,
+                "automazioni": 0,
+                "esecuzioni_automazioni": 0,
             },
         )
         for name in CSV_NAMES:
@@ -368,6 +392,8 @@ class ArchiveExportTests(ArchiveTestBase):
                 "categorie": 9,
                 "tag": 0,
                 "movimento_tag": 0,
+                "automazioni": 0,
+                "esecuzioni_automazioni": 0,
             },
         )
         for name in CSV_NAMES:
@@ -381,11 +407,11 @@ class ArchiveExportTests(ArchiveTestBase):
                     len(contents[name].decode("utf-8-sig").splitlines()), 1
                 )
 
-    def test_schema3_archive_contains_positions_and_operations(self):
+    def test_schema4_archive_contains_positions_and_operations(self):
         account, _ = self.make_investment_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 3)
+        self.assertEqual(manifest["schema"], 4)
         self.assertEqual(manifest["conteggi"]["posizioni"], 1)
         self.assertEqual(manifest["conteggi"]["operazioni_investimenti"], 4)
         self.assertEqual(manifest["conto_investimenti_id"], account["id"])
@@ -568,6 +594,81 @@ class ArchiveRestoreTests(ArchiveTestBase):
         self.assertEqual(restored.data["positions"], 0)
         self.assertEqual(restored.data["investment_operations"], 0)
         self.assertEqual(restored.data["patrimony_total"], "1600.00")
+
+
+class ArchiveSchema4Tests(ArchiveTestBase):
+    def test_schema4_includes_uuid_automations_and_profile_without_theme(self):
+        account = self.create_account(initial="100.00").data
+        savings = self.create_savings(account["id"], name="Vacanze").data
+        profile = self.user.finance_profile
+        profile.theme = "light"
+        profile.save(update_fields=["theme"])
+        self.user.first_name = "Ada"
+        self.user.last_name = "Lovelace"
+        self.user.save(update_fields=["first_name", "last_name"])
+        automation = Automation.objects.create(
+            profile=profile,
+            kind=Automation.Kind.TRANSFER,
+            savings_id=savings["id"],
+            source_account_id=account["id"],
+            amount=Decimal("25.00"),
+            description="Vacanze",
+            interval_count=1,
+            interval_unit=Automation.IntervalUnit.MONTH,
+            anchor_day=1,
+            next_run_on=self.today,
+            status=Automation.Status.ACTIVE,
+        )
+        AutomationExecution.objects.create(
+            profile=profile,
+            automation=automation,
+            automation_ref=automation.pk,
+            automation_name="Vacanze",
+            kind=Automation.Kind.TRANSFER,
+            description="Vacanze",
+            scheduled_date=self.today,
+            amount=Decimal("25.00"),
+            source_account_id=account["id"],
+            source_account_name="Contanti",
+            savings_id=savings["id"],
+            savings_name="Vacanze",
+            status=AutomationExecution.Status.SUCCEEDED,
+        )
+        archive_bytes = self.export_archive().content
+        contents = self.unpack(archive_bytes)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        self.assertEqual(manifest["schema"], 4)
+        self.assertIn("automazioni.csv", contents)
+        self.assertIn("esecuzioni_automazioni.csv", contents)
+        self.assertIn("profilo.json", contents)
+        profile_data = json.loads(contents["profilo.json"].decode("utf-8"))
+        self.assertEqual(profile_data["nome"], "Ada")
+        self.assertNotIn("tema", profile_data)
+        self.assertTrue(
+            self.csv_rows(contents, "conti.csv")[0][-1] == "uuid"
+        )
+        automation_rows = self.csv_rows(contents, "automazioni.csv")
+        self.assertEqual(automation_rows[0][1], "uuid")
+        self.assertEqual(len(automation_rows), 2)
+        self.assertEqual(automation_rows[1][1], str(automation.uuid))
+
+        target = self.other_user("schema4@example.com")
+        self.client.force_authenticate(user=target)
+        restored = self.confirm(archive_bytes)
+        self.assertEqual(restored.status_code, 201)
+        self.assertEqual(restored.data["automations"], 1)
+        self.assertEqual(restored.data["automation_executions"], 1)
+        target_profile = target.finance_profile
+        restored_automation = Automation.objects.get(profile=target_profile)
+        self.assertEqual(restored_automation.savings.name, "Vacanze")
+        self.assertEqual(restored_automation.source_account.name, "Contanti")
+        self.assertEqual(restored_automation.amount, Decimal("25.00"))
+        self.assertEqual(
+            AutomationExecution.objects.get(profile=target_profile).automation,
+            restored_automation,
+        )
+        self.assertEqual(target.first_name, "Ada")
+        self.assertEqual(target_profile.theme, "dark")
 
 
 class ArchiveInvestmentRestoreTests(ArchiveTestBase):

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="spendy_bg">#0B0F0D</color>
+    <color name="spendy_accent">#1DB48B</color>
+    <color name="spendy_text">#F4F7F5</color>
+</resources>

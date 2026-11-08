@@ -31,7 +31,7 @@ maintenance/on
 # Private project wiki and agent instructions (never distributed)
 .spendy-wiki/
 AGENTS.md
-.opencode/skills/
+.opencode/
 
 # Demo locale: snapshot del database (mai in Git)
 demo/*.sqlite3

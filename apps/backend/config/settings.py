@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "drf_spectacular",
     "accounts",
     "core",
     "finance",
@@ -164,6 +165,7 @@ X_FRAME_OPTIONS = "DENY"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "accounts.authentication.DeviceTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
@@ -172,16 +174,32 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "config.exceptions.spendy_exception_handler",
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/min",
         "register": "5/hour",
+        "pairing": "20/min",
     },
 }
 
 # Per-IP and per-identifier failed-login lockout. This complements DRF's
 # request throttling and is kept in the cache.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Spendy API",
+    "DESCRIPTION": "Contratto dell'API v1 per il client nativo e il web.",
+    "VERSION": SPENDY_VERSION,
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+}
+
 LOGIN_MAX_ATTEMPTS = int(os.environ.get("SPENDY_LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_LOCKOUT_SECONDS = int(os.environ.get("SPENDY_LOGIN_LOCKOUT_SECONDS", "900"))
+
+# QR pairing: token monouso valido 5 minuti (DC-103).
+DEVICE_PAIRING_TTL_SECONDS = int(
+    os.environ.get("SPENDY_DEVICE_PAIRING_TTL_SECONDS", "300")
+)
 
 # Savings automation retry policy. The first version uses a bounded retry with
 # growing waits; the values stay configurable because OQ-AUT-09 is not closed.

@@ -2,6 +2,7 @@ import io
 import json
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
@@ -13,12 +14,13 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from config.settings import read_version
 from core.system import is_newer, parse_version
 
-from .models import GlobalSettings, User
+from .models import DevicePairing, GlobalSettings, User
 
 VALID_PASSWORD = "Spendy-Fondamenta-2026"
 NEW_PASSWORD = "Spendy-Nuova-Password-2026"
@@ -266,6 +268,185 @@ class RegistrationTests(APITestCase):
         self.assertEqual(self.client.get(reverse("admin-users")).status_code, 403)
         self.assertEqual(self.client.get(reverse("admin-settings")).status_code, 403)
         self.assertEqual(self.client.get(reverse("admin-system")).status_code, 403)
+
+
+class DeviceTokenTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.admin = complete_setup()
+        self.user = User.objects.create_user(
+            email="token@example.com",
+            password=VALID_PASSWORD,
+            status=User.Status.ACTIVE,
+        )
+
+    def login(self, identifier="token@example.com", password=VALID_PASSWORD):
+        return self.client.post(
+            reverse("v1-auth:login"),
+            {
+                "identifier": identifier,
+                "password": password,
+                "device_name": "Realme GT7",
+                "platform": "android",
+            },
+        )
+
+    def test_token_login_returns_bearer_and_authenticates(self):
+        response = self.login()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["token_type"], "Bearer")
+        self.assertTrue(response.data["token"])
+        self.assertEqual(response.data["device"]["name"], "Realme GT7")
+        self.assertNotIn("sessionid", self.client.cookies)
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {response.data['token']}"
+        )
+        me = self.client.get(reverse("v1-auth:me"))
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.data["user"]["email"], "token@example.com")
+
+    def test_token_login_rejects_admin(self):
+        admin = self.admin
+        response = self.login("admin", VALID_PASSWORD)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data["code"], "admin_uses_web")
+        self.assertFalse(admin.device_tokens.exists())
+
+    def test_logout_revokes_token(self):
+        token = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        self.assertEqual(self.client.post(reverse("v1-auth:logout")).status_code, 200)
+        # Il token revocato non autentica più.
+        self.assertEqual(self.client.get(reverse("v1-auth:me")).status_code, 401)
+
+    def test_devices_list_rename_and_revoke(self):
+        token = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        devices = self.client.get(reverse("v1-auth:devices"))
+        self.assertEqual(devices.status_code, 200)
+        self.assertEqual(len(devices.data["devices"]), 1)
+        self.assertTrue(devices.data["devices"][0]["is_current"])
+
+        device_id = devices.data["devices"][0]["id"]
+        renamed = self.client.patch(
+            reverse("v1-auth:device-detail", args=[device_id]),
+            {"name": "Telefono personale"},
+            format="json",
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.data["name"], "Telefono personale")
+
+        revoked = self.client.delete(
+            reverse("v1-auth:device-detail", args=[device_id])
+        )
+        self.assertEqual(revoked.status_code, 200)
+        self.client.credentials()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        self.assertEqual(self.client.get(reverse("v1-auth:me")).status_code, 401)
+
+    def test_password_change_can_revoke_other_tokens(self):
+        first = self.login().data["token"]
+        second = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {first}")
+        response = self.client.post(
+            reverse("v1-auth:password"),
+            {
+                "current_password": VALID_PASSWORD,
+                "new_password": NEW_PASSWORD,
+                "new_password_confirm": NEW_PASSWORD,
+                "revoke_other_devices": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["revoked_devices"], 1)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {second}")
+        self.assertEqual(self.client.get(reverse("v1-auth:me")).status_code, 401)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {first}")
+        self.assertEqual(self.client.get(reverse("v1-auth:me")).status_code, 200)
+
+    def test_pairing_requires_origin_approval_and_is_single_use(self):
+        origin_token = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {origin_token}")
+        created = self.client.post(reverse("v1-auth:pairings"))
+        self.assertEqual(created.status_code, 201)
+        code = created.data["code"]
+        pairing_id = created.data["pairing"]["id"]
+        self.assertTrue(created.data["qr_payload"].startswith("spendy://pair?"))
+
+        self.client.credentials()
+        claimed = self.client.post(
+            reverse("v1-auth:pairing-claim"),
+            {"code": code, "device_name": "Tablet", "platform": "android"},
+            format="json",
+        )
+        self.assertEqual(claimed.status_code, 200)
+        claim = claimed.data["claim_token"]
+
+        status = self.client.get(
+            reverse("v1-auth:pairing-status", args=[pairing_id]),
+            HTTP_X_PAIRING_CLAIM=claim,
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.data["status"], "claimed")
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {origin_token}")
+        approved = self.client.post(
+            reverse("v1-auth:pairing-approve", args=[pairing_id])
+        )
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(approved.data["status"], "approved")
+
+        self.client.credentials()
+        completed = self.client.post(
+            reverse("v1-auth:pairing-complete", args=[pairing_id]),
+            HTTP_X_PAIRING_CLAIM=claim,
+        )
+        self.assertEqual(completed.status_code, 201)
+        self.assertTrue(completed.data["token"])
+        self.assertEqual(completed.data["device"]["name"], "Tablet")
+
+        again = self.client.post(
+            reverse("v1-auth:pairing-complete", args=[pairing_id]),
+            HTTP_X_PAIRING_CLAIM=claim,
+        )
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.data["code"], "pairing_used")
+
+    def test_pairing_cannot_be_approved_by_another_device(self):
+        origin_token = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {origin_token}")
+        pairing_id = self.client.post(reverse("v1-auth:pairings")).data["pairing"]["id"]
+
+        other_token = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {other_token}")
+        response = self.client.post(
+            reverse("v1-auth:pairing-approve", args=[pairing_id])
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_pairing_expires(self):
+        origin_token = self.login().data["token"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {origin_token}")
+        created = self.client.post(reverse("v1-auth:pairings"))
+        code = created.data["code"]
+        pairing_id = created.data["pairing"]["id"]
+        self.client.credentials()
+        claim = self.client.post(
+            reverse("v1-auth:pairing-claim"),
+            {"code": code, "device_name": "Tablet"},
+            format="json",
+        ).data["claim_token"]
+        DevicePairing.objects.filter(pk=pairing_id).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        response = self.client.get(
+            reverse("v1-auth:pairing-status", args=[pairing_id]),
+            HTTP_X_PAIRING_CLAIM=claim,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "expired")
 
 
 class VersionTests(SimpleTestCase):

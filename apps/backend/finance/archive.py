@@ -12,14 +12,16 @@ archive stays unambiguous; the register export keeps its human format.
 """
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
 import hmac
 import io
 import json
+import uuid
 import zipfile
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.conf import settings
@@ -33,6 +35,8 @@ from .models import (
     ZERO,
     DEFAULT_CATEGORY_NAME,
     Account,
+    Automation,
+    AutomationExecution,
     Category,
     InvestmentOperation,
     InvestmentPosition,
@@ -44,8 +48,10 @@ from .models import (
     ensure_default_categories,
 )
 
-SCHEMA = 3
-SUPPORTED_SCHEMAS = {1, 2, 3}
+SCHEMA = 4
+SUPPORTED_SCHEMAS = {1, 2, 3, 4}
+PROFILE_NAME = "profilo.json"
+UUID_NAMESPACE = uuid.UUID("6b6e4c7e-2f1a-4f3e-9d6f-7c3f0a2b9d11")
 SCOPE = "backup-profilo"
 DELIMITER = ";"
 BOM = b"\xef\xbb\xbf"
@@ -55,7 +61,7 @@ QUANTITY_PLACES = Decimal("0.00000001")
 
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
-MAX_ENTRIES = 12
+MAX_ENTRIES = 16
 
 ACCOUNT_HEADER = (
     "id",
@@ -147,6 +153,57 @@ INVESTMENT_OPERATION_HEADER = (
     "aggiornato_il",
 )
 
+AUTOMATION_HEADER = (
+    "id",
+    "uuid",
+    "tipo_codice",
+    "tipo_etichetta",
+    "salvadanaio_id",
+    "salvadanaio_uuid",
+    "salvadanaio",
+    "conto_id",
+    "conto_uuid",
+    "conto",
+    "importo",
+    "descrizione",
+    "ogni",
+    "unita_codice",
+    "unita_etichetta",
+    "giorno_ancora",
+    "preavviso_giorni",
+    "prossima_esecuzione",
+    "stato_codice",
+    "stato_etichetta",
+    "creato_il",
+    "aggiornato_il",
+)
+EXECUTION_HEADER = (
+    "id",
+    "uuid",
+    "automazione_uuid",
+    "automazione_riferimento",
+    "automazione_nome",
+    "tipo_codice",
+    "tipo_etichetta",
+    "descrizione",
+    "data_prevista",
+    "importo",
+    "conto_uuid",
+    "conto",
+    "salvadanaio_uuid",
+    "salvadanaio",
+    "stato_codice",
+    "stato_etichetta",
+    "tentativi",
+    "prossimo_retry",
+    "codice_errore",
+    "messaggio_errore",
+    "corretta",
+    "movimento_uuid",
+    "creato_il",
+    "aggiornato_il",
+)
+
 CSV_HEADERS = {
     "conti.csv": ACCOUNT_HEADER,
     "salvadanai.csv": SAVINGS_HEADER,
@@ -157,6 +214,19 @@ CSV_HEADERS = {
     "categorie.csv": CATEGORY_HEADER,
     "tag.csv": TAG_HEADER,
     "movimento_tag.csv": MOVTAG_HEADER,
+}
+SCHEMA4_CSV_HEADERS = {
+    "conti.csv": ACCOUNT_HEADER + ("uuid",),
+    "salvadanai.csv": SAVINGS_HEADER + ("uuid",),
+    "movimenti.csv": SCHEMA3_TRANSACTION_HEADER + ("uuid",),
+    "righe.csv": LINE_HEADER,
+    "posizioni.csv": POSITION_HEADER + ("uuid",),
+    "operazioni_investimenti.csv": INVESTMENT_OPERATION_HEADER + ("uuid",),
+    "categorie.csv": CATEGORY_HEADER + ("uuid",),
+    "tag.csv": TAG_HEADER + ("uuid",),
+    "movimento_tag.csv": MOVTAG_HEADER,
+    "automazioni.csv": AUTOMATION_HEADER,
+    "esecuzioni_automazioni.csv": EXECUTION_HEADER,
 }
 SCHEMA1_CSV = frozenset(
     {"conti.csv", "salvadanai.csv", "movimenti.csv", "righe.csv"}
@@ -172,11 +242,13 @@ SCHEMA2_CSV = frozenset(
     }
 )
 SCHEMA3_CSV = frozenset(CSV_HEADERS)
+SCHEMA4_CSV = frozenset(SCHEMA4_CSV_HEADERS)
 INVESTMENT_CSV = ("posizioni.csv", "operazioni_investimenti.csv")
 ARCHIVE_NAMES_BY_SCHEMA = {
     1: SCHEMA1_CSV | {MANIFEST_NAME},
     2: SCHEMA2_CSV | {MANIFEST_NAME},
     3: SCHEMA3_CSV | {MANIFEST_NAME},
+    4: SCHEMA4_CSV | {PROFILE_NAME, MANIFEST_NAME},
 }
 
 
@@ -256,6 +328,7 @@ def _position_rows(positions) -> list[list]:
             "1" if position.archived else "0",
             _iso(position.created_at),
             _iso(position.updated_at),
+            str(position.uuid),
         ]
         for position in positions
     ]
@@ -295,18 +368,122 @@ def _operation_rows(operations) -> list[list]:
                 sanitize_csv_text(operation.description),
                 _iso(operation.created_at),
                 _iso(operation.updated_at),
+                str(operation.uuid),
             ]
         )
     return rows
 
 
+def _automation_rows(automations) -> list[list]:
+    return [
+        [
+            entry.id,
+            str(entry.uuid),
+            entry.kind,
+            entry.get_kind_display(),
+            entry.savings_id or "",
+            str(entry.savings.uuid) if entry.savings_id else "",
+            sanitize_csv_text(entry.savings.name if entry.savings_id else ""),
+            entry.source_account_id,
+            str(entry.source_account.uuid) if entry.source_account_id else "",
+            sanitize_csv_text(entry.source_account.name),
+            _money(entry.amount),
+            sanitize_csv_text(entry.description),
+            entry.interval_count,
+            entry.interval_unit,
+            entry.get_interval_unit_display(),
+            entry.anchor_day,
+            entry.advance_notice_days,
+            entry.next_run_on.isoformat(),
+            entry.status,
+            entry.get_status_display(),
+            _iso(entry.created_at),
+            _iso(entry.updated_at),
+        ]
+        for entry in automations
+    ]
+
+
+def _execution_rows(executions) -> list[list]:
+    return [
+        [
+            entry.id,
+            str(entry.uuid),
+            str(entry.automation.uuid) if entry.automation_id else "",
+            entry.automation_ref,
+            sanitize_csv_text(entry.automation_name),
+            entry.kind,
+            entry.get_kind_display(),
+            sanitize_csv_text(entry.description),
+            entry.scheduled_date.isoformat(),
+            _money(entry.amount),
+            str(entry.source_account.uuid) if entry.source_account_id else "",
+            sanitize_csv_text(entry.source_account_name),
+            str(entry.savings.uuid) if entry.savings_id else "",
+            sanitize_csv_text(entry.savings_name),
+            entry.status,
+            entry.get_status_display(),
+            entry.attempts,
+            _iso(entry.next_retry_at) if entry.next_retry_at else "",
+            entry.failure_code or "",
+            sanitize_csv_text(entry.failure_message),
+            "1" if entry.corrected else "0",
+            str(entry.transaction.uuid) if entry.transaction_id else "",
+            _iso(entry.created_at),
+            _iso(entry.updated_at),
+        ]
+        for entry in executions
+    ]
+
+
+def _profile_payload(profile: Profile) -> dict:
+    user = profile.user
+    return {
+        "nome": user.first_name,
+        "cognome": user.last_name,
+        "email": user.email or "",
+        "username": user.username or "",
+        "foto_base64": (
+            base64.b64encode(bytes(user.avatar)).decode("ascii")
+            if user.avatar
+            else ""
+        ),
+        "foto_content_type": user.avatar_content_type or "",
+    }
+
+
+def _entity_uuid(
+    profile: Profile,
+    kind: str,
+    old_id: int,
+    explicit,
+    model=None,
+) -> uuid.UUID:
+    candidate = explicit or uuid.uuid5(
+        UUID_NAMESPACE, f"{profile.uuid}:{kind}:{old_id}"
+    )
+    if model is not None:
+        # Nello stesso database l'archivio di origine può essere ancora
+        # presente: in quel caso non riusiamo un UUID già occupato.
+        manager = getattr(model, "all_objects", model._default_manager)
+        attempt = 0
+        while manager.filter(uuid=candidate).exists():
+            attempt += 1
+            candidate = uuid.uuid5(
+                UUID_NAMESPACE,
+                f"{profile.uuid}:{kind}:{old_id}:{attempt}",
+            )
+    return candidate
+
+
 def _investment_files(positions, operations) -> dict[str, bytes]:
     return {
         "posizioni.csv": _csv_bytes(
-            POSITION_HEADER, _position_rows(positions)
+            SCHEMA4_CSV_HEADERS["posizioni.csv"], _position_rows(positions)
         ),
         "operazioni_investimenti.csv": _csv_bytes(
-            INVESTMENT_OPERATION_HEADER, _operation_rows(operations)
+            SCHEMA4_CSV_HEADERS["operazioni_investimenti.csv"],
+            _operation_rows(operations),
         ),
     }
 
@@ -382,6 +559,18 @@ def build_archive(profile: Profile) -> bytes:
             .order_by("id")
         )
         positions, operations = _investment_queryset(profile)
+        automations = list(
+            Automation.objects.filter(profile=profile)
+            .select_related("savings", "source_account")
+            .order_by("id")
+        )
+        executions = list(
+            AutomationExecution.objects.filter(profile=profile)
+            .select_related(
+                "automation", "source_account", "savings", "transaction"
+            )
+            .order_by("id")
+        )
 
     account_names = {account.id: account.name for account in accounts}
     savings_names = {entry.id: entry.name for entry in savings}
@@ -397,6 +586,7 @@ def build_archive(profile: Profile) -> bytes:
             "1" if account.archived else "0",
             _iso(account.created_at),
             _iso(account.updated_at),
+            str(account.uuid),
         ]
         for account in accounts
     ]
@@ -408,6 +598,7 @@ def build_archive(profile: Profile) -> bytes:
             sanitize_csv_text(entry.backing_account.name),
             _iso(entry.created_at),
             _iso(entry.updated_at),
+            str(entry.uuid),
         ]
         for entry in savings
     ]
@@ -425,6 +616,7 @@ def build_archive(profile: Profile) -> bytes:
             sanitize_csv_text(
                 operation.category.name if operation.category_id else ""
             ),
+            str(operation.uuid),
         ]
         for operation in transactions
     ]
@@ -434,11 +626,13 @@ def build_archive(profile: Profile) -> bytes:
             sanitize_csv_text(entry.name),
             "1" if entry.is_preset else "0",
             "1" if entry.is_default else "0",
+            str(entry.uuid),
         ]
         for entry in categories
     ]
     tag_rows = [
-        [entry.id, sanitize_csv_text(entry.name)] for entry in tags
+        [entry.id, sanitize_csv_text(entry.name), str(entry.uuid)]
+        for entry in tags
     ]
     movtag_rows = [list(pair) for pair in tag_pairs]
     line_rows = [
@@ -456,14 +650,26 @@ def build_archive(profile: Profile) -> bytes:
         for line in lines
     ]
 
+    automation_rows = _automation_rows(automations)
+    execution_rows = _execution_rows(executions)
     files = {
-        "conti.csv": _csv_bytes(ACCOUNT_HEADER, account_rows),
-        "salvadanai.csv": _csv_bytes(SAVINGS_HEADER, savings_rows),
-        "movimenti.csv": _csv_bytes(SCHEMA3_TRANSACTION_HEADER, transaction_rows),
+        "conti.csv": _csv_bytes(SCHEMA4_CSV_HEADERS["conti.csv"], account_rows),
+        "salvadanai.csv": _csv_bytes(
+            SCHEMA4_CSV_HEADERS["salvadanai.csv"], savings_rows
+        ),
+        "movimenti.csv": _csv_bytes(
+            SCHEMA4_CSV_HEADERS["movimenti.csv"], transaction_rows
+        ),
         "righe.csv": _csv_bytes(LINE_HEADER, line_rows),
-        "categorie.csv": _csv_bytes(CATEGORY_HEADER, category_rows),
-        "tag.csv": _csv_bytes(TAG_HEADER, tag_rows),
+        "categorie.csv": _csv_bytes(
+            SCHEMA4_CSV_HEADERS["categorie.csv"], category_rows
+        ),
+        "tag.csv": _csv_bytes(SCHEMA4_CSV_HEADERS["tag.csv"], tag_rows),
         "movimento_tag.csv": _csv_bytes(MOVTAG_HEADER, movtag_rows),
+        "automazioni.csv": _csv_bytes(AUTOMATION_HEADER, automation_rows),
+        "esecuzioni_automazioni.csv": _csv_bytes(
+            EXECUTION_HEADER, execution_rows
+        ),
     }
     files.update(_investment_files(positions, operations))
     counts = {
@@ -476,13 +682,21 @@ def build_archive(profile: Profile) -> bytes:
         "movimento_tag": len(movtag_rows),
         "posizioni": len(positions),
         "operazioni_investimenti": len(operations),
+        "automazioni": len(automation_rows),
+        "esecuzioni_automazioni": len(execution_rows),
     }
     file_meta = {
         name: {
             "righe": counts[name.removesuffix(".csv")],
             "sha256": hashlib.sha256(files[name]).hexdigest(),
         }
-        for name in CSV_HEADERS
+        for name in SCHEMA4_CSV_HEADERS
+    }
+    profile_bytes = json.dumps(
+        _profile_payload(profile), ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    file_meta[PROFILE_NAME] = {
+        "sha256": hashlib.sha256(profile_bytes).hexdigest()
     }
     manifest = {
         "schema": SCHEMA,
@@ -515,13 +729,16 @@ def build_archive(profile: Profile) -> bytes:
             "archivio e nell'export dedicato, non nel registro Movimenti.",
             "Le date di creazione e aggiornamento sono informative: il "
             "ripristino ricrea i record con date correnti.",
+            "Schema 4: UUID stabili, automazioni con storico ed esecuzioni, "
+            "profilo (senza tema) e cestino escluso.",
         ],
     }
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name in CSV_HEADERS:
+        for name in SCHEMA4_CSV_HEADERS:
             archive.writestr(name, files[name])
+        archive.writestr(PROFILE_NAME, profile_bytes)
         archive.writestr(
             MANIFEST_NAME,
             json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
@@ -539,6 +756,13 @@ def _parse_int(value: str, where: str) -> int:
         return int(str(value).strip())
     except (TypeError, ValueError):
         _fail(f"{where}: identificativo non valido.")
+
+
+def _parse_uuid(value: str, where: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        _fail(f"{where}: UUID non valido.")
 
 
 def _parse_number(value: str, where: str, places: Decimal) -> Decimal:
@@ -582,6 +806,16 @@ def _parse_date(value: str, where: str) -> date:
         _fail(f"{where}: data non valida.")
 
 
+def _parse_datetime(value: str, where: str) -> datetime | None:
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        _fail(f"{where}: data e ora non valide.")
+
+
 def _parse_bool(value: str, where: str) -> bool:
     text = str(value).strip().lower()
     if text in {"1", "true", "si", "sì"}:
@@ -594,6 +828,8 @@ def _parse_bool(value: str, where: str) -> bool:
 def _csv_rows(contents: dict[str, bytes], name: str, schema: int) -> list[list[str]]:
     if name == "movimenti.csv" and schema < 3:
         header = TRANSACTION_HEADER
+    elif schema >= 4:
+        header = SCHEMA4_CSV_HEADERS[name]
     else:
         header = CSV_HEADERS[name]
     try:
@@ -630,7 +866,7 @@ def _read_zip(raw: bytes) -> dict[str, bytes]:
             or len(names) != len(set(names))
         ):
             _fail(
-                "L'archivio deve contenere i CSV del formato 1, 2 o 3, "
+                "L'archivio deve contenere i CSV del formato 1, 2, 3 o 4, "
                 "con manifest.json."
             )
         if any(
@@ -690,13 +926,14 @@ def _check_checksums(
             _fail(f"Il numero di righe di {name} non corrisponde al manifest.")
 
 
-def _parse_accounts(rows: list[list[str]]) -> list[dict]:
+def _parse_accounts(rows: list[list[str]], schema: int = 3) -> list[dict]:
     result = []
     seen: set[int] = set()
     types = set(Account.Type.values)
+    expected = len(ACCOUNT_HEADER) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"conti.csv, riga {number}"
-        if len(row) != len(ACCOUNT_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         account_id = _parse_int(row[0], where)
         if account_id in seen:
@@ -718,17 +955,19 @@ def _parse_accounts(rows: list[list[str]]) -> list[dict]:
                 "type": account_type,
                 "initial_balance": initial,
                 "archived": _parse_bool(row[6], where),
+                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
             }
         )
     return result
 
 
-def _parse_savings(rows: list[list[str]]) -> list[dict]:
+def _parse_savings(rows: list[list[str]], schema: int = 3) -> list[dict]:
     result = []
     seen: set[int] = set()
+    expected = len(SAVINGS_HEADER) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"salvadanai.csv, riga {number}"
-        if len(row) != len(SAVINGS_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         savings_id = _parse_int(row[0], where)
         if savings_id in seen:
@@ -742,6 +981,7 @@ def _parse_savings(rows: list[list[str]]) -> list[dict]:
                 "id": savings_id,
                 "name": name,
                 "backing_account_id": _parse_int(row[2], where),
+                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
             }
         )
     return result
@@ -755,7 +995,7 @@ def _parse_transactions(
     kinds = set(Transaction.Kind.values)
     expected = len(TRANSACTION_HEADER) if schema < 3 else len(
         SCHEMA3_TRANSACTION_HEADER
-    )
+    ) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"movimenti.csv, riga {number}"
         if len(row) != expected:
@@ -790,17 +1030,20 @@ def _parse_transactions(
                 _fail(f"{where}: nome della categoria troppo lungo.")
             entry["category_id"] = category_id
             entry["category_name"] = category_name
+        if schema >= 4:
+            entry["uuid"] = _parse_uuid(row[-1], where)
         result.append(entry)
     return result
 
 
-def _parse_categories(rows: list[list[str]]) -> list[dict]:
+def _parse_categories(rows: list[list[str]], schema: int = 3) -> list[dict]:
     result = []
     seen: set[int] = set()
     names: set[str] = set()
+    expected = len(CATEGORY_HEADER) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"categorie.csv, riga {number}"
-        if len(row) != len(CATEGORY_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         category_id = _parse_int(row[0], where)
         if category_id in seen:
@@ -818,6 +1061,7 @@ def _parse_categories(rows: list[list[str]]) -> list[dict]:
                 "name": name,
                 "is_preset": _parse_bool(row[2].strip(), where),
                 "is_default": _parse_bool(row[3].strip(), where),
+                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
             }
         )
     defaults = [entry for entry in result if entry["is_default"]]
@@ -826,13 +1070,14 @@ def _parse_categories(rows: list[list[str]]) -> list[dict]:
     return result
 
 
-def _parse_tags(rows: list[list[str]]) -> list[dict]:
+def _parse_tags(rows: list[list[str]], schema: int = 3) -> list[dict]:
     result = []
     seen: set[int] = set()
     names: set[str] = set()
+    expected = len(TAG_HEADER) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"tag.csv, riga {number}"
-        if len(row) != len(TAG_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         tag_id = _parse_int(row[0], where)
         if tag_id in seen:
@@ -844,7 +1089,13 @@ def _parse_tags(rows: list[list[str]]) -> list[dict]:
         if name in names:
             _fail(f"{where}: nome del tag duplicato.")
         names.add(name)
-        result.append({"id": tag_id, "name": name})
+        result.append(
+            {
+                "id": tag_id,
+                "name": name,
+                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
+            }
+        )
     return result
 
 
@@ -905,13 +1156,14 @@ def _parse_lines(rows: list[list[str]]) -> list[dict]:
     return result
 
 
-def _parse_positions(rows: list[list[str]]) -> list[dict]:
+def _parse_positions(rows: list[list[str]], schema: int = 3) -> list[dict]:
     result = []
     seen: set[int] = set()
     categories = set(InvestmentPosition.Category.values)
+    expected = len(POSITION_HEADER) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"posizioni.csv, riga {number}"
-        if len(row) != len(POSITION_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         position_id = _parse_int(row[0], where)
         if position_id in seen:
@@ -939,18 +1191,22 @@ def _parse_positions(rows: list[list[str]]) -> list[dict]:
                 "current_price": price,
                 "price_updated_on": price_date,
                 "archived": _parse_bool(row[7], where),
+                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
             }
         )
     return result
 
 
-def _parse_investment_operations(rows: list[list[str]]) -> list[dict]:
+def _parse_investment_operations(
+    rows: list[list[str]], schema: int = 3
+) -> list[dict]:
     result = []
     seen: set[int] = set()
     kinds = set(InvestmentOperation.Kind.values)
+    expected = len(INVESTMENT_OPERATION_HEADER) + (1 if schema >= 4 else 0)
     for number, row in enumerate(rows, start=2):
         where = f"operazioni_investimenti.csv, riga {number}"
-        if len(row) != len(INVESTMENT_OPERATION_HEADER):
+        if len(row) != expected:
             _fail(f"{where}: numero di colonne non valido.")
         operation_id = _parse_int(row[0], where)
         if operation_id in seen:
@@ -980,6 +1236,125 @@ def _parse_investment_operations(rows: list[list[str]]) -> list[dict]:
                 ),
                 "account_id": _parse_int(account_id, where) if account_id else None,
                 "description": description,
+                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
+            }
+        )
+    return result
+
+
+def _parse_automations(rows: list[list[str]]) -> list[dict]:
+    result = []
+    seen: set[int] = set()
+    seen_uuid: set[uuid.UUID] = set()
+    kinds = set(Automation.Kind.values)
+    units = set(Automation.IntervalUnit.values)
+    statuses = set(Automation.Status.values)
+    for number, row in enumerate(rows, start=2):
+        where = f"automazioni.csv, riga {number}"
+        if len(row) != len(AUTOMATION_HEADER):
+            _fail(f"{where}: numero di colonne non valido.")
+        automation_id = _parse_int(row[0], where)
+        automation_uuid = _parse_uuid(row[1], where)
+        if automation_id in seen or automation_uuid in seen_uuid:
+            _fail(f"{where}: identificativo duplicato.")
+        seen.add(automation_id)
+        seen_uuid.add(automation_uuid)
+        kind = row[2].strip()
+        if kind not in kinds:
+            _fail(f"{where}: tipo di automazione non valido.")
+        unit = row[13].strip()
+        if unit not in units:
+            _fail(f"{where}: periodicità non valida.")
+        status_value = row[18].strip()
+        if status_value not in statuses:
+            _fail(f"{where}: stato non valido.")
+        amount = _parse_decimal(row[10], where)
+        if amount <= ZERO:
+            _fail(f"{where}: importo non valido.")
+        result.append(
+            {
+                "id": automation_id,
+                "uuid": automation_uuid,
+                "kind": kind,
+                "savings_id": _parse_int(row[4], where) if row[4].strip() else None,
+                "savings_uuid": (
+                    _parse_uuid(row[5], where) if row[5].strip() else None
+                ),
+                "source_account_id": (
+                    _parse_int(row[7], where) if row[7].strip() else None
+                ),
+                "source_account_uuid": (
+                    _parse_uuid(row[8], where) if row[8].strip() else None
+                ),
+                "amount": amount,
+                "description": restore_csv_text(row[11]),
+                "interval_count": _parse_int(row[12], where),
+                "interval_unit": unit,
+                "anchor_day": _parse_int(row[15], where),
+                "advance_notice_days": _parse_int(row[16], where),
+                "next_run_on": _parse_date(row[17], where),
+                "status": status_value,
+            }
+        )
+    return result
+
+
+def _parse_executions(rows: list[list[str]]) -> list[dict]:
+    result = []
+    seen: set[int] = set()
+    seen_uuid: set[uuid.UUID] = set()
+    kinds = set(Automation.Kind.values)
+    statuses = set(AutomationExecution.Status.values)
+    failures = set(AutomationExecution.FailureCode.values)
+    for number, row in enumerate(rows, start=2):
+        where = f"esecuzioni_automazioni.csv, riga {number}"
+        if len(row) != len(EXECUTION_HEADER):
+            _fail(f"{where}: numero di colonne non valido.")
+        execution_id = _parse_int(row[0], where)
+        execution_uuid = _parse_uuid(row[1], where)
+        if execution_id in seen or execution_uuid in seen_uuid:
+            _fail(f"{where}: identificativo duplicato.")
+        seen.add(execution_id)
+        seen_uuid.add(execution_uuid)
+        kind = row[5].strip()
+        if kind not in kinds:
+            _fail(f"{where}: tipo di esecuzione non valido.")
+        status_value = row[14].strip()
+        if status_value not in statuses:
+            _fail(f"{where}: stato non valido.")
+        failure = row[18].strip()
+        if failure and failure not in failures:
+            _fail(f"{where}: codice di errore non valido.")
+        result.append(
+            {
+                "id": execution_id,
+                "uuid": execution_uuid,
+                "automation_uuid": (
+                    _parse_uuid(row[2], where) if row[2].strip() else None
+                ),
+                "automation_ref": _parse_int(row[3], where),
+                "automation_name": restore_csv_text(row[4]),
+                "kind": kind,
+                "description": restore_csv_text(row[7]),
+                "scheduled_date": _parse_date(row[8], where),
+                "amount": _parse_decimal(row[9], where),
+                "source_account_uuid": (
+                    _parse_uuid(row[10], where) if row[10].strip() else None
+                ),
+                "source_account_name": restore_csv_text(row[11]),
+                "savings_uuid": (
+                    _parse_uuid(row[12], where) if row[12].strip() else None
+                ),
+                "savings_name": restore_csv_text(row[13]),
+                "status": status_value,
+                "attempts": _parse_int(row[16], where),
+                "next_retry_at": _parse_datetime(row[17], where),
+                "failure_code": failure,
+                "failure_message": restore_csv_text(row[19]),
+                "corrected": _parse_bool(row[20], where),
+                "transaction_uuid": (
+                    _parse_uuid(row[21], where) if row[21].strip() else None
+                ),
             }
         )
     return result
@@ -1128,6 +1503,8 @@ def _validate(
     categories: list[dict] | None = None,
     tags: list[dict] | None = None,
     movtags: list[dict] | None = None,
+    automations: list[dict] | None = None,
+    executions: list[dict] | None = None,
 ):
     account_ids = {entry["id"] for entry in accounts}
     savings_ids = {entry["id"] for entry in savings}
@@ -1225,6 +1602,66 @@ def _validate(
                 "nell'archivio."
             )
 
+    if schema >= 4:
+        account_uuids = {entry["uuid"] for entry in accounts}
+        savings_uuids = {entry["uuid"] for entry in savings}
+        transaction_uuids = {entry["uuid"] for entry in transactions}
+        automation_uuids = {entry["uuid"] for entry in (automations or [])}
+        for entry in automations or []:
+            if entry["kind"] == Automation.Kind.TRANSFER and entry["savings_id"] is None:
+                _fail(
+                    f"automazioni.csv: la regola {entry['id']} è un versamento "
+                    "senza salvadanaio."
+                )
+            if entry["kind"] == Automation.Kind.EXPENSE and entry["savings_id"] is not None:
+                _fail(
+                    f"automazioni.csv: la regola {entry['id']} è una spesa con "
+                    "salvadanaio."
+                )
+            if entry["savings_id"] is not None and entry["savings_id"] not in savings_ids:
+                _fail(
+                    f"automazioni.csv: la regola {entry['id']} indica un "
+                    "salvadanaio inesistente."
+                )
+            if (
+                entry["source_account_id"] is not None
+                and entry["source_account_id"] not in account_ids
+            ):
+                _fail(
+                    f"automazioni.csv: la regola {entry['id']} indica un conto "
+                    "inesistente."
+                )
+        for entry in executions or []:
+            if entry["automation_uuid"] is not None and entry["automation_uuid"] not in automation_uuids:
+                _fail(
+                    f"esecuzioni_automazioni.csv: l'esecuzione {entry['id']} "
+                    "indica una regola inesistente."
+                )
+            if (
+                entry["source_account_uuid"] is not None
+                and entry["source_account_uuid"] not in account_uuids
+            ):
+                _fail(
+                    f"esecuzioni_automazioni.csv: l'esecuzione {entry['id']} "
+                    "indica un conto inesistente."
+                )
+            if (
+                entry["savings_uuid"] is not None
+                and entry["savings_uuid"] not in savings_uuids
+            ):
+                _fail(
+                    f"esecuzioni_automazioni.csv: l'esecuzione {entry['id']} "
+                    "indica un salvadanaio inesistente."
+                )
+            if (
+                entry["transaction_uuid"] is not None
+                and entry["transaction_uuid"] not in transaction_uuids
+            ):
+                _fail(
+                    f"esecuzioni_automazioni.csv: l'esecuzione {entry['id']} "
+                    "indica un movimento inesistente."
+                )
+
     counts = manifest.get("conteggi")
     expected_counts = {
         "conti": len(accounts),
@@ -1241,6 +1678,9 @@ def _validate(
         expected_counts["categorie"] = len(categories or [])
         expected_counts["tag"] = len(tags or [])
         expected_counts["movimento_tag"] = len(movtags or [])
+    if schema >= 4:
+        expected_counts["automazioni"] = len(automations or [])
+        expected_counts["esecuzioni_automazioni"] = len(executions or [])
     if counts != expected_counts:
         _fail("I conteggi del manifest non corrispondono ai file.")
 
@@ -1251,14 +1691,38 @@ def _profile_has_data(profile: Profile) -> bool:
         or SavingsAccount.objects.filter(profile=profile).exists()
         or Transaction.objects.filter(profile=profile).exists()
         or InvestmentPosition.objects.filter(profile=profile).exists()
+        or Automation.objects.filter(profile=profile).exists()
     )
+
+
+def _parse_profile(contents: dict[str, bytes]) -> dict:
+    try:
+        profile = json.loads(contents[PROFILE_NAME].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        _fail("profilo.json non è un JSON valido.")
+    if not isinstance(profile, dict):
+        _fail("profilo.json non è valido.")
+    photo = profile.get("foto_base64") or ""
+    if photo:
+        try:
+            profile["foto"] = base64.b64decode(photo, validate=True)
+        except (ValueError, TypeError):
+            _fail("profilo.json: foto non valida.")
+    else:
+        profile["foto"] = None
+    return profile
 
 
 def _parse_archive(raw: bytes):
     contents = _read_zip(raw)
     manifest = _read_manifest(contents)
     schema = manifest["schema"]
-    csv_names = {1: SCHEMA1_CSV, 2: SCHEMA2_CSV, 3: SCHEMA3_CSV}[schema]
+    csv_names = {
+        1: SCHEMA1_CSV,
+        2: SCHEMA2_CSV,
+        3: SCHEMA3_CSV,
+        4: SCHEMA4_CSV,
+    }[schema]
     expected_names = ARCHIVE_NAMES_BY_SCHEMA[schema]
     if set(contents) != expected_names:
         _fail("I file dell'archivio non corrispondono alla versione indicata.")
@@ -1266,28 +1730,48 @@ def _parse_archive(raw: bytes):
         name: _csv_rows(contents, name, schema) for name in csv_names
     }
     _check_checksums(contents, manifest, parsed_rows, csv_names)
-    accounts = _parse_accounts(parsed_rows["conti.csv"])
-    savings = _parse_savings(parsed_rows["salvadanai.csv"])
+    accounts = _parse_accounts(parsed_rows["conti.csv"], schema)
+    savings = _parse_savings(parsed_rows["salvadanai.csv"], schema)
     transactions = _parse_transactions(parsed_rows["movimenti.csv"], schema)
     lines = _parse_lines(parsed_rows["righe.csv"])
+    automations: list[dict] = []
+    executions: list[dict] = []
+    profile_data: dict = {}
     if schema == 2:
-        positions = _parse_positions(parsed_rows["posizioni.csv"])
+        positions = _parse_positions(parsed_rows["posizioni.csv"], schema)
         operations = _parse_investment_operations(
-            parsed_rows["operazioni_investimenti.csv"]
+            parsed_rows["operazioni_investimenti.csv"], schema
         )
         categories, tags, movtags = [], [], []
     elif schema == 3:
-        positions = _parse_positions(parsed_rows["posizioni.csv"])
+        positions = _parse_positions(parsed_rows["posizioni.csv"], schema)
         operations = _parse_investment_operations(
-            parsed_rows["operazioni_investimenti.csv"]
+            parsed_rows["operazioni_investimenti.csv"], schema
         )
-        categories = _parse_categories(parsed_rows["categorie.csv"])
-        tags = _parse_tags(parsed_rows["tag.csv"])
+        categories = _parse_categories(parsed_rows["categorie.csv"], schema)
+        tags = _parse_tags(parsed_rows["tag.csv"], schema)
         movtags = _parse_movtags(
             parsed_rows["movimento_tag.csv"],
             {entry["id"] for entry in transactions},
             {entry["id"] for entry in tags},
         )
+    elif schema == 4:
+        positions = _parse_positions(parsed_rows["posizioni.csv"], schema)
+        operations = _parse_investment_operations(
+            parsed_rows["operazioni_investimenti.csv"], schema
+        )
+        categories = _parse_categories(parsed_rows["categorie.csv"], schema)
+        tags = _parse_tags(parsed_rows["tag.csv"], schema)
+        movtags = _parse_movtags(
+            parsed_rows["movimento_tag.csv"],
+            {entry["id"] for entry in transactions},
+            {entry["id"] for entry in tags},
+        )
+        automations = _parse_automations(parsed_rows["automazioni.csv"])
+        executions = _parse_executions(
+            parsed_rows["esecuzioni_automazioni.csv"]
+        )
+        profile_data = _parse_profile(contents)
     else:
         positions, operations = [], []
         categories, tags, movtags = [], [], []
@@ -1303,6 +1787,8 @@ def _parse_archive(raw: bytes):
         categories,
         tags,
         movtags,
+        automations,
+        executions,
     )
     return (
         manifest,
@@ -1315,6 +1801,9 @@ def _parse_archive(raw: bytes):
         categories,
         tags,
         movtags,
+        automations,
+        executions,
+        profile_data,
     )
 
 
@@ -1374,6 +1863,8 @@ def _summary(
     lines: list[dict],
     positions: list[dict],
     operations: list[dict],
+    automations: list[dict] | None = None,
+    executions: list[dict] | None = None,
 ) -> dict:
     account_balances: dict[int, Decimal] = defaultdict(lambda: ZERO)
     savings_balances: dict[int, Decimal] = defaultdict(lambda: ZERO)
@@ -1394,6 +1885,8 @@ def _summary(
         "lines": len(lines),
         "positions": len(positions),
         "investment_operations": len(operations),
+        "automations": len(automations or []),
+        "automation_executions": len(executions or []),
         "from": min(dates).isoformat() if dates else None,
         "to": max(dates).isoformat() if dates else None,
         "accounts_total": f"{accounts_total:.2f}",
@@ -1440,6 +1933,9 @@ def analyze_archive(raw: bytes, profile: Profile) -> dict:
         categories,
         tags,
         movtags,
+        automations,
+        executions,
+        profile_data,
     ) = _parse_archive(raw)
     has_data = _profile_has_data(profile)
     warnings = []
@@ -1452,6 +1948,23 @@ def analyze_archive(raw: bytes, profile: Profile) -> dict:
         warnings.append(
             "L'archivio usa una valuta diversa da EUR: i dati non verranno "
             "convertiti."
+        )
+    archive_email = (profile_data.get("email") or "").strip().lower()
+    archive_username = (profile_data.get("username") or "").strip()
+    user_model = profile.user.__class__
+    if archive_email and user_model.objects.filter(
+        email__iexact=archive_email
+    ).exclude(pk=profile.user_id).exists():
+        warnings.append(
+            "L'email del profilo nell'archivio è già usata da un altro account: "
+            "verrà mantenuta quella dell'account di destinazione."
+        )
+    if archive_username and user_model.objects.filter(
+        username__iexact=archive_username
+    ).exclude(pk=profile.user_id).exists():
+        warnings.append(
+            "Lo username del profilo nell'archivio è già usato da un altro "
+            "account: verrà mantenuto quello dell'account di destinazione."
         )
     return {
         "can_restore": not has_data,
@@ -1472,7 +1985,14 @@ def analyze_archive(raw: bytes, profile: Profile) -> dict:
             "conteggi": manifest.get("conteggi"),
         },
         "summary": _summary(
-            accounts, savings, transactions, lines, positions, operations
+            accounts,
+            savings,
+            transactions,
+            lines,
+            positions,
+            operations,
+            automations,
+            executions,
         ),
         "warnings": warnings,
     }
@@ -1495,11 +2015,42 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
         categories,
         tags,
         movtags,
+        automations,
+        executions,
+        profile_data,
     ) = _parse_archive(raw)
     if _profile_has_data(profile):
         _fail(
             "Il profilo contiene già dati. Il ripristino è consentito solo su "
             "un profilo vuoto."
+        )
+
+    user = profile.user
+    user_model = user.__class__
+    archive_email = (profile_data.get("email") or "").strip().lower()
+    archive_username = (profile_data.get("username") or "").strip()
+    email_conflict = bool(
+        archive_email
+        and user_model.objects.filter(email__iexact=archive_email)
+        .exclude(pk=user.pk)
+        .exists()
+    )
+    username_conflict = bool(
+        archive_username
+        and user_model.objects.filter(username__iexact=archive_username)
+        .exclude(pk=user.pk)
+        .exists()
+    )
+    identity_warnings = []
+    if email_conflict:
+        identity_warnings.append(
+            "L'email del profilo nell'archivio è già usata da un altro "
+            "account: è stata mantenuta quella dell'account di destinazione."
+        )
+    if username_conflict:
+        identity_warnings.append(
+            "Lo username del profilo nell'archivio è già usato da un altro "
+            "account: è stato mantenuto quello dell'account di destinazione."
         )
 
     with db_transaction.atomic():
@@ -1510,9 +2061,47 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
                 "su un profilo vuoto."
             )
 
+        if manifest.get("schema", 1) >= 4 and profile_data:
+            changed = []
+            archive_fields = {
+                "first_name": "nome",
+                "last_name": "cognome",
+                "email": "email",
+                "username": "username",
+            }
+            for field_name, archive_name in archive_fields.items():
+                if archive_name not in profile_data:
+                    continue
+                if field_name == "email" and email_conflict:
+                    continue
+                if field_name == "username" and username_conflict:
+                    continue
+                value = (profile_data.get(archive_name) or "").strip()
+                if field_name == "email":
+                    value = value.lower()
+                if field_name in {"email", "username"}:
+                    if not value:
+                        continue
+                    setattr(user, field_name, value)
+                else:
+                    setattr(user, field_name, value)
+                changed.append(field_name)
+            if profile_data.get("foto") is not None:
+                user.avatar = profile_data["foto"]
+                user.avatar_content_type = profile_data.get(
+                    "foto_content_type", ""
+                )
+                user.avatar_updated_at = timezone.now()
+                changed.extend(
+                    ["avatar", "avatar_content_type", "avatar_updated_at"]
+                )
+            if changed:
+                user.save(update_fields=[*changed, "updated_at"])
+
         account_objects = [
             Account(
                 profile=profile,
+                uuid=_entity_uuid(profile, "account", entry["id"], entry.get("uuid"), Account),
                 name=entry["name"],
                 type=entry["type"],
                 initial_balance=entry["initial_balance"],
@@ -1525,10 +2114,16 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             entry["id"]: account
             for entry, account in zip(accounts, account_objects)
         }
+        account_by_uuid = {
+            entry["uuid"]: account
+            for entry, account in zip(accounts, account_objects)
+            if entry.get("uuid")
+        }
 
         savings_objects = [
             SavingsAccount(
                 profile=profile,
+                uuid=_entity_uuid(profile, "savings", entry["id"], entry.get("uuid"), SavingsAccount),
                 name=entry["name"],
                 backing_account=account_map[entry["backing_account_id"]],
             )
@@ -1539,6 +2134,11 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             entry["id"]: savings_account
             for entry, savings_account in zip(savings, savings_objects)
         }
+        savings_by_uuid = {
+            entry["uuid"]: savings_account
+            for entry, savings_account in zip(savings, savings_objects)
+            if entry.get("uuid")
+        }
 
         if manifest.get("schema", 1) >= 3:
             Category.objects.filter(profile=profile).delete()
@@ -1546,6 +2146,7 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             category_objects = [
                 Category(
                     profile=profile,
+                    uuid=_entity_uuid(profile, "category", entry["id"], entry.get("uuid"), Category),
                     name=entry["name"],
                     is_preset=entry["is_preset"],
                     is_default=entry["is_default"],
@@ -1558,7 +2159,12 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
                 for entry, category in zip(categories, category_objects)
             }
             tag_objects = [
-                Tag(profile=profile, name=entry["name"]) for entry in tags
+                Tag(
+                    profile=profile,
+                    uuid=_entity_uuid(profile, "tag", entry["id"], entry.get("uuid"), Tag),
+                    name=entry["name"],
+                )
+                for entry in tags
             ]
             Tag.objects.bulk_create(tag_objects)
             tag_map = {
@@ -1574,6 +2180,7 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
         transaction_objects = [
             Transaction(
                 profile=profile,
+                uuid=_entity_uuid(profile, "transaction", entry["id"], entry.get("uuid"), Transaction),
                 kind=entry["kind"],
                 date=entry["date"],
                 description=entry["description"],
@@ -1591,6 +2198,77 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             entry["id"]: operation
             for entry, operation in zip(transactions, transaction_objects)
         }
+        transaction_by_uuid = {
+            entry["uuid"]: operation
+            for entry, operation in zip(transactions, transaction_objects)
+            if entry.get("uuid")
+        }
+
+        automation_objects = [
+            Automation(
+                profile=profile,
+                uuid=_entity_uuid(
+                    profile, "automation", entry["id"], entry.get("uuid"), Automation
+                ),
+                kind=entry["kind"],
+                savings=savings_by_uuid.get(entry.get("savings_uuid")),
+                source_account=account_by_uuid.get(entry.get("source_account_uuid")),
+                amount=entry["amount"],
+                description=entry["description"],
+                interval_count=entry["interval_count"],
+                interval_unit=entry["interval_unit"],
+                anchor_day=entry["anchor_day"],
+                advance_notice_days=entry["advance_notice_days"],
+                next_run_on=entry["next_run_on"],
+                status=entry["status"],
+            )
+            for entry in automations
+        ]
+        Automation.objects.bulk_create(automation_objects)
+        automation_by_uuid = {
+            entry["uuid"]: automation
+            for entry, automation in zip(automations, automation_objects)
+            if entry.get("uuid")
+        }
+
+        AutomationExecution.objects.bulk_create(
+            [
+                AutomationExecution(
+                    profile=profile,
+                    uuid=_entity_uuid(
+                        profile, "execution", entry["id"], entry.get("uuid"), AutomationExecution
+                    ),
+                    automation=automation_by_uuid.get(entry.get("automation_uuid")),
+                    automation_ref=(
+                        automation_by_uuid[entry["automation_uuid"]].pk
+                        if entry.get("automation_uuid") in automation_by_uuid
+                        else entry["automation_ref"]
+                    ),
+                    automation_name=entry["automation_name"],
+                    kind=entry["kind"],
+                    description=entry["description"],
+                    scheduled_date=entry["scheduled_date"],
+                    amount=entry["amount"],
+                    source_account=account_by_uuid.get(
+                        entry.get("source_account_uuid")
+                    ),
+                    source_account_name=entry["source_account_name"],
+                    savings=savings_by_uuid.get(entry.get("savings_uuid")),
+                    savings_name=entry["savings_name"],
+                    status=entry["status"],
+                    attempts=entry["attempts"],
+                    next_retry_at=entry["next_retry_at"],
+                    failure_code=entry["failure_code"],
+                    failure_message=entry["failure_message"],
+                    corrected=entry["corrected"],
+                    transaction=transaction_by_uuid.get(
+                        entry.get("transaction_uuid")
+                    ),
+                )
+                for entry in executions
+            ]
+        )
+
         if manifest.get("schema", 1) >= 3 and movtags:
             through = Transaction.tags.through
             through.objects.bulk_create(
@@ -1627,6 +2305,7 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
         position_objects = [
             InvestmentPosition(
                 profile=profile,
+                uuid=_entity_uuid(profile, "position", entry["id"], entry.get("uuid"), InvestmentPosition),
                 name=entry["name"],
                 category=entry["category"],
                 identifier=entry["identifier"],
@@ -1646,6 +2325,7 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
             [
                 InvestmentOperation(
                     profile=profile,
+                    uuid=_entity_uuid(profile, "operation", entry["id"], entry.get("uuid"), InvestmentOperation),
                     position=position_map[entry["position_id"]],
                     kind=entry["kind"],
                     date=entry["date"],
@@ -1700,6 +2380,9 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
         "lines": len(lines),
         "positions": len(position_objects),
         "investment_operations": len(operations),
+        "automations": len(automation_objects),
+        "automation_executions": len(executions),
+        "warnings": identity_warnings,
         "accounts_total": f"{accounts_total:.2f}",
         "savings_total": f"{savings_total:.2f}",
         "investments_cost": f"{investment['cost']:.2f}",

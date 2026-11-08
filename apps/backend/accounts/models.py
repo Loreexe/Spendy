@@ -1,3 +1,9 @@
+import hashlib
+import secrets
+import uuid
+from datetime import timedelta
+
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
@@ -155,3 +161,122 @@ class GlobalSettings(models.Model):
     def load(cls) -> "GlobalSettings":
         settings, _ = cls.objects.get_or_create(pk=1)
         return settings
+
+
+class DeviceToken(models.Model):
+    """Token permanente di un dispositivo, revocabile (DC-103).
+
+    Il token in chiaro esiste solo nella risposta di login/completamento del
+    pairing; il database conserva esclusivamente l'hash SHA-256.
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="device_tokens"
+    )
+    name = models.CharField(max_length=100, blank=True)
+    platform = models.CharField(max_length=32, default="android")
+    prefix = models.CharField(max_length=12, db_index=True)
+    key_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name or self.platform} ({self.prefix}…)"
+
+    @staticmethod
+    def hash_key(raw_key: str) -> str:
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def issue(cls, user: User, name: str = "", platform: str = "android"):
+        raw_key = secrets.token_urlsafe(32)
+        token = cls.objects.create(
+            user=user,
+            name=(name or "").strip()[:100],
+            platform=(platform or "android").strip()[:32] or "android",
+            prefix=raw_key[:8],
+            key_hash=cls.hash_key(raw_key),
+        )
+        return token, raw_key
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None
+
+    def revoke(self) -> None:
+        if self.revoked_at is None:
+            self.revoked_at = timezone.now()
+            self.save(update_fields=["revoked_at"])
+
+
+class DevicePairing(models.Model):
+    """Pairing QR a token monouso, approvato sul dispositivo di origine."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "In attesa di scansione"
+        CLAIMED = "claimed", "In attesa di approvazione"
+        APPROVED = "approved", "Approvato"
+        CONSUMED = "consumed", "Completato"
+        REJECTED = "rejected", "Rifiutato"
+        EXPIRED = "expired", "Scaduto"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="device_pairings"
+    )
+    code_hash = models.CharField(max_length=64, unique=True)
+    origin_token = models.ForeignKey(
+        DeviceToken,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="pairings",
+    )
+    origin_session_key = models.CharField(max_length=40, blank=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    new_device_name = models.CharField(max_length=100, blank=True)
+    new_device_platform = models.CharField(max_length=32, blank=True)
+    claim_hash = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"pairing {self.pk} ({self.status})"
+
+    @staticmethod
+    def hash_code(raw_code: str) -> str:
+        return hashlib.sha256(raw_code.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def create(
+        cls,
+        user: User,
+        origin_token: DeviceToken | None = None,
+        origin_session_key: str = "",
+    ):
+        raw_code = secrets.token_urlsafe(24)
+        pairing = cls.objects.create(
+            user=user,
+            code_hash=cls.hash_code(raw_code),
+            origin_token=origin_token,
+            origin_session_key=origin_session_key,
+            expires_at=timezone.now()
+            + timedelta(seconds=getattr(settings, "DEVICE_PAIRING_TTL_SECONDS", 300)),
+        )
+        return pairing, raw_code
+
+    @property
+    def is_expired(self) -> bool:
+        return timezone.now() >= self.expires_at

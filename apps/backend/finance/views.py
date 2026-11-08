@@ -1,8 +1,9 @@
+import hashlib
 from collections import defaultdict
 from datetime import date
 
-from django.db import transaction
-from django.db.models import Count, Sum
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -29,6 +30,7 @@ from .models import (
     Account,
     AutomationExecution,
     Category,
+    IdempotencyRecord,
     InvestmentOperation,
     InvestmentPosition,
     Line,
@@ -49,6 +51,8 @@ from .serializers import (
     AutomationExecutionSerializer,
     AutomationSerializer,
     AutomationWriteSerializer,
+    CategorySerializer,
+    DashboardSerializer,
     InvestmentAccountSerializer,
     InvestmentOperationCreateSerializer,
     InvestmentOperationSerializer,
@@ -63,13 +67,102 @@ from .serializers import (
     SavingsAccountCreateSerializer,
     SavingsAccountSerializer,
     SavingsAccountUpdateSerializer,
+    TagSerializer,
     TransactionSerializer,
     TransactionWriteSerializer,
 )
 
 
+class IdempotentReplay(Exception):
+    """Risposta già registrata per una chiave di idempotenza."""
+
+    def __init__(self, response):
+        self.response = response
+        super().__init__("idempotent replay")
+
+
 class FinanceView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def _idempotency_key(self, request) -> str:
+        content_type = (request.content_type or "").split(";")[0].strip()
+        if request.method == "POST" and content_type != "application/json":
+            return ""
+        return (request.headers.get("Idempotency-Key") or "").strip()[:128]
+
+    def _idempotency_hash(self, request) -> str:
+        content_type = (request.content_type or "").split(";")[0].strip()
+        raw_body = request.body if content_type == "application/json" else b""
+        return hashlib.sha256(
+            request.method.encode() + request.path.encode() + raw_body
+        ).hexdigest()
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        key = self._idempotency_key(request)
+        if request.method != "POST" or not key:
+            return
+        request_hash = self._idempotency_hash(request)
+        self._idempotency_request_hash = request_hash
+        record = IdempotencyRecord.objects.filter(user=request.user, key=key).first()
+        if record is None:
+            return
+        self._idempotency_replayed = True
+        if record.request_hash != request_hash:
+            raise IdempotentReplay(
+                Response(
+                    {
+                        "detail": "Chiave di idempotenza già usata con un'altra richiesta.",
+                        "code": "idempotency_key_reused",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            )
+        raise IdempotentReplay(
+            Response(
+                record.response_body,
+                status=record.status_code,
+                headers={"Idempotent-Replayed": "true"},
+            )
+        )
+
+    def dispatch(self, request, *args, **kwargs):
+        key = self._idempotency_key(request)
+        self._idempotency_request_hash = None
+        self._idempotency_replayed = False
+        response = super().dispatch(request, *args, **kwargs)
+        if (
+            request.method == "POST"
+            and key
+            and not self._idempotency_replayed
+            and 200 <= response.status_code < 300
+            and hasattr(response, "data")
+            and getattr(request, "user", None)
+            and request.user.is_authenticated
+        ):
+            try:
+                with transaction.atomic():
+                    IdempotencyRecord.objects.create(
+                        user=request.user,
+                        key=key,
+                        method=request.method,
+                        path=request.path,
+                        request_hash=self._idempotency_request_hash
+                        or self._idempotency_hash(request),
+                        status_code=response.status_code,
+                        response_body=response.data
+                        if response.data is not None
+                        else {},
+                    )
+            except IntegrityError:
+                # Richiesta concorrente con la stessa chiave: la prima vince.
+                pass
+        return response
+
+    def handle_exception(self, exc):
+        if isinstance(exc, IdempotentReplay):
+            return exc.response
+        return super().handle_exception(exc)
 
     def get_profile(self, request) -> Profile:
         if request.user.is_global_admin:
@@ -666,6 +759,7 @@ class TransactionDetailView(FinanceView):
 def _category_payload(category: Category) -> dict:
     return {
         "id": category.id,
+        "uuid": str(category.uuid),
         "name": category.name,
         "is_preset": category.is_preset,
         "is_default": category.is_default,
@@ -747,7 +841,9 @@ class TagListCreateView(FinanceView):
     def get(self, request):
         profile = self.get_profile(request)
         tags = Tag.objects.filter(profile=profile).order_by("name")
-        return Response([{"id": item.id, "name": item.name} for item in tags])
+        return Response(
+            [{"id": item.id, "uuid": str(item.uuid), "name": item.name} for item in tags]
+        )
 
     def post(self, request):
         profile = self.get_profile(request)
@@ -758,7 +854,7 @@ class TagListCreateView(FinanceView):
             )
         tag, _ = Tag.objects.get_or_create(profile=profile, name=name)
         return Response(
-            {"id": tag.id, "name": tag.name},
+            {"id": tag.id, "uuid": str(tag.uuid), "name": tag.name},
             status=status.HTTP_201_CREATED,
         )
 
@@ -786,7 +882,7 @@ class TagDetailView(FinanceView):
             raise ValidationError({"name": "Esiste già questo tag."})
         tag.name = name
         tag.save(update_fields=("name",))
-        return Response({"id": tag.id, "name": tag.name})
+        return Response({"id": tag.id, "uuid": str(tag.uuid), "name": tag.name})
 
     def delete(self, request, pk: int):
         tag = self._get_object(request, pk)
@@ -1439,3 +1535,108 @@ class NotificationReadView(FinanceView):
             profile=profile, read_at__isnull=True
         ).count()
         return Response({"unread_count": unread_count})
+
+
+class SearchView(FinanceView):
+    """Ricerca globale per il client nativo (DC-103).
+
+    Cerca in movimenti, conti, salvadanai, investimenti, categorie e tag del
+    profilo; ogni gruppo è limitato per non caricare l'intera base.
+    """
+
+    def get(self, request):
+        profile = self.get_profile(request)
+        query = (request.query_params.get("q") or "").strip()
+        if len(query) < 2:
+            return Response(
+                {
+                    "query": query,
+                    "transactions": [],
+                    "accounts": [],
+                    "savings": [],
+                    "investments": [],
+                    "categories": [],
+                    "tags": [],
+                }
+            )
+        try:
+            limit = min(
+                max(int(request.query_params.get("limit", 10) or 10), 1), 50
+            )
+        except (TypeError, ValueError):
+            limit = 10
+
+        transactions = (
+            Transaction.objects.filter(profile=profile)
+            .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
+            .filter(
+                Q(description__icontains=query)
+                | Q(category__name__icontains=query)
+                | Q(tags__name__icontains=query)
+            )
+            .select_related("category")
+            .prefetch_related("tags", "lines__account", "lines__savings")
+            .distinct()
+            .order_by("-date", "-id")[:limit]
+        )
+        accounts = Account.objects.filter(
+            profile=profile, name__icontains=query
+        ).order_by("name")[:limit]
+        savings = SavingsAccount.objects.filter(
+            profile=profile, name__icontains=query
+        ).order_by("name")[:limit]
+        investments = InvestmentPosition.objects.filter(
+            profile=profile
+        ).filter(
+            Q(name__icontains=query)
+            | Q(identifier__icontains=query)
+            | Q(category__icontains=query)
+        ).order_by("name")[:limit]
+        categories = Category.objects.filter(
+            profile=profile, name__icontains=query
+        ).order_by("-is_default", "name")[:limit]
+        tags = Tag.objects.filter(profile=profile, name__icontains=query).order_by(
+            "name"
+        )[:limit]
+
+        return Response(
+            {
+                "query": query,
+                "transactions": TransactionSerializer(transactions, many=True).data,
+                "accounts": AccountSerializer(accounts, many=True).data,
+                "savings": SavingsAccountSerializer(savings, many=True).data,
+                "investments": InvestmentPositionSerializer(
+                    investments, many=True
+                ).data,
+                "categories": [_category_payload(item) for item in categories],
+                "tags": [
+                    {"id": item.id, "uuid": str(item.uuid), "name": item.name}
+                    for item in tags
+                ],
+            }
+        )
+
+
+# Serializer hints for the OpenAPI schema (DC-103). The views are plain
+# APIViews because they mix multiple serializers; these attributes document the
+# main response type without changing runtime behaviour.
+ProfileView.serializer_class = ProfileSerializer
+DashboardView.serializer_class = DashboardSerializer
+AccountListCreateView.serializer_class = AccountSerializer
+AccountDetailView.serializer_class = AccountUpdateSerializer
+SavingsAccountListCreateView.serializer_class = SavingsAccountSerializer
+SavingsAccountDetailView.serializer_class = SavingsAccountUpdateSerializer
+TransactionListCreateView.serializer_class = TransactionSerializer
+TransactionDetailView.serializer_class = TransactionSerializer
+CategoryListCreateView.serializer_class = CategorySerializer
+CategoryDetailView.serializer_class = CategorySerializer
+TagListCreateView.serializer_class = TagSerializer
+TagDetailView.serializer_class = TagSerializer
+AutomationListCreateView.serializer_class = AutomationSerializer
+AutomationDetailView.serializer_class = AutomationSerializer
+AutomationExecutionListView.serializer_class = AutomationExecutionSerializer
+NotificationListView.serializer_class = NotificationSerializer
+InvestmentListCreateView.serializer_class = InvestmentPositionSerializer
+InvestmentDetailView.serializer_class = InvestmentPositionSerializer
+InvestmentOperationCreateView.serializer_class = InvestmentOperationSerializer
+InvestmentOperationDetailView.serializer_class = InvestmentOperationSerializer

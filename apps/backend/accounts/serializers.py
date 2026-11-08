@@ -4,7 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import GlobalSettings, User
+from .models import DevicePairing, DeviceToken, GlobalSettings, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -75,6 +75,12 @@ class RegisterSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     identifier = serializers.CharField()
     password = serializers.CharField(write_only=True, trim_whitespace=False)
+    device_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=100
+    )
+    platform = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, default="android"
+    )
 
 
 class SetupSerializer(serializers.Serializer):
@@ -176,3 +182,59 @@ class GlobalSettingsSerializer(serializers.ModelSerializer):
         model = GlobalSettings
         fields = ("registration_mode", "setup_completed")
         read_only_fields = ("setup_completed",)
+
+
+class DeviceTokenSerializer(serializers.ModelSerializer):
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceToken
+        fields = (
+            "id",
+            "name",
+            "platform",
+            "prefix",
+            "created_at",
+            "last_used_at",
+            "revoked_at",
+            "is_current",
+        )
+        read_only_fields = fields
+
+    def get_is_current(self, obj: DeviceToken) -> bool:
+        return self.context.get("current_token_id") == obj.pk
+
+
+class DeviceTokenRenameSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100, allow_blank=True)
+
+
+class DevicePairingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DevicePairing
+        fields = (
+            "id",
+            "status",
+            "created_at",
+            "expires_at",
+            "new_device_name",
+            "new_device_platform",
+            "claimed_at",
+            "approved_at",
+            "consumed_at",
+        )
+        read_only_fields = fields
+
+
+class PairingClaimSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=128)
+    device_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=100
+    )
+    platform = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, default="android"
+    )
+
+
+class PairingClaimTokenSerializer(serializers.Serializer):
+    claim_token = serializers.CharField(max_length=128)

@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django.conf import settings
@@ -20,6 +21,8 @@ class ActiveManager(models.Manager):
 class SoftDeleteModel(models.Model):
     """Soft delete with 30-day retention: rows stay queryable via all_objects."""
 
+    # Identificatore stabile per la migrazione locale ↔ server (DC-103/104).
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     deleted_by = models.ForeignKey(
@@ -50,9 +53,35 @@ class SoftDeleteModel(models.Model):
         self.save(update_fields=("is_deleted", "deleted_at", "deleted_by"))
 
 
+class IdempotencyRecord(models.Model):
+    """Risposta memorizzata per una chiave ``Idempotency-Key`` (DC-103)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="idempotency_records",
+    )
+    key = models.CharField(max_length=128)
+    method = models.CharField(max_length=8)
+    path = models.CharField(max_length=255)
+    request_hash = models.CharField(max_length=64)
+    status_code = models.PositiveSmallIntegerField()
+    response_body = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "key"], name="finance_idempotency_user_key_unique"
+            )
+        ]
+        indexes = [models.Index(fields=["created_at"])]
+
+
 class Profile(models.Model):
     """Personal profile: exactly one per normal account (DC-013)."""
 
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -575,6 +604,7 @@ class AutomationExecution(models.Model):
         RULE_DELETED = "rule_deleted", "Regola eliminata"
         CANCELLED = "cancelled", "Annullata"
 
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     automation = models.ForeignKey(
         Automation,
         on_delete=models.SET_NULL,
