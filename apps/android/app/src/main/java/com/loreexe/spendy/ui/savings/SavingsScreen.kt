@@ -1,6 +1,7 @@
 package com.loreexe.spendy.ui.savings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -173,6 +175,11 @@ fun SavingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = if (showTopBar) {
+            ScaffoldDefaults.contentWindowInsets
+        } else {
+            WindowInsets(0, 0, 0, 0)
+        },
         topBar = {
             if (showTopBar) {
                 TopAppBar(
@@ -246,7 +253,18 @@ fun SavingsScreen(
                     }
                 }
                 items(state.savings, key = { it.uuid }) { savings ->
-                    Card(onClick = { viewModel.openEdit(savings) }, modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        onClick = { viewModel.openEdit(savings) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                        ),
+                    ) {
                         Column(Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {

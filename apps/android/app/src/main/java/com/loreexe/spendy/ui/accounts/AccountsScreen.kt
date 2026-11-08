@@ -205,7 +205,18 @@ fun AccountsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(state.accounts, key = { it.uuid }) { account ->
-                    Card(onClick = { viewModel.edit(account) }, modifier = Modifier.fillMaxWidth()) {
+                    Card(
+                        onClick = { viewModel.edit(account) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                        ),
+                    ) {
                         Row(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,

@@ -520,6 +520,10 @@ private fun FlowCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+        ),
     ) {
         Row(
             modifier = Modifier.padding(14.dp),
@@ -571,6 +575,10 @@ private fun ChartCard(title: String, content: @Composable () -> Unit) {
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
         ),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -889,6 +897,10 @@ private fun MenuGroup(title: String, content: @Composable () -> Unit) {
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                 contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
             ),
         ) {
             Column { content() }

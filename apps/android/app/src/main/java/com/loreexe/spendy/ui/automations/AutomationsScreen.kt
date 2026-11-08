@@ -291,7 +291,18 @@ private fun AutomationCard(
     onPause: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = onEdit,
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+        ),
+    ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

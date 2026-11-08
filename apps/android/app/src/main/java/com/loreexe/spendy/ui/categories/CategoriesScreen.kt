@@ -255,7 +255,18 @@ private fun RowItem(
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)?,
 ) {
-    Card(onClick = onEdit ?: {}, modifier = Modifier.fillMaxWidth()) {
+    Card(
+        onClick = onEdit ?: {},
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+        ),
+    ) {
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
