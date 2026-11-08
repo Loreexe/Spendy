@@ -2,6 +2,7 @@ package com.loreexe.spendy.ui.main
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -49,7 +50,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -69,6 +69,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -78,7 +81,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.loreexe.spendy.R
-import com.loreexe.spendy.data.AppMode
 import com.loreexe.spendy.data.model.CategoryTotal
 import com.loreexe.spendy.data.model.DashboardData
 import com.loreexe.spendy.data.model.SeriesData
@@ -120,38 +122,21 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
+                    val darkTheme =
+                        MaterialTheme.colorScheme.background.luminance() < 0.5f
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                        )
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            text = "Spendy",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.size(10.dp))
-                        Surface(
-                            modifier = Modifier.weight(1f, fill = false),
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                        ) {
-                            Text(
-                                text = if (state.mode == AppMode.LOCAL) {
-                                    "Archivio locale"
+                        Image(
+                            painter = painterResource(
+                                if (darkTheme) {
+                                    R.drawable.spendy_lockup_dark
                                 } else {
-                                    state.serverName ?: "Server"
+                                    R.drawable.spendy_lockup_light
                                 },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                            ),
+                            contentDescription = "Spendy",
+                            modifier = Modifier.height(26.dp),
+                            contentScale = ContentScale.Fit,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -453,13 +438,13 @@ private fun HeroBalanceCard(data: DashboardData) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = stringResource(R.string.dashboard_balance),
+                        text = stringResource(R.string.dashboard_period),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.weight(1f))
                     Icon(
-                        imageVector = Icons.Outlined.AccountBalanceWallet,
+                        imageVector = Icons.Outlined.ShowChart,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
@@ -467,21 +452,34 @@ private fun HeroBalanceCard(data: DashboardData) {
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = formatCents(data.totalBalanceCents),
+                    text = formatCents(data.periodBalanceCents),
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.SemiBold,
+                    color = if (data.periodBalanceCents < 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                 )
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                     MiniMetric(
-                        stringResource(R.string.dashboard_patrimony),
-                        formatCents(data.totalPatrimonyCents),
+                        stringResource(R.string.dashboard_account_balance),
+                        formatCents(data.totalBalanceCents),
                     )
                     MiniMetric(
-                        stringResource(R.string.dashboard_period),
-                        formatCents(data.periodBalanceCents),
+                        stringResource(R.string.dashboard_investments),
+                        formatCents(data.investmentsCostCents),
+                        note = if (data.investmentsValueCents > 0) {
+                            stringResource(
+                                R.string.dashboard_investments_value,
+                                formatCents(data.investmentsValueCents),
+                            )
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -490,7 +488,7 @@ private fun HeroBalanceCard(data: DashboardData) {
 }
 
 @Composable
-private fun MiniMetric(label: String, value: String) {
+private fun MiniMetric(label: String, value: String, note: String? = null) {
     Column {
         Text(
             text = label,
@@ -502,6 +500,13 @@ private fun MiniMetric(label: String, value: String) {
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
+        note?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

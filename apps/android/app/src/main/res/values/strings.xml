@@ -34,6 +34,9 @@
     <string name="dashboard_title">Dashboard</string>
     <string name="dashboard_balance">Saldo totale</string>
     <string name="dashboard_patrimony">Patrimonio</string>
+    <string name="dashboard_account_balance">Saldo conti</string>
+    <string name="dashboard_investments">Investimenti</string>
+    <string name="dashboard_investments_value">valore %1$s</string>
     <string name="dashboard_period">Saldo del periodo</string>
     <string name="dashboard_income">Entrate</string>
     <string name="dashboard_expense">Uscite</string>

@@ -260,6 +260,10 @@ class RemoteFinanceRepository(
                 periodBalanceCents = parseMoneyToCents(dto.periodBalance),
                 incomeCents = parseMoneyToCents(dto.incomeTotal),
                 expenseCents = parseMoneyToCents(dto.expenseTotal),
+                savingsCents = parseMoneyToCents(dto.totalSavings),
+                investmentsCostCents = parseMoneyToCents(dto.totalInvestmentsCost),
+                investmentsValueCents = parseMoneyToCents(dto.totalInvestmentsValue),
+                positionsWithoutPrice = dto.positionsWithoutPrice,
             )
         }
     }
@@ -975,13 +979,17 @@ class LocalFinanceRepository(
             ).values.sum()
             val positions = dao.observeInvestmentPositions().first()
             val operations = dao.observeInvestmentOperations().first()
-            val investmentCost = localSummary(positions, operations).totalCostCents
+            val investmentSummary = localSummary(positions, operations)
             DashboardData(
                 totalBalanceCents = total,
-                totalPatrimonyCents = total + savingsTotal + investmentCost,
+                totalPatrimonyCents = total + savingsTotal + investmentSummary.totalCostCents,
                 periodBalanceCents = income - expense,
                 incomeCents = income,
                 expenseCents = expense,
+                savingsCents = savingsTotal,
+                investmentsCostCents = investmentSummary.totalCostCents,
+                investmentsValueCents = investmentSummary.totalValueCents,
+                positionsWithoutPrice = investmentSummary.positionsWithoutPrice,
             )
         }
     }

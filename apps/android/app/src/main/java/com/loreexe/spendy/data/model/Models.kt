@@ -60,6 +60,10 @@ data class DashboardDto(
     @SerialName("period_balance") val periodBalance: String = "0.00",
     @SerialName("income_total") val incomeTotal: String = "0.00",
     @SerialName("expense_total") val expenseTotal: String = "0.00",
+    @SerialName("total_savings") val totalSavings: String = "0.00",
+    @SerialName("total_investments_cost") val totalInvestmentsCost: String = "0.00",
+    @SerialName("total_investments_value") val totalInvestmentsValue: String = "0.00",
+    @SerialName("positions_without_price") val positionsWithoutPrice: Int = 0,
 )
 
 @Serializable
@@ -204,6 +208,10 @@ data class DashboardData(
     val periodBalanceCents: Long,
     val incomeCents: Long,
     val expenseCents: Long,
+    val savingsCents: Long = 0,
+    val investmentsCostCents: Long = 0,
+    val investmentsValueCents: Long = 0,
+    val positionsWithoutPrice: Int = 0,
 )
 
 data class AccountData(

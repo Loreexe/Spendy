@@ -261,12 +261,15 @@ export function DashboardPage() {
         <>
           <section className="dash-summary">
             <div className="card dash-hero">
-              <span className="stat-label">Patrimonio</span>
+              <span className="stat-label">Saldo del periodo</span>
               <strong className="dash-big">
-                {money(data.total_patrimony)}
+                {money(data.period_balance)}
               </strong>
               <p className="muted small">
-                Conti + salvadanai + investimenti al costo
+                {formatDay(data.period.start)} – {formatDay(data.period.end)}
+                {Number(data.period_dividends) > 0
+                  ? ` · dividendi ${money(data.period_dividends)}`
+                  : ""}
               </p>
               <div className="dash-breakdown">
                 <div>
@@ -289,27 +292,11 @@ export function DashboardPage() {
                       : ""}
                   </span>
                 </div>
+                <div>
+                  <span>Patrimonio</span>
+                  <strong>{money(data.total_patrimony)}</strong>
+                </div>
               </div>
-            </div>
-
-            <div className="card dash-period">
-              <div className="dash-period-head">
-                <span className="stat-label">Saldo del periodo</span>
-                <span className="muted small">
-                  {formatDay(data.period.start)} – {formatDay(data.period.end)}
-                </span>
-              </div>
-              <strong className="dash-period-amount">
-                {money(data.period_balance)}
-              </strong>
-              {Number(data.period_dividends) > 0 && (
-                <span className="muted small">
-                  di cui dividendi {money(data.period_dividends)}
-                </span>
-              )}
-              <Link className="dash-link" to="/movements">
-                Apri il registro
-              </Link>
             </div>
           </section>
 
