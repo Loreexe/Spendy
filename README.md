@@ -8,12 +8,15 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.0`, che introduce l'**API `/api/v1/`** con token per
+> **Stato:** release `v0.8.1`, che consolida l'**API `/api/v1/`** con token per
 > dispositivo, il pairing via QR e l'**app Android** (Kotlin + Jetpack Compose)
-> con modalità server e archivio locale. Comprende anche cestino/undo,
-> import/export, migrazione in sostituzione, profilo, impostazioni, dispositivi
-> e pairing. Il progetto è in sviluppo attivo: gruppi, MCP e notifiche
-> push/email non sono ancora implementati.
+> con modalità server e archivio locale. La `0.8.1` aggiunge la gestione di
+> **dispositivi e pairing QR dal web**, la dashboard unificata e le rifiniture
+> dell'app Android (ricerca e filtri compatti, menu ⋮ per le azioni distruttive,
+> swipe tra le schermate, icone ufficiali). Comprende anche cestino/undo,
+> import/export, migrazione in sostituzione, profilo e impostazioni. Il progetto
+> è in sviluppo attivo: gruppi, MCP e notifiche push/email non sono ancora
+> implementati.
 
 ## Screenshot
 
@@ -175,7 +178,7 @@ docker compose config
 Stato verificato: **349 test backend**, **15 test unitari Android**, lint e
 build frontend, configurazione Compose valida, configurazione Nginx e pagina di
 manutenzione verificate, procedura di aggiornamento provata in dry-run e con
-Docker simulato (successo e rollback). La release `v0.8.0` comprende l'API v1
+Docker simulato (successo e rollback). La release `v0.8.1` comprende l'API v1
 con token per dispositivo, UUID e archivio schema 4, il pairing via QR e l'app
 Android con conti, movimenti, salvadanai, investimenti, automazioni, cestino,
 import/export, migrazione, profilo, impostazioni, dispositivi e pairing.
@@ -320,8 +323,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.0
-./scripts/update.sh v0.8.0
+./scripts/update.sh --dry-run v0.8.1
+./scripts/update.sh v0.8.1
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

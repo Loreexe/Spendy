@@ -1,6 +1,6 @@
 # Spendy Android
 
-Client Android nativo di Spendy (DC-102…106), **release 0.8.0**. Due modalità: server (`/api/v1/` con token per dispositivo) e archivio locale standalone con SQLCipher e biometria. Conti, movimenti, categorie/tag, grafici, ricerca, salvadanai, investimenti, automazioni, cestino/undo, import/export, migrazione in sostituzione, profilo, impostazioni, dispositivi e pairing QR.
+Client Android nativo di Spendy (DC-102…106), **release 0.8.1**. Due modalità: server (`/api/v1/` con token per dispositivo) e archivio locale standalone con SQLCipher e biometria. Conti, movimenti, categorie/tag, grafici, ricerca, salvadanai, investimenti, automazioni, cestino/undo, import/export, migrazione in sostituzione, profilo, impostazioni, dispositivi e pairing QR.
 
 ## Requisiti
 
