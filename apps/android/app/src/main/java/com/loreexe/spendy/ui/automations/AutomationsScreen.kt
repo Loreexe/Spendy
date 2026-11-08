@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
+import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.data.model.AutomationData
 import com.loreexe.spendy.data.model.ExecutionData
@@ -324,9 +325,7 @@ private fun AutomationCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete))
-                }
+                OverflowMenu(onDelete = onDelete, onEdit = onEdit)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onRun) { Text("Esegui") }

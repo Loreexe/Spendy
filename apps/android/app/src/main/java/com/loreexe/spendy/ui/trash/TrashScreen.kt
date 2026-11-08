@@ -36,6 +36,7 @@ import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.data.model.TrashItemData
+import com.loreexe.spendy.ui.components.OverflowMenu
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -141,9 +142,10 @@ fun TrashScreen(
                             IconButton(onClick = { viewModel.restore(item) }) {
                                 Icon(Icons.Outlined.Restore, contentDescription = "Ripristina")
                             }
-                            IconButton(onClick = { viewModel.purge(item) }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete))
-                            }
+                            OverflowMenu(
+                                onDelete = { viewModel.purge(item) },
+                                deleteLabel = "Elimina definitivamente",
+                            )
                         }
                     }
                 }

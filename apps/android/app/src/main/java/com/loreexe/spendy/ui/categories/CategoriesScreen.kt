@@ -40,6 +40,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
+import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.data.model.CategoryData
 import com.loreexe.spendy.data.model.TagData
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -281,11 +282,7 @@ private fun RowItem(
                     )
                 }
             }
-            onDelete?.let {
-                IconButton(onClick = it) {
-                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete))
-                }
-            }
+            OverflowMenu(onDelete = onDelete, onEdit = onEdit)
         }
     }
 }

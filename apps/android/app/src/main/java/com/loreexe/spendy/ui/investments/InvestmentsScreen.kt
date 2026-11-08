@@ -47,6 +47,7 @@ import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.AppMode
 import com.loreexe.spendy.data.FinanceRepository
+import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.data.SessionStore
 import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.data.model.InvestmentOperationData
@@ -527,9 +528,10 @@ private fun PositionDetailDialog(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            IconButton(onClick = { onDeleteOperation(operation) }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete))
-                            }
+                            OverflowMenu(
+                                onDelete = { onDeleteOperation(operation) },
+                                deleteLabel = "Elimina operazione",
+                            )
                         }
                     }
                 }

@@ -64,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
+import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.data.model.CategoryData
 import com.loreexe.spendy.data.model.NewTransaction
@@ -592,9 +593,7 @@ private fun MovementCard(
                     else -> MaterialTheme.colorScheme.onSurface
                 },
             )
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete))
-            }
+            OverflowMenu(onDelete = onDelete, onEdit = onEdit)
         }
     }
 }
