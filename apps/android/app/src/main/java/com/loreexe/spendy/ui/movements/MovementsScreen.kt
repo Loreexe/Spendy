@@ -1,5 +1,6 @@
 package com.loreexe.spendy.ui.movements
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -7,16 +8,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -29,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -318,93 +328,145 @@ fun MovementsScreen(
                     onClick = { viewModel.setKind("transfer") },
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                ),
             ) {
-                OutlinedTextField(
-                    value = state.filters.query,
-                    onValueChange = viewModel::setQuery,
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.search_hint)) },
-                )
-                TextButton(onClick = { showFilters = !showFilters }) {
-                    Text(if (showFilters) "Meno filtri" else "Più filtri")
+                Row(
+                    modifier = Modifier.height(46.dp).padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                    BasicTextField(
+                        value = state.filters.query,
+                        onValueChange = viewModel::setQuery,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { inner ->
+                            if (state.filters.query.isBlank()) {
+                                Text(
+                                    stringResource(R.string.search_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                            inner()
+                        },
+                    )
+                    IconButton(
+                        onClick = { showFilters = !showFilters },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            Icons.Outlined.Tune,
+                            contentDescription = "Filtri",
+                            tint = if (showFilters) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
             if (showFilters) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Selector(
-                    label = stringResource(R.string.filter_account),
-                    selected = state.accounts.firstOrNull { it.uuid == state.filters.accountUuid }?.name
-                        ?: stringResource(R.string.filter_all),
-                    options = listOf("" to stringResource(R.string.filter_all)) +
-                        state.accounts.map { it.uuid to it.name },
-                    onSelect = { viewModel.setAccount(it.ifBlank { null }) },
-                    modifier = Modifier.weight(1f),
-                )
-                Selector(
-                    label = stringResource(R.string.filter_category),
-                    selected = state.categories.firstOrNull { it.uuid == state.filters.categoryUuid }?.name
-                        ?: stringResource(R.string.filter_all),
-                    options = listOf("" to stringResource(R.string.filter_all)) +
-                        state.categories.map { it.uuid to it.name },
-                    onSelect = { viewModel.setCategory(it.ifBlank { null }) },
-                    modifier = Modifier.weight(1f),
-                )
-                Selector(
-                    label = "Tag",
-                    selected = state.filters.tag ?: stringResource(R.string.filter_all),
-                    options = listOf("" to stringResource(R.string.filter_all)) +
-                        state.tags.map { it.name to it.name },
-                    onSelect = { viewModel.setTag(it.ifBlank { null }) },
-                    modifier = Modifier.weight(1f),
-                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Selector(
+                                label = stringResource(R.string.filter_account),
+                                selected = state.accounts.firstOrNull { it.uuid == state.filters.accountUuid }?.name
+                                    ?: stringResource(R.string.filter_all),
+                                options = listOf("" to stringResource(R.string.filter_all)) +
+                                    state.accounts.map { it.uuid to it.name },
+                                onSelect = { viewModel.setAccount(it.ifBlank { null }) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Selector(
+                                label = stringResource(R.string.filter_category),
+                                selected = state.categories.firstOrNull { it.uuid == state.filters.categoryUuid }?.name
+                                    ?: stringResource(R.string.filter_all),
+                                options = listOf("" to stringResource(R.string.filter_all)) +
+                                    state.categories.map { it.uuid to it.name },
+                                onSelect = { viewModel.setCategory(it.ifBlank { null }) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Selector(
+                                label = "Tag",
+                                selected = state.filters.tag ?: stringResource(R.string.filter_all),
+                                options = listOf("" to stringResource(R.string.filter_all)) +
+                                    state.tags.map { it.name to it.name },
+                                onSelect = { viewModel.setTag(it.ifBlank { null }) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = startText,
+                                onValueChange = { startText = it; viewModel.setStart(it) },
+                                label = { Text("Dal") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = endText,
+                                onValueChange = { endText = it; viewModel.setEnd(it) },
+                                label = { Text("Al") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = minText,
+                                onValueChange = { minText = it; viewModel.setMin(it) },
+                                label = { Text("Min") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = maxText,
+                                onValueChange = { maxText = it; viewModel.setMax(it) },
+                                label = { Text("Max") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = startText,
-                    onValueChange = { startText = it; viewModel.setStart(it) },
-                    label = { Text("Dal") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = endText,
-                    onValueChange = { endText = it; viewModel.setEnd(it) },
-                    label = { Text("Al") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = minText,
-                    onValueChange = { minText = it; viewModel.setMin(it) },
-                    label = { Text("Min") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = maxText,
-                    onValueChange = { maxText = it; viewModel.setMax(it) },
-                    label = { Text("Max") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            }
-
             when {
                 state.loading -> Box(
                     Modifier.fillMaxWidth().weight(1f),
@@ -486,9 +548,13 @@ private fun MovementCard(
     Card(
         onClick = onEdit,
         modifier = Modifier.fillMaxWidth(),
-        border = androidx.compose.foundation.BorderStroke(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
         ),
     ) {
         Row(
