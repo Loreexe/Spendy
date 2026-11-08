@@ -10,6 +10,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 enum class ThemeMode {
@@ -37,6 +38,22 @@ private val DarkColors = darkColorScheme(
     error = SpendyDangerDark,
     errorContainer = SpendyDangerDark.copy(alpha = 0.22f),
     onErrorContainer = SpendyTextDark,
+    tertiary = SpendyInfoDark,
+    onTertiary = SpendyBg0Dark,
+    tertiaryContainer = SpendyBg2Dark,
+    onTertiaryContainer = SpendyTextDark,
+    surfaceDim = SpendyBg0Dark,
+    surfaceBright = Color(0xFF2A3530),
+    surfaceContainerLowest = SpendyBg0Dark,
+    surfaceContainerLow = SpendyBg1Dark,
+    surfaceContainer = SpendyBg2Dark,
+    surfaceContainerHigh = Color(0xFF1E2823),
+    surfaceContainerHighest = Color(0xFF232E29),
+    surfaceTint = SpendyAccentDark,
+    inverseSurface = SpendyTextDark,
+    inverseOnSurface = SpendyBg0Dark,
+    inversePrimary = SpendyAccentLight,
+    outlineVariant = SpendyLineDark,
 )
 
 private val LightColors = lightColorScheme(
@@ -58,6 +75,22 @@ private val LightColors = lightColorScheme(
     error = SpendyDangerLight,
     errorContainer = SpendyDangerLight.copy(alpha = 0.14f),
     onErrorContainer = SpendyTextLight,
+    tertiary = SpendyInfoLight,
+    onTertiary = SpendyBg0Light,
+    tertiaryContainer = SpendyBg2Light,
+    onTertiaryContainer = SpendyTextLight,
+    surfaceDim = Color(0xFFDCE3DF),
+    surfaceBright = Color(0xFFFFFFFF),
+    surfaceContainerLowest = SpendyBg1Light,
+    surfaceContainerLow = SpendyBg0Light,
+    surfaceContainer = SpendyBg2Light,
+    surfaceContainerHigh = Color(0xFFDFE7E3),
+    surfaceContainerHighest = Color(0xFFD5DCD7),
+    surfaceTint = SpendyAccentLight,
+    inverseSurface = SpendyTextLight,
+    inverseOnSurface = SpendyBg0Light,
+    inversePrimary = SpendyAccentDark,
+    outlineVariant = SpendyLineLight,
 )
 
 private val SpendyShapes = Shapes(

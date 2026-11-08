@@ -501,8 +501,11 @@ private fun MovementCard(
             Text(
                 "$sign${formatCents(transaction.amountCents)}",
                 fontWeight = FontWeight.SemiBold,
-                color = if (transaction.kind == "expense") MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurface,
+                color = when (transaction.kind) {
+                    "expense" -> MaterialTheme.colorScheme.error
+                    "income" -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
             )
             IconButton(onClick = onDelete) {
                 Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete))
