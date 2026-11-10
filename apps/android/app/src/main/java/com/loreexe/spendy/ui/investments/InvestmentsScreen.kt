@@ -11,10 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -59,6 +55,7 @@ import com.loreexe.spendy.data.model.NewInvestmentPosition
 import com.loreexe.spendy.data.model.SavingsData
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
+import com.loreexe.spendy.ui.components.EmptyState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -69,6 +66,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
+import androidx.compose.ui.res.painterResource
 
 data class InvestmentsUiState(
     val loading: Boolean = true,
@@ -78,6 +76,7 @@ data class InvestmentsUiState(
     val detail: InvestmentPositionDetailData? = null,
     val localMode: Boolean = false,
     val error: String? = null,
+    val retryDetail: InvestmentPositionData? = null,
     val saving: Boolean = false,
     val dialog: String? = null,
 )
@@ -98,7 +97,7 @@ class InvestmentsViewModel @Inject constructor(
 
     fun load() {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = true, error = null, retryDetail = null) }
             coroutineScope {
                 val portfolio = async { repository.investments() }
                 val accounts = async { repository.accounts() }
@@ -107,11 +106,23 @@ class InvestmentsViewModel @Inject constructor(
                 savings.await().onSuccess { list -> _state.update { it.copy(savings = list) } }
                 portfolio.await()
                     .onSuccess { data -> _state.update { it.copy(loading = false, portfolio = data) } }
-                    .onFailure { error ->
-                        _state.update { it.copy(loading = false, error = error.message ?: "Errore nel caricamento.") }
+                    .onFailure {
+                        _state.update {
+                            it.copy(
+                                loading = false,
+                                error = "Impossibile caricare gli investimenti.",
+                                retryDetail = null,
+                            )
+                        }
                     }
             }
         }
+    }
+
+    /** Riprova l'operazione fallita: ricarica la lista o riapre il dettaglio della posizione. */
+    fun retry() {
+        val position = _state.value.retryDetail
+        if (position != null) openDetail(position) else load()
     }
 
     fun openCreate() = _state.update { it.copy(dialog = "create") }
@@ -121,14 +132,24 @@ class InvestmentsViewModel @Inject constructor(
             _state.update { it.copy(saving = true, error = null) }
             repository.setInvestmentSource(accountUuid, savingsUuid)
                 .onSuccess { _state.update { it.copy(saving = false, dialog = null) }; load() }
-                .onFailure { error -> _state.update { it.copy(saving = false, error = error.message) } }
+                .onFailure {
+                    _state.update { it.copy(saving = false, error = "Impossibile cambiare la fonte.") }
+                }
         }
     }
     fun openDetail(position: InvestmentPositionData) {
         viewModelScope.launch {
+            _state.update { it.copy(error = null, retryDetail = null) }
             repository.investmentDetail(position)
                 .onSuccess { detail -> _state.update { it.copy(detail = detail) } }
-                .onFailure { error -> _state.update { it.copy(error = error.message) } }
+                .onFailure {
+                    _state.update {
+                        it.copy(
+                            error = "Impossibile caricare i dati della posizione.",
+                            retryDetail = position,
+                        )
+                    }
+                }
         }
     }
     fun openOperation(kind: String) = _state.update { it.copy(dialog = "operation-$kind") }
@@ -140,7 +161,9 @@ class InvestmentsViewModel @Inject constructor(
             _state.update { it.copy(saving = true, error = null) }
             repository.createInvestmentPosition(position)
                 .onSuccess { _state.update { it.copy(saving = false, dialog = null) }; load() }
-                .onFailure { error -> _state.update { it.copy(saving = false, error = error.message) } }
+                .onFailure {
+                    _state.update { it.copy(saving = false, error = "Impossibile creare la posizione.") }
+                }
         }
     }
 
@@ -154,7 +177,9 @@ class InvestmentsViewModel @Inject constructor(
                     load()
                     openDetail(detail.position)
                 }
-                .onFailure { error -> _state.update { it.copy(saving = false, error = error.message) } }
+                .onFailure {
+                    _state.update { it.copy(saving = false, error = "Impossibile salvare l'operazione.") }
+                }
         }
     }
 
@@ -166,7 +191,9 @@ class InvestmentsViewModel @Inject constructor(
                     openDetail(detail.position)
                     load()
                 }
-                .onFailure { error -> _state.update { it.copy(error = error.message) } }
+                .onFailure {
+                    _state.update { it.copy(error = "Impossibile eliminare l'operazione.") }
+                }
         }
     }
 
@@ -174,7 +201,9 @@ class InvestmentsViewModel @Inject constructor(
         viewModelScope.launch {
             repository.setInvestmentArchived(position, archived)
                 .onSuccess { load() }
-                .onFailure { error -> _state.update { it.copy(error = error.message) } }
+                .onFailure {
+                    _state.update { it.copy(error = "Impossibile archiviare la posizione.") }
+                }
         }
     }
 }
@@ -202,7 +231,7 @@ fun InvestmentsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = viewModel::openCreate) {
-                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.investments_add))
+                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.investments_add))
             }
         },
     ) { padding ->
@@ -211,7 +240,7 @@ fun InvestmentsScreen(
             state.loading -> CircularProgressIndicator(Modifier.padding(padding))
             state.error != null -> Column(Modifier.padding(padding).padding(24.dp)) {
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }
+                TextButton(onClick = viewModel::retry) { Text(stringResource(R.string.retry)) }
             }
             portfolio == null || portfolio.positions.isEmpty() -> Column(
                 Modifier.padding(padding).padding(24.dp),
@@ -223,34 +252,14 @@ fun InvestmentsScreen(
                     )
                     androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
                 }
-                Card(
+                EmptyState(
+                    illustration = R.drawable.ill_empty_investments,
+                    title = stringResource(R.string.empty_investments_title),
+                    description = stringResource(R.string.empty_investments_body),
+                    actionLabel = stringResource(R.string.investments_add),
+                    onAction = viewModel::openCreate,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(24.dp),
-                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            androidx.compose.material.icons.Icons.Outlined.Inventory2,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            stringResource(R.string.investments_empty),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                        Button(onClick = viewModel::openCreate) {
-                            Text(stringResource(R.string.investments_add))
-                        }
-                    }
-                }
+                )
             }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -426,7 +435,7 @@ private fun PositionCard(
                 )
             }
             IconButton(onClick = onArchive) {
-                Icon(Icons.Outlined.Inventory2, contentDescription = stringResource(R.string.investments_archive))
+                Icon(painterResource(R.drawable.ic_lucide_package), contentDescription = stringResource(R.string.investments_archive))
             }
         }
     }

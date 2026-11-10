@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { api, type Account, type AccountType } from "../api";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { EmptyState } from "../components/EmptyState";
 import { LoadingScreen } from "../components/Guards";
 import { useToast } from "../components/Toast";
 import { amountClass, money } from "../format";
@@ -23,6 +30,7 @@ export function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,6 +129,7 @@ export function AccountsPage() {
             <label>
               Nome
               <input
+                ref={nameInputRef}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Contanti, Carta 1, Banca…"
@@ -158,7 +167,13 @@ export function AccountsPage() {
         <section className="card scroll-list">
           <h2>I tuoi conti ({accounts.length})</h2>
           {accounts.length === 0 ? (
-            <p className="muted">Nessun conto creato.</p>
+            <EmptyState
+              illustration="accounts"
+              title="Nessun conto creato"
+              description="Aggiungi il primo conto per iniziare a tenere traccia di saldi e movimenti."
+              actionLabel="Crea conto"
+              onAction={() => nameInputRef.current?.focus()}
+            />
           ) : (
             <ul className="entity-list">
               {accounts.map((account) => (

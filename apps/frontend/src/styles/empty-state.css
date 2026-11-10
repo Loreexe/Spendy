@@ -1,0 +1,60 @@
+/* Stato vuoto illustrato (EmptyState) e segnaposto di caricamento
+   (SkeletonLines). I colori arrivano dai token del tema attivo, quindi
+   funzionano sia in tema scuro sia in tema chiaro. */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+}
+
+.empty-state-art {
+  color: var(--accent);
+  opacity: 0.85;
+  margin-bottom: 0.25rem;
+}
+
+.empty-state-art svg {
+  display: block;
+  width: clamp(8.5rem, 42%, 11rem);
+  height: auto;
+}
+
+.empty-state-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.empty-state-description {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.empty-state-action {
+  margin-top: 0.7rem;
+}
+
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.4rem 0;
+}
+
+.skeleton-lines .skeleton-line {
+  height: 1rem;
+}
+
+.skeleton-lines .skeleton-card {
+  height: 4.5rem;
+  border-radius: var(--radius, 18px);
+}

@@ -12,6 +12,12 @@ dimostrazioni locali. **Non è un backup reale e non contiene dati veri.**
 Il database è escluso da Git (`.gitignore`) e viaggia con la cartella del
 progetto tramite Nextcloud.
 
+> **Nota (2026-11-09):** lo snapshot è stato riallineato alle migrazioni del
+> backend `0.8.1` (`accounts.0004_devicetoken_devicepairing`,
+> `finance.0012`, `finance.0013`), che mancavano e facevano fallire il login.
+> Se il backend introduce nuove migrazioni, dopo `load_demo.sh` eseguire
+> `DJANGO_DEBUG=1 .venv/bin/python apps/backend/manage.py migrate`.
+
 ## Dati presenti
 
 - 3 conti, 2 salvadanai con versamenti;
@@ -19,6 +25,20 @@ progetto tramite Nextcloud.
 - automazioni attive e voci nel cestino;
 - 6 posizioni di investimento con aperture, acquisti, vendite e dividendi;
 - nome, foto profilo e impostazioni del profilo demo.
+
+## Avvio rapido con lo script
+
+```bash
+./scripts/demo_server.sh up      # ripristina il demo e avvia backend + frontend
+./scripts/demo_server.sh status  # stato e URL
+./scripts/demo_server.sh down    # ferma i server
+```
+
+Lo script ripristina lo snapshot (con backup del database corrente), applica le
+migrazioni e crea/aggiorna il secondo account demo `demo2@spendy.test` (utile per
+provare il cambio utente nell'app Android). Da un agente in sandbox, avviare
+`./scripts/demo_server.sh run` come background job persistente: vedi
+[RULES.md](../.spendy-wiki/RULES.md) § «Procedure rapide: server demo e app Android».
 
 ## Ripristinare il demo
 

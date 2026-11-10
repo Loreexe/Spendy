@@ -187,7 +187,7 @@ class TransactionTests(FinanceTestBase):
         self.assertEqual(Account.objects.get(pk=other["id"]).balance, 200)
 
         dashboard = self.client.get(reverse("finance-dashboard"))
-        self.assertEqual(dashboard.data["period_balance"], "1000.00")
+        self.assertEqual(dashboard.data["period_balance"], "0.00")
         self.assertEqual(dashboard.data["income_total"], "0.00")
         self.assertEqual(dashboard.data["expense_total"], "0.00")
 
@@ -327,7 +327,9 @@ class SavingsPaymentTests(FinanceTestBase):
         )
 
         dashboard = self.client.get(reverse("finance-dashboard"))
-        self.assertEqual(dashboard.data["expense_total"], "50.00")
+        # Pagamento dal salvadanaio: i conti non si muovono (ponte tecnico),
+        # quindi non entra nei flussi di cassa dei conti.
+        self.assertEqual(dashboard.data["expense_total"], "0.00")
         self.assertEqual(dashboard.data["period_balance"], "0.00")
 
     def test_partial_savings_payment_requires_confirmation(self):
@@ -432,9 +434,70 @@ class DashboardAndIsolationTests(FinanceTestBase):
         self.assertEqual(response.data["total_balance"], "900.00")
         self.assertEqual(response.data["total_savings"], "200.00")
         self.assertEqual(response.data["total_patrimony"], "1100.00")
-        self.assertEqual(response.data["period_balance"], "900.00")
+        self.assertEqual(response.data["period_balance"], "100.00")
 
-    def test_full_range_period_balance_equals_total_balance(self):
+    def test_entrate_uscite_are_account_cash_flows(self):
+        account = self.create_account(initial="1000.00").data
+        savings = self.create_savings(account["id"]).data
+        self.create_transaction(
+            {
+                "kind": "income",
+                "date": self.today.isoformat(),
+                "amount": "100.00",
+                "account": account["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "40.00",
+                "account": account["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "transfer",
+                "date": self.today.isoformat(),
+                "amount": "200.00",
+                "from_account": account["id"],
+                "to_savings": savings["id"],
+            }
+        )
+        # Spesa pagata dal salvadanaio: ponte tecnico, i conti non si muovono.
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "30.00",
+                "savings": savings["id"],
+            }
+        )
+        response = self.client.get(reverse("finance-dashboard"))
+        self.assertEqual(response.data["income_total"], "100.00")
+        self.assertEqual(response.data["expense_total"], "40.00")
+        # Apertura esclusa, trasferimento escluso, spesa da salvadanaio neutra:
+        # il saldo del periodo è esattamente Entrate − Uscite.
+        self.assertEqual(response.data["period_balance"], "60.00")
+
+    def test_deleted_transactions_are_excluded_from_flows(self):
+        account = self.create_account(initial="1000.00").data
+        created = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "50.00",
+                "account": account["id"],
+            }
+        )
+        Transaction.objects.filter(pk=created.data["id"]).update(is_deleted=True)
+        response = self.client.get(reverse("finance-dashboard"))
+        self.assertEqual(response.data["income_total"], "0.00")
+        self.assertEqual(response.data["expense_total"], "0.00")
+        # Nessun flusso attivo: il saldo del periodo è Entrate − Uscite = 0.
+        self.assertEqual(response.data["period_balance"], "0.00")
+
+    def test_full_range_period_balance_is_net_cash_flow(self):
         account = self.create_account(initial="1000.00").data
         self.create_transaction(
             {
@@ -456,10 +519,10 @@ class DashboardAndIsolationTests(FinanceTestBase):
             reverse("finance-dashboard"),
             {"start": "2000-01-01", "end": self.today.isoformat()},
         )
-        self.assertEqual(
-            response.data["period_balance"], response.data["total_balance"]
-        )
-        self.assertEqual(response.data["period_balance"], "970.00")
+        # Il saldo del periodo è Entrate − Uscite (10 − 40); l'apertura di 1000
+        # è capitale e resta visibile nel saldo totale dei conti.
+        self.assertEqual(response.data["period_balance"], "-30.00")
+        self.assertEqual(response.data["total_balance"], "970.00")
 
     def test_accounts_expose_period_value_and_total_with_savings(self):
         account = self.create_account(initial="1000.00").data
@@ -486,6 +549,71 @@ class DashboardAndIsolationTests(FinanceTestBase):
         self.assertEqual(row["period_balance"], "750.00")
         # Saldo effettivo (750) + salvadanaio collegato (200).
         self.assertEqual(row["total_with_savings"], "950.00")
+
+    def test_full_range_dashboard_clamps_start_to_first_activity(self):
+        self.create_account(initial="1000.00")
+        response = self.client.get(
+            reverse("finance-dashboard"),
+            {"start": "2000-01-01", "end": self.today.isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["period"]["start"], self.today.isoformat())
+        self.assertEqual(response.data["period"]["end"], self.today.isoformat())
+
+    def test_full_range_series_covers_data_and_ends_today(self):
+        account = self.create_account(initial="1000.00").data
+        # Conto aperto 20 giorni fa: "Tutto" deve coprire i dati, non troncare
+        # ai primi 95 bucket (bug del periodo lungo).
+        Account.objects.filter(pk=account["id"]).update(
+            created_at=timezone.now() - timedelta(days=20)
+        )
+        self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "amount": "40.00",
+                "account": account["id"],
+            }
+        )
+        response = self.client.get(
+            reverse("finance-dashboard-series"),
+            {"start": "2000-01-01", "end": self.today.isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        buckets = response.data["buckets"]
+        self.assertGreaterEqual(len(buckets), 2)
+        self.assertLessEqual(len(buckets), 95)
+        self.assertEqual(buckets[-1]["date"], self.today.isoformat())
+        dates = [bucket["date"] for bucket in buckets]
+        self.assertEqual(dates, sorted(set(dates)))
+        self.assertEqual(buckets[-1]["saldo"], "960.00")
+
+    def test_long_series_never_exceeds_95_points(self):
+        self.create_account(initial="500.00")
+        response = self.client.get(
+            reverse("finance-dashboard-series"),
+            {
+                "start": (self.today - timedelta(days=3000)).isoformat(),
+                "end": self.today.isoformat(),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(response.data["buckets"]), 95)
+        self.assertEqual(
+            response.data["buckets"][-1]["date"], self.today.isoformat()
+        )
+
+    def test_period_before_first_activity_stays_empty(self):
+        self.create_account(initial="1000.00")
+        start = (self.today - timedelta(days=60)).isoformat()
+        end = (self.today - timedelta(days=30)).isoformat()
+        response = self.client.get(
+            reverse("finance-dashboard"),
+            {"start": start, "end": end},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["period"]["start"], start)
+        self.assertEqual(response.data["period"]["end"], end)
 
     def test_month_filter(self):
         response = self.client.get(

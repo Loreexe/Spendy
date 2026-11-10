@@ -90,7 +90,10 @@ class ServerRepository(
             sessionStore.serverOrigin?.let { origin ->
                 runCatching { apiFactory.create(origin).me() }
             }
-            sessionStore.clearServerSession()
+            sessionStore.removeActiveProfile()
         }
     }
+
+    /** Rende attivo un altro account già salvato sul dispositivo. */
+    fun switchProfile(profileId: String): Boolean = sessionStore.activateProfile(profileId)
 }

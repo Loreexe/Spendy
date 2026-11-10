@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spendy — Design, visualizzazione</title>
+<style>
+/* ============ FONT: Inter self-hosted (400/500/600/700) ============ */
+@font-face{font-family:Inter;font-style:normal;font-weight:400;font-display:block;src:url("data:font/ttf;base64,@@F400@@") format("truetype")}
+@font-face{font-family:Inter;font-style:normal;font-weight:500;font-display:block;src:url("data:font/ttf;base64,@@F500@@") format("truetype")}
+@font-face{font-family:Inter;font-style:normal;font-weight:600;font-display:block;src:url("data:font/ttf;base64,@@F600@@") format("truetype")}
+@font-face{font-family:Inter;font-style:normal;font-weight:700;font-display:block;src:url("data:font/ttf;base64,@@F700@@") format("truetype")}
+
+/* ============ TOKEN REALI (apps/frontend/src/styles/tokens.css) ============ */
+:root{
+  --bg0:#0b0f0d; --bg1:#111614; --bg2:#18201c; --line:#26302b;
+  --text:#f4f7f5; --muted:#9db3a8; --accent:#1db48b; --accent-ink:#0b0f0d;
+  --danger:#f26d6d; --warn:#e8a33d; --info:#5eb1ef; --up:#3fd08c; --down:#f27e7e;
+  --radius:18px; --radius-lg:20px;
+  --shadow-soft:0 8px 28px rgb(0 0 0 / .35);
+  --motion-fast:150ms; --motion-base:200ms;
+  --accent-soft:#16241f; --danger-soft:#2a1518; --warn-soft:#2a2111;
+  --panel:var(--bg1); --panel2:var(--bg2);
+  --glow1:rgb(29 180 139 / .10); --glow2:rgb(94 177 239 / .07);
+  --page:radial-gradient(900px 480px at 100% 0%,var(--glow1) 0%,transparent 60%),
+         radial-gradient(720px 420px at 0% 0%,var(--glow2) 0%,transparent 55%),
+         var(--bg0);
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --bg0:#f4f7f5; --bg1:#ffffff; --bg2:#e9efec; --line:#d5dcd7;
+  --text:#0b0f0d; --muted:#4a5a53; --accent:#166047; --accent-ink:#ffffff;
+  --danger:#c23b3b; --warn:#9a6206; --info:#0b6bcb; --up:#166047; --down:#c23b3b;
+  --shadow-soft:0 8px 28px rgb(11 15 13 / .1);
+  --accent-soft:#e3f2eb; --danger-soft:#f9e3e3; --warn-soft:#f7ecd4;
+  --glow1:#e7f3ec; --glow2:#eaf0f8;
+  --page:radial-gradient(900px 480px at 100% 0%,var(--glow1) 0%,transparent 60%),
+         radial-gradient(720px 420px at 0% 0%,var(--glow2) 0%,transparent 55%),
+         var(--bg0);
+  color-scheme:light;
+}
+/* I pannelli "anteprima tema" restano fedeli al tema che mostrano. */
+.scope-dark{
+  --bg0:#0b0f0d; --bg1:#111614; --bg2:#18201c; --line:#26302b;
+  --text:#f4f7f5; --muted:#9db3a8; --accent:#1db48b; --accent-ink:#0b0f0d;
+  --danger:#f26d6d; --warn:#e8a33d; --info:#5eb1ef; --up:#3fd08c; --down:#f27e7e;
+  --accent-soft:#16241f; --danger-soft:#2a1518; --warn-soft:#2a2111;
+  --panel:#111614; --panel2:#18201c;
+  --glow1:rgb(29 180 139 / .10); --glow2:rgb(94 177 239 / .07);
+  --shadow-soft:0 8px 28px rgb(0 0 0 / .35);
+  color-scheme:dark;
+}
+.scope-light{
+  --bg0:#f4f7f5; --bg1:#ffffff; --bg2:#e9efec; --line:#d5dcd7;
+  --text:#0b0f0d; --muted:#4a5a53; --accent:#166047; --accent-ink:#ffffff;
+  --danger:#b53535; --warn:#8a5604; --info:#0b6bcb; --up:#166047; --down:#c23b3b;
+  --accent-soft:#e3f2eb; --danger-soft:#f9e3e3; --warn-soft:#f7ecd4;
+  --panel:#ffffff; --panel2:#e9efec;
+  --glow1:#e7f3ec; --glow2:#eaf0f8;
+  --shadow-soft:0 8px 28px rgb(11 15 13 / .1);
+  color-scheme:light;
+}
+.scope-dark,.scope-light{ background:var(--bg0); color:var(--text); }
+
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{
+  margin:0; background:var(--page); background-attachment:fixed; color:var(--text);
+  font-family:Inter,"Segoe UI",system-ui,sans-serif; font-size:16px; line-height:1.55;
+  font-variant-ligatures:common-ligatures;
+}
+.tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+a{color:inherit;text-decoration:none}
+h1,h2,h3,h4,p{margin:0}
+.page{max-width:1440px;margin:0 auto;padding:0 56px 72px}
+
+/* ---------- tipografia del foglio ---------- */
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.19em;text-transform:uppercase;color:var(--muted)}
+.h1{font-size:68px;line-height:.98;letter-spacing:-.035em;font-weight:700;margin:14px 0 0}
+.h1 .mark{color:var(--accent)}
+.lead{font-size:18px;line-height:1.5;color:var(--muted);max-width:62ch;margin-top:20px}
+.lead strong{color:var(--text);font-weight:600}
+.sec-title{font-size:30px;line-height:1.1;letter-spacing:-.025em;font-weight:650}
+.panel-title{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.micro{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.note{font-size:12.5px;line-height:1.45;color:var(--muted)}
+.pin{margin-top:auto}
+.pin::before{content:"";display:block;height:14px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;letter-spacing:-.01em}
+
+/* ---------- masthead ---------- */
+.masthead{display:grid;grid-template-columns:1.25fr .75fr;gap:48px;align-items:center;padding:64px 0 8px}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:30px}
+.pill{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;border:1px solid var(--line);
+  border-radius:999px;font-size:11.5px;font-weight:600;color:var(--muted);background:color-mix(in srgb,var(--bg1) 55%,transparent)}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.pill.aa .dot{background:var(--info)}
+.hero-card{
+  border:1px solid var(--line); border-radius:26px; padding:40px 36px 30px;
+  background:
+    radial-gradient(320px 200px at 80% 0%,var(--glow1) 0%,transparent 70%),
+    radial-gradient(240px 160px at 0% 100%,var(--glow2) 0%,transparent 70%),
+    var(--bg1);
+  box-shadow:var(--shadow-soft); position:relative; overflow:hidden;
+}
+.hero-card .lockup{width:100%;max-width:360px;display:block;margin:0 auto}
+.hero-card .caption{margin-top:24px;padding-top:18px;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;gap:16px;align-items:flex-end}
+.hero-card .caption .note{max-width:24ch}
+.hero-card .badge-aa{font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--line);
+  border-radius:999px;padding:5px 10px;white-space:nowrap}
+
+/* ---------- indice ---------- */
+.toc{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:56px}
+.toc-item{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:color-mix(in srgb,var(--bg1) 70%,transparent)}
+.toc-item b{display:block;font-size:11px;letter-spacing:.14em;color:var(--accent);font-weight:650}
+.toc-item span{display:block;font-size:13px;font-weight:600;margin-top:3px}
+.toc-item em{display:block;font-size:10.5px;color:var(--muted);font-style:normal;margin-top:2px}
+
+/* ---------- sezioni ---------- */
+section{margin-top:78px}
+.section-head{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:end;margin-bottom:26px}
+.section-num{font-size:13px;font-weight:700;letter-spacing:.12em;color:var(--accent);
+  border:1px solid var(--line);border-radius:10px;padding:5px 10px;align-self:start;margin-top:6px;background:var(--bg1)}
+.section-head .kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:6px}
+.section-head .src{font-size:12px;color:var(--muted);margin-top:8px}
+.section-rule{height:1px;background:linear-gradient(90deg,var(--line),transparent);margin:0 0 26px}
+
+.panel{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel);padding:26px;display:flex;flex-direction:column}
+.panel.flat{background:color-mix(in srgb,var(--bg1) 60%,transparent)}
+.panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:18px}
+.panel-head .micro{letter-spacing:.12em}
+.grid{display:grid;gap:20px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g-logo{grid-template-columns:1.35fr 1fr}
+.g-logo .stack{display:grid;gap:20px;grid-template-rows:1fr 1fr}
+.h-100{height:100%}
+
+/* ---------- logo ---------- */
+.logo-shot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;min-height:190px}
+.logo-shot img{display:block}
+.logo-shot .lock-big{width:min(100%,430px)}
+.logo-shot .lock-vert{width:120px}
+.logo-shot .cap{text-align:center;max-width:40ch}
+.logo-shot .cap b{color:var(--text);font-weight:600}
+.size-row{display:flex;align-items:flex-end;gap:34px;padding:16px 6px 6px}
+.size-item{text-align:center}
+.size-item img{display:block;margin:0 auto 10px}
+.size-item small{font-size:10.5px;color:var(--muted);display:block}
+.size-item .flag{font-size:10px;color:var(--warn)}
+.mono-strip{display:flex;gap:10px;margin-top:16px}
+.mono-cell{flex:1;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;height:64px}
+.mono-cell.dark{background:#0b0f0d;color:#f4f7f5}
+.mono-cell.light{background:#f4f7f5;color:#0b0f0d}
+.mono-cell img{height:30px}
+.color-duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.color-big{border-radius:14px;border:1px solid var(--line);overflow:hidden}
+.color-big .chip{height:76px;display:flex;align-items:center;justify-content:center}
+.color-big .meta{padding:10px 12px;background:var(--bg1)}
+.color-big .meta b{display:block;font-size:13px;font-weight:650}
+.color-big .meta span{font-size:11px;color:var(--muted)}
+.rules{display:grid;gap:10px}
+.rule-row{display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:start;font-size:13px}
+.rule-row .ic{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-top:1px}
+.rule-row.ok .ic{background:var(--accent-soft);color:var(--accent)}
+.rule-row.no .ic{background:var(--danger-soft);color:var(--danger)}
+.rule-row b{font-weight:600}
+.rule-row span{color:var(--muted)}
+
+/* ---------- tema: anteprima UI ---------- */
+.mini{border-radius:16px;border:1px solid var(--line);background:var(--bg1);padding:16px;box-shadow:var(--shadow-soft)}
+.mini-top{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.mini-brand{height:22px;width:auto}
+.mini-nav{display:flex;gap:4px;margin-left:auto}
+.mini-nav i{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.mini-nav i.on{background:var(--accent-soft);color:var(--accent)}
+.mini-nav i svg{width:14px;height:14px}
+.mini-avatar{width:26px;height:26px;border-radius:50%;background:var(--bg2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--muted)}
+.mini-body{padding-top:14px;display:grid;gap:12px;grid-template-columns:1.15fr .85fr}
+.mini-card{border:1px solid var(--line);border-radius:14px;background:var(--bg2);padding:14px}
+.mini-card .lbl{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.mini-card .amt{font-size:27px;font-weight:700;letter-spacing:-.02em;margin-top:6px}
+.mini-card .sub{font-size:10.5px;color:var(--muted);margin-top:5px}
+.delta{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;margin-top:9px}
+.delta.up{color:var(--up);background:color-mix(in srgb,var(--up) 14%,transparent)}
+.delta.down{color:var(--down);background:color-mix(in srgb,var(--down) 14%,transparent)}
+.spark{width:100%;height:44px;display:block;margin-top:10px}
+.token-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.token{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:7px 9px;background:var(--bg1)}
+.token .sw{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);flex:none}
+.token .nm{font-size:10px;font-weight:600;letter-spacing:.04em}
+.token .hx{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.token .cr{margin-left:auto;font-size:9.5px;font-weight:700;color:var(--accent);letter-spacing:.02em}
+
+/* ---------- tipografia ---------- */
+.aa-big{font-size:122px;line-height:.86;font-weight:700;letter-spacing:-.045em}
+.weight-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:22px}
+.weight-cell{border-top:1px solid var(--line);padding-top:10px}
+.weight-cell b{display:block;font-size:13px;font-weight:650}
+.weight-cell span{font-size:11px;color:var(--muted)}
+.weight-cell em{display:block;font-style:normal;font-size:15px;margin-top:6px;color:var(--text)}
+.scale{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.scale-row{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:baseline;padding:13px 16px;border-bottom:1px solid var(--line)}
+.scale-row:last-child{border-bottom:0}
+.scale-row .demo{color:var(--text)}
+.scale-row .spec{font-size:10.5px;color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.scale-row .spec b{display:block;color:var(--text);font-weight:600;font-size:11px}
+.type-display{font-size:30px;line-height:1.05;letter-spacing:-.03em;font-weight:650}
+.type-h2{font-size:19px;font-weight:650;letter-spacing:-.01em}
+.type-body{font-size:15px}
+.type-label{font-size:10px;letter-spacing:.15em;text-transform:uppercase;font-weight:600;color:var(--muted)}
+.amount-demo{display:grid;gap:18px;grid-template-columns:1fr 1fr}
+.figure-demo{display:grid;gap:16px;grid-template-columns:1fr 1fr}
+.figure-col{border:1px solid var(--line);border-radius:12px;padding:14px 12px;background:var(--bg2);position:relative;text-align:right}
+.fig-cap{display:block;margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:9px;letter-spacing:.13em;text-transform:uppercase;font-weight:600}
+.fig-cap.bad{color:var(--danger)}
+.fig-cap.good{color:var(--accent)}
+.figure-col .micro{display:block;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.figure-col .fig{font-size:23px;font-weight:600;letter-spacing:-.01em;line-height:1.65;display:block;position:relative}
+.figure-col.fig-tab .fig{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.amount-col{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--bg2)}
+.amount-col .micro{margin-bottom:10px;display:block}
+.amount-line{display:flex;justify-content:space-between;gap:16px;font-size:14px;padding:4px 0}
+.amount-line span:first-child{color:var(--muted);font-size:12px}
+.amount-line span:last-child{font-weight:600}
+.fmt-chip{display:inline-flex;align-items:baseline;gap:10px;border:1px solid var(--line);border-radius:12px;
+  padding:11px 16px;background:var(--accent-soft);margin-top:16px}
+.fmt-chip b{font-size:18px;font-weight:700;letter-spacing:-.01em}
+.fmt-chip span{font-size:10.5px;color:var(--muted)}
+.icons-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.icon-cell{width:56px;height:56px;border-radius:14px;border:1px solid var(--line);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:4px;background:var(--bg1);color:var(--accent)}
+.icon-cell svg{width:var(--icon,20px);height:var(--icon,20px)}
+.icon-cell small{font-size:8px;letter-spacing:.04em;color:var(--muted)}
+
+/* ---------- layout: wireframe ---------- */
+.frame{border:1px solid var(--line);border-radius:16px;background:var(--bg1);overflow:hidden}
+.frame-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.frame-bar i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.frame-bar .url{margin-left:8px;font-size:10px;color:var(--muted);letter-spacing:.04em}
+.wf-desktop{padding:0 0 16px}
+.wf-top{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.wf-top .brand{height:20px}
+.wf-nav{display:flex;gap:6px;margin:0 auto}
+.wf-nav i{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:7.5px;color:var(--muted);padding:5px 7px;border-radius:8px;font-style:normal;white-space:nowrap}
+.wf-nav i.on{color:var(--accent);background:var(--accent-soft)}
+.wf-nav svg{width:13px;height:13px}
+.wf-avatar{width:24px;height:24px;border-radius:50%;background:var(--bg2);border:1px solid var(--line)}
+.wf-content{padding:16px;display:grid;gap:10px;grid-template-columns:repeat(3,1fr)}
+.wf-block{border:1px dashed var(--line);border-radius:10px;height:52px;background:
+  repeating-linear-gradient(45deg,transparent 0 6px,color-mix(in srgb,var(--line) 40%,transparent) 6px 7px)}
+.wf-block.tall{grid-column:1/-1;height:70px}
+.callout{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-top:12px}
+.callout b{color:var(--text);font-weight:600}
+.wf-phone{width:250px;margin:0 auto;border:1px solid var(--line);border-radius:22px;background:var(--bg1);overflow:hidden;box-shadow:var(--shadow-soft)}
+.wf-phone .ph-top{display:flex;align-items:center;gap:8px;padding:12px 12px 6px}
+.wf-phone .ph-top .brand{height:16px}
+.wf-phone .ph-body{padding:8px 12px 0;display:grid;gap:8px}
+.wf-phone .ph-body i{display:block;height:44px;border-radius:10px;border:1px dashed var(--line);background:
+  repeating-linear-gradient(45deg,transparent 0 6px,color-mix(in srgb,var(--line) 40%,transparent) 6px 7px)}
+.wf-bottom{border-top:1px solid var(--line);margin-top:12px;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:8px 6px 10px;background:var(--bg2)}
+.wf-bottom i{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:8px;color:var(--muted);font-style:normal}
+.wf-bottom i.on{color:var(--accent)}
+.wf-bottom svg{width:15px;height:15px}
+.wf-bottom .sa{grid-column:1/-1;height:10px;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+
+/* ---------- componenti ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding:0 15px;
+  border-radius:11px;font-size:12.5px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+.btn svg{width:14px;height:14px}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-secondary{background:transparent;border-color:var(--line);color:var(--text)}
+.btn-ghost{background:transparent;color:var(--muted)}
+.btn-danger{background:var(--danger);color:#1b0d0d}
+.btn:disabled,.btn[aria-disabled="true"]{background:var(--bg2);color:var(--muted);border-color:var(--line)}
+.btn.focus{outline:2px solid var(--accent);outline-offset:3px}
+.spinner{width:13px;height:13px;border-radius:50%;border:2px solid color-mix(in srgb,var(--accent-ink) 30%,transparent);
+  border-top-color:var(--accent-ink);animation:spin 900ms linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.comp-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.field{display:grid;gap:6px;min-width:210px}
+.field label{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.field .input{height:38px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);
+  display:flex;align-items:center;padding:0 12px;font-size:12.5px;color:var(--text)}
+.field .input.err{border-color:var(--danger)}
+.field .msg{font-size:10.5px;color:var(--danger);display:flex;gap:5px;align-items:center}
+.switch{width:40px;height:23px;border-radius:999px;background:var(--accent);position:relative;flex:none}
+.switch::after{content:"";position:absolute;top:2.5px;left:19px;width:18px;height:18px;border-radius:50%;background:var(--accent-ink)}
+.switch.off{background:var(--line)}
+.switch.off::after{left:2.5px;background:var(--bg1)}
+.switch-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.tabs{display:inline-flex;background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.tab{font-size:11.5px;font-weight:600;color:var(--muted);padding:6px 12px;border-radius:999px}
+.tab.on{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 25%,transparent)}
+.badges{display:flex;flex-wrap:wrap;gap:7px}
+.badge{font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.badge.accent{color:var(--accent);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 28%,transparent)}
+.badge.warn{color:var(--warn);background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 28%,transparent)}
+.badge.danger{color:var(--danger);background:var(--danger-soft);border-color:color-mix(in srgb,var(--danger) 28%,transparent)}
+.toast{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;
+  background:var(--bg2);padding:12px 14px;box-shadow:var(--shadow-soft);max-width:420px;position:relative;overflow:hidden}
+.toast .ic{width:26px;height:26px;border-radius:9px;background:var(--accent-soft);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.toast .ic svg{width:14px;height:14px}
+.toast .tx{font-size:12px;font-weight:600;line-height:1.3}
+.toast .tx small{display:block;font-weight:400;color:var(--muted);font-size:10.5px;margin-top:1px}
+.toast .undo{margin-left:auto;font-size:11px;font-weight:650;color:var(--accent)}
+.toast .bar{position:absolute;left:0;bottom:0;height:2px;width:62%;background:var(--accent);opacity:.7}
+.modal-box{border:1px solid var(--line);border-radius:16px;background:var(--bg1);box-shadow:var(--shadow-soft);max-width:400px;overflow:hidden}
+.modal-box .hd{padding:16px 18px 0;display:flex;gap:11px;align-items:flex-start}
+.modal-box .hd .ic{width:28px;height:28px;border-radius:9px;background:var(--danger-soft);color:var(--danger);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.modal-box .hd .ic svg{width:15px;height:15px}
+.modal-box h4{font-size:14px;font-weight:650}
+.modal-box p{font-size:11.5px;color:var(--muted);margin-top:3px}
+.modal-box .summary{margin:14px 18px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.modal-box .srow{display:flex;justify-content:space-between;gap:12px;padding:8px 11px;font-size:11px;border-bottom:1px solid var(--line)}
+.modal-box .srow:last-child{border-bottom:0}
+.modal-box .srow span{color:var(--muted)}
+.modal-box .srow b{font-weight:600;font-variant-numeric:tabular-nums}
+.modal-box .ft{display:flex;gap:8px;justify-content:flex-end;padding:0 18px 16px}
+.modal-box .ft .btn{height:32px;font-size:11.5px;border-radius:9px}
+.skeleton{display:grid;gap:8px}
+.sk-line{height:11px;border-radius:6px;background:linear-gradient(90deg,var(--bg2) 0%,color-mix(in srgb,var(--bg2) 60%,var(--line)) 50%,var(--bg2) 100%)}
+.sk-card{border:1px solid var(--line);border-radius:12px;padding:13px;display:grid;gap:9px;background:var(--bg1)}
+.tablecard{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center}
+.tbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;width:100%;font-size:11.5px}
+.tbl .tr{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:8px;padding:8px 11px;border-bottom:1px solid var(--line)}
+.tbl .tr:last-child{border-bottom:0}
+.tbl .th{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);background:var(--bg2)}
+.tbl .tr span:last-child{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.mcard{border:1px solid var(--line);border-radius:12px;padding:11px 13px;background:var(--bg2);min-width:170px}
+.mcard .top{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+.mcard .val{font-size:16px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.mcard .meta{font-size:10px;color:var(--muted);margin-top:2px}
+.arrow-mob{font-size:16px;color:var(--muted);text-align:center}
+
+/* ---------- grafico ---------- */
+.chart{border:1px solid var(--line);border-radius:14px;padding:14px 14px 10px;background:var(--bg1)}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.chart-head .t{font-size:12px;font-weight:650}
+.chart svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:16px;margin-top:8px;flex-wrap:wrap}
+.leg{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--muted)}
+.leg .sw{width:22px;height:0;border-top:2px solid var(--accent)}
+.leg .sw.dash{border-top:2px dashed var(--info)}
+.leg .sw.dot{border-top:2px dotted var(--warn)}
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;padding:8px 6px}
+.empty svg{width:92px;height:92px;color:var(--accent);opacity:.9}
+.empty b{font-size:12.5px;font-weight:650}
+.empty span{font-size:10.5px;color:var(--muted);max-width:22ch}
+
+/* ---------- accessibilità ---------- */
+.a11y-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--bg1);display:grid;gap:9px}
+.a11y-card .top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.a11y-card h4{font-size:12.5px;font-weight:650}
+.a11y-card p{font-size:10.5px;color:var(--muted);line-height:1.4}
+.a11y-card .ic{width:28px;height:28px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
+.a11y-card .ic svg{width:15px;height:15px}
+.a11y-badge{font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);border-radius:999px;padding:3px 8px;background:var(--accent-soft)}
+.ratio-table{border:1px solid var(--line);border-radius:14px;overflow:hidden;width:100%}
+.ratio-table .r{display:grid;grid-template-columns:1.1fr .8fr .8fr .8fr;gap:10px;padding:8px 13px;border-bottom:1px solid var(--line);font-size:11px;align-items:center}
+.ratio-table .r:last-child{border-bottom:0}
+.ratio-table .h{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);background:var(--bg2)}
+.ratio-table .tok{font-weight:600;letter-spacing:.02em}
+.ratio-table .val{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+.ratio-table .val b{color:var(--text);font-weight:600}
+.ratio-table .ok{color:var(--accent);font-weight:700;text-align:right;font-size:10px}
+.focus-demo{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.key{display:inline-flex;align-items:center;justify-content:center;height:26px;min-width:26px;padding:0 6px;border:1px solid var(--line);
+  border-bottom-width:2px;border-radius:6px;font-size:10.5px;font-weight:600;color:var(--muted);background:var(--bg2)}
+.touch-demo{display:flex;align-items:center;gap:14px}
+.touch-target{width:44px;height:44px;border-radius:12px;border:1px dashed var(--accent);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:10px}
+
+/* ---------- footer ---------- */
+.footer{margin-top:76px;border-top:1px solid var(--line);padding-top:26px;display:grid;grid-template-columns:1.2fr 1fr;gap:40px}
+.footer .micro{margin-bottom:12px;display:block}
+.map-table{width:100%;border-collapse:collapse;font-size:11px}
+.map-table th{text-align:left;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;padding:0 0 8px;border-bottom:1px solid var(--line)}
+.map-table td{padding:7px 0;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:top}
+.map-table td:first-child{color:var(--text);font-weight:600}
+.map-table td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.footer .colophon{font-size:10.5px;line-height:1.6;color:var(--muted);max-width:46ch}
+.footer .colophon b{color:var(--text);font-weight:600}
+
+/* ---------- stampa ---------- */
+@media print{ body{background:#fff} .page{padding:0} }
+
+/* ---------- v0.9: token, piattaforme, illustrazioni, pagine ---------- */
+.platform-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.form-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.form-chip{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:10.5px;color:var(--muted);background:var(--bg1)}
+.form-chip b{color:var(--text);font-weight:600}
+.ratio-table .r.six{grid-template-columns:1.2fr .8fr .8fr .8fr}
+.soft-grid{display:grid;gap:8px}
+.soft-head{display:grid;grid-template-columns:1.1fr .7fr .7fr;gap:10px;font-size:8.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted);padding:0 10px}
+.soft-head span:not(:first-child){text-align:right}
+.soft-row{display:grid;grid-template-columns:1.1fr .7fr .7fr;gap:10px;align-items:center;font-size:11px;
+  border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:var(--bg2)}
+.soft-row b{font-weight:600}
+.soft-row .val{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+.soft-row .val b{color:var(--text)}
+.theme-choices{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.theme-choice{border:1px solid var(--line);border-radius:12px;padding:9px 6px;text-align:center;font-size:10px;
+  color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--bg1)}
+.theme-choice svg{width:14px;height:14px}
+.theme-choice.on{border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:var(--accent-soft);color:var(--accent)}
+.ill-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.ill-cell{border:1px solid var(--line);border-radius:14px;background:var(--bg1);padding:12px 8px 9px;
+  display:flex;flex-direction:column;align-items:center;gap:7px;color:var(--accent)}
+.ill-cell svg{width:82px;height:auto;display:block;opacity:.9}
+.ill-cell small{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.empty-demo{border:1px solid var(--line);border-radius:16px;background:var(--bg1);padding:22px 18px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:6px}
+.empty-demo-art{color:var(--accent);opacity:.9;margin-bottom:4px}
+.empty-demo-art svg{width:96px;height:auto;display:block}
+.empty-demo b{font-size:12.5px;font-weight:650}
+.empty-demo p{font-size:10.5px;color:var(--muted);max-width:32ch;line-height:1.45}
+.empty-demo .btn{height:30px;font-size:10.5px;margin-top:6px}
+.pages-grid{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.pages-grid ul{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.pages-grid li{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--muted);
+  border-bottom:1px dashed var(--line);padding-bottom:4px}
+.pages-grid li b{color:var(--text);font-weight:600;font-size:11px;white-space:nowrap}
+.bottom-bar-mock{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;border:1px solid var(--line);border-radius:16px;
+  background:var(--bg2);padding:9px 10px}
+.bb-item{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:8px;color:var(--muted);white-space:nowrap}
+.bb-item.on{color:var(--accent)}
+.bb-item svg{width:15px;height:15px}
+.wf-avatar-wrap{position:relative;margin-left:auto;display:flex;align-items:center}
+.wf-menu{position:absolute;right:0;top:30px;background:var(--bg1);border:1px solid var(--line);border-radius:12px;
+  padding:5px;display:grid;gap:1px;min-width:126px;box-shadow:var(--shadow-soft);z-index:3}
+.wf-menu span{font-size:8.5px;color:var(--muted);padding:4px 8px;border-radius:6px;white-space:nowrap}
+.wf-menu span:first-child{background:var(--accent-soft);color:var(--accent)}
+.wf-phone{position:relative}
+.fab{position:absolute;right:12px;bottom:86px;width:38px;height:38px;border-radius:50%;background:var(--accent);
+  color:var(--accent-ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-soft);z-index:2}
+.fab svg{width:18px;height:18px}
+.android-top{display:flex;align-items:center;gap:8px;padding:10px 12px 4px;color:var(--muted)}
+.android-top .t{font-size:11px;font-weight:650;color:var(--text)}
+.android-top .spacer{margin-left:auto}
+.android-top svg{width:16px;height:16px}
+.notice-demo{border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);background:var(--accent-soft);
+  border-radius:12px;padding:9px 11px;font-size:10.5px;color:var(--accent);display:flex;gap:7px;align-items:center}
+.notice-demo svg{width:13px;height:13px;flex:none}
+.chart-bars{display:flex;align-items:flex-end;gap:6px;height:58px;margin-top:10px}
+.chart-bars i{flex:1;background:color-mix(in srgb,var(--accent) 45%,transparent);border-radius:5px 5px 0 0;display:block}
+.chart-bars i.b{background:color-mix(in srgb,var(--info) 45%,transparent)}
+.scroll-x{overflow:hidden;position:relative}
+.muted-line{font-size:11px;color:var(--muted);line-height:1.5}
+.android-pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.and-card{border:1px solid var(--line);border-radius:16px;background:var(--bg1);padding:14px}
+.and-card-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650;margin-bottom:10px}
+.and-card-head .ic{width:26px;height:26px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:none}
+.and-card-head .ic svg{width:14px;height:14px}
+.and-avatar{width:52px;height:52px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:650;flex:none}
+.and-profile-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.and-profile-top b{display:block;font-size:15px;font-weight:650}
+.and-profile-top span{display:block;font-size:10px;color:var(--muted);margin-top:2px}
+.and-badges{display:flex;gap:5px;margin-top:5px}
+.and-badge{font-size:8.5px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.and-label{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:3px;display:block}
+.and-input{border:1px solid var(--line);border-radius:10px;background:var(--bg2);padding:7px 9px;font-size:10.5px;margin-bottom:8px}
+.and-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:10.5px;color:var(--muted)}
+.and-row:last-child{border-bottom:0}
+.and-row b{color:var(--text);font-weight:600;font-size:10.5px}
+.and-row .go{color:var(--accent);font-size:11px}
+.and-theme{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px}
+.and-theme .t{border:1px solid var(--line);border-radius:10px;padding:7px 4px;text-align:center;font-size:8.5px;color:var(--muted);
+  display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--bg2)}
+.and-theme .t svg{width:13px;height:13px}
+.and-theme .t.on{border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:var(--accent-soft);color:var(--accent)}
+.and-switch{width:30px;height:17px;border-radius:999px;background:var(--line);position:relative;display:inline-block;flex:none}
+.and-switch::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--bg1)}
+.dash-mock{border:1px solid var(--line);border-radius:16px;background:var(--bg1);padding:16px;box-shadow:var(--shadow-soft)}
+.dash-mock-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:12px}
+.dash-mock-big{font-size:26px;font-weight:700;letter-spacing:-.02em;margin-top:4px}
+.dash-mock-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding-top:12px}
+.dash-mock-metric span{display:block;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.dash-mock-metric b{display:block;margin-top:3px;font-size:14px;font-weight:650}
+.dash-mock-metric small{display:block;font-size:9.5px;color:var(--muted);margin-top:2px}
+.dash-charts-mock{margin-top:12px;border:1px solid var(--line);border-radius:16px;background:var(--bg1);padding:16px}
+.dash-charts-mock .micro{display:block;margin-bottom:10px}
+.charts-row-mock{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px}
+.inout-mock{display:grid;gap:8px}
+.inout-cards-mock{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.inout-card-mock{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--bg2)}
+.inout-card-mock .head{display:flex;align-items:center;gap:6px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+.inout-card-mock.up .head{color:var(--up)}
+.inout-card-mock.down .head{color:var(--down)}
+.inout-card-mock .head svg{width:11px;height:11px}
+.inout-card-mock b{display:block;font-size:15px;font-weight:700;margin-top:5px}
+.inout-card-mock small{display:block;font-size:9.5px;color:var(--muted);margin-top:2px}
+.inout-track-mock{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--bg2)}
+.inout-track-mock i{display:block;height:100%}
+.cat-mock{display:grid;gap:8px}
+.cat-row-mock{display:grid;grid-template-columns:88px 1fr;gap:8px;align-items:center;font-size:9.5px;color:var(--muted)}
+.cat-track-mock{height:7px;border-radius:999px;background:var(--bg2);overflow:hidden}
+.cat-track-mock i{display:block;height:100%;background:color-mix(in srgb,var(--accent) 55%,transparent)}
+
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ================= MASTHEAD ================= -->
+  <header class="masthead">
+    <div>
+      <div class="eyebrow">Design system · v0.8.2 · 10 novembre 2026</div>
+      <h1 class="h1">Design <span class="mark">Spendy</span></h1>
+      <p class="lead">Identità visiva e sistema di design di prodotto per <strong>web e Android</strong>.
+        Una lettura grafica di <strong>DESIGN.md 0.9</strong>: logo, tema e token, tipografia, icone,
+        struttura, componenti e accessibilità, con i valori reali di
+        <span class="mono">tokens.css</span>, delle costanti Compose e delle illustrazioni dell'app.</p>
+      <div class="meta-row">
+        <span class="pill"><i class="dot"></i>Web + Android</span>
+        <span class="pill"><i class="dot"></i>Inter 400–700</span>
+        <span class="pill"><i class="dot"></i>Lucide</span>
+        <span class="pill aa"><i class="dot"></i>Contrasto AA</span>
+        <span class="pill"><i class="dot"></i>Motion 150–200 ms</span>
+        <span class="pill"><i class="dot"></i>Token unici</span>
+      </div>
+    </div>
+    <div class="hero-card scope-dark">
+      @@LOCKUP_H_DARK@@
+      <div class="caption">
+        <p class="note">Lockup integrato orizzontale: il simbolo sostituisce la S iniziale. Nessun font a runtime, solo path.</p>
+        <span class="badge-aa">AA · 7.31:1</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <div class="toc-item"><b>01</b><span>Logo</span><em>Simbolo, lockup, flat/mono</em></div>
+    <div class="toc-item"><b>02</b><span>Tema e token</span><em>Scuro, chiaro, Sistema; superfici e forma</em></div>
+    <div class="toc-item"><b>03</b><span>Tipografia e formati</span><em>Inter, cifre tabulari, importi</em></div>
+    <div class="toc-item"><b>04</b><span>Icone e illustrazioni</span><em>Lucide, line art mint, empty state</em></div>
+    <div class="toc-item"><b>05</b><span>Struttura, pagine e componenti</span><em>Topbar, bottom bar, Android, stati</em></div>
+    <div class="toc-item"><b>06</b><span>Accessibilità</span><em>AA, focus, tastiera, motion</em></div>
+  </nav>
+
+  <!-- ================= 01 LOGO ================= -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <div>
+        <div class="kicker">DESIGN.md · Logo</div>
+        <h2 class="sec-title">Simbolo a due tessere, lockup senza tagline</h2>
+        <p class="src">Asset in <span class="mono">apps/frontend/public/logo/</span> · tre lockup · versioni colore e mono · flat/mono obbligatorio.</p>
+      </div>
+    </div>
+    <div class="section-rule"></div>
+
+    <div class="grid g-logo">
+      <div class="panel scope-dark logo-shot">
+        @@LOCKUP_H_DARKBIG@@
+        <p class="cap"><b>Orizzontale.</b> Il simbolo sostituisce la S iniziale: <span class="mono">[logo]pendy</span>.<br>
+          Versione colore su fondo scuro <span class="mono">#0B0F0D</span>.</p>
+      </div>
+      <div class="stack">
+        <div class="panel scope-light logo-shot">
+          @@LOCKUP_H_LIGHT@@
+          <p class="cap"><b>Su chiaro.</b> Accento <span class="mono">#166047</span>, contrasto 6.96:1.</p>
+        </div>
+        <div class="panel scope-dark logo-shot">
+          @@LOCKUP_V_DARK@@
+          <p class="cap"><b>Verticale.</b> Simbolo sopra, "Spendy" per esteso sotto.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g3" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Taglie e mono</h3><span class="micro">64 / 32 / 16 px</span></div>
+        <div class="size-row">
+          <div class="size-item">@@SYM64@@<small>64 px</small></div>
+          <div class="size-item">@@SYM32@@<small>32 px</small></div>
+          <div class="size-item">@@SYM16@@<small>16 px</small><span class="flag">fori al limite</span></div>
+        </div>
+        <div class="mono-strip">
+          <div class="mono-cell dark">@@SYM_MONO_WHITE@@</div>
+          <div class="mono-cell light">@@SYM_MONO_BLACK@@</div>
+          <div class="mono-cell" style="background:#0b0f0d;border:0">@@SYM_FAVICON@@</div>
+        </div>
+        <p class="note pin">Flat/mono obbligatorio: senza gradiente né glow, a 16 px e in un solo colore.<br>Pacchetto: favicon 16/32/48, PWA 192/512 + maskable, OG 1200×630, foreground Android.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Colore del logo</h3><span class="micro">Primario</span></div>
+        <div class="color-duo">
+          <div class="color-big">
+            <div class="chip" style="background:#1db48b">@@SYM_MONO_BLACK@@</div>
+            <div class="meta"><b class="tnum">#1DB48B</b><span>su scuro · 7.31:1 AA</span></div>
+          </div>
+          <div class="color-big">
+            <div class="chip" style="background:#166047">@@SYM_MONO_WHITE@@</div>
+            <div class="meta"><b class="tnum">#166047</b><span>su chiaro · 6.96:1 AA</span></div>
+          </div>
+        </div>
+        <p class="note pin">Gradiente solo negli asset del logo; <b>drop-shadow</b> solo logo, login, hero. Il <b>glow ambientale</b> di pagina è parte dell'identità (vedi 02).</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Regole d'uso</h3><span class="micro">Vincoli</span></div>
+        <div class="rules">
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Gradiente</b> <span>· solo negli asset del logo</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Glow ambientale</b> <span>· ammesso su pagina e hero</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Un solo colore</b> <span>· sagoma leggibile a 16 px</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Tagline</b> <span>· nessuna è prevista nel lockup</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Wordmark standalone</b> <span>· non fa parte del pacchetto</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 TEMA E TOKEN ================= -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <div>
+        <div class="kicker">DESIGN.md · Tema · Token e forma</div>
+        <h2 class="sec-title">Scuro, chiaro e Sistema, con token unici</h2>
+        <p class="src"><span class="mono">tokens.css</span> per il web, <span class="mono">Color.kt</span>/<span class="mono">Theme.kt</span> per Android · <span class="mono">data-theme</span> su <span class="mono">&lt;html&gt;</span> · web sincronizzato nel profilo, Android locale.</p>
+      </div>
+    </div>
+    <div class="section-rule"></div>
+
+    <div class="grid g2">
+      <div class="panel scope-dark">
+        <div class="panel-head"><h3 class="panel-title">Tema scuro <span style="color:var(--muted);font-weight:500">default</span></h3><span class="badge accent">#0B0F0D</span></div>
+        <div class="mini">
+          <div class="mini-top">
+            @@LOCKUP_H_DARKSMALL@@
+            <div class="mini-nav">
+              <i class="on">@@IC_GRID@@</i><i>@@IC_SWAP@@</i><i>@@IC_CARD@@</i><i>@@IC_PIG@@</i>
+            </div>
+            <span class="mini-avatar">D</span>
+          </div>
+          <div class="mini-body">
+            <div class="mini-card">
+              <span class="lbl">Patrimonio</span>
+              <div class="amt tnum">14.853,51 €</div>
+              <div class="sub">Conti + salvadanai + investimenti</div>
+              <span class="delta up">▲ 12,4%</span>
+            </div>
+            <div class="mini-card">
+              <span class="lbl">Saldo del periodo</span>
+              <div class="amt tnum" style="font-size:22px">1.625,01 €</div>
+              <svg class="spark" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 34 L24 31 L48 33 L72 26 L96 28 L120 18 L144 12 L168 9 L180 8" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+                <path d="M0 34 L24 31 L48 33 L72 26 L96 28 L120 18 L144 12 L168 9 L180 8 L180 44 L0 44 Z" fill="color-mix(in srgb,var(--accent) 12%,transparent)"/>
+                <path d="M132 22 L180 14" stroke="var(--info)" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="token-list">
+          <div class="token"><span class="sw" style="background:#0b0f0d"></span><div><div class="nm">bg0</div><div class="hx">#0B0F0D</div></div></div>
+          <div class="token"><span class="sw" style="background:#111614"></span><div><div class="nm">bg1</div><div class="hx">#111614</div></div></div>
+          <div class="token"><span class="sw" style="background:#18201c"></span><div><div class="nm">bg2</div><div class="hx">#18201C</div></div></div>
+          <div class="token"><span class="sw" style="background:#26302b"></span><div><div class="nm">line</div><div class="hx">#26302B</div></div></div>
+          <div class="token"><span class="sw" style="background:#f4f7f5"></span><div><div class="nm">text</div><div class="hx">#F4F7F5</div></div><span class="cr">17.9</span></div>
+          <div class="token"><span class="sw" style="background:#9db3a8"></span><div><div class="nm">muted</div><div class="hx">#9DB3A8</div></div><span class="cr">8.7</span></div>
+          <div class="token"><span class="sw" style="background:#1db48b"></span><div><div class="nm">accent</div><div class="hx">#1DB48B</div></div><span class="cr">7.3</span></div>
+          <div class="token"><span class="sw" style="background:#f26d6d"></span><div><div class="nm">danger</div><div class="hx">#F26D6D</div></div><span class="cr">6.6</span></div>
+          <div class="token"><span class="sw" style="background:#e8a33d"></span><div><div class="nm">warn</div><div class="hx">#E8A33D</div></div><span class="cr">9.0</span></div>
+          <div class="token"><span class="sw" style="background:#5eb1ef"></span><div><div class="nm">info</div><div class="hx">#5EB1EF</div></div><span class="cr">8.3</span></div>
+          <div class="token"><span class="sw" style="background:#3fd08c"></span><div><div class="nm">up</div><div class="hx">#3FD08C</div></div><span class="cr">9.8</span></div>
+          <div class="token"><span class="sw" style="background:#f27e7e"></span><div><div class="nm">down</div><div class="hx">#F27E7E</div></div><span class="cr">7.4</span></div>
+        </div>
+      </div>
+
+      <div class="panel scope-light">
+        <div class="panel-head"><h3 class="panel-title">Tema chiaro <span style="color:var(--muted);font-weight:500">manuale</span></h3><span class="badge accent">#F4F7F5</span></div>
+        <div class="mini">
+          <div class="mini-top">
+            @@LOCKUP_H_LIGHTSMALL@@
+            <div class="mini-nav">
+              <i class="on">@@IC_GRID@@</i><i>@@IC_SWAP@@</i><i>@@IC_CARD@@</i><i>@@IC_PIG@@</i>
+            </div>
+            <span class="mini-avatar">D</span>
+          </div>
+          <div class="mini-body">
+            <div class="mini-card">
+              <span class="lbl">Patrimonio</span>
+              <div class="amt tnum">14.853,51 €</div>
+              <div class="sub">Conti + salvadanai + investimenti</div>
+              <span class="delta up">▲ 12,4%</span>
+            </div>
+            <div class="mini-card">
+              <span class="lbl">Saldo del periodo</span>
+              <div class="amt tnum" style="font-size:22px">1.625,01 €</div>
+              <svg class="spark" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M0 34 L24 31 L48 33 L72 26 L96 28 L120 18 L144 12 L168 9 L180 8" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+                <path d="M0 34 L24 31 L48 33 L72 26 L96 28 L120 18 L144 12 L168 9 L180 8 L180 44 L0 44 Z" fill="color-mix(in srgb,var(--accent) 12%,transparent)"/>
+                <path d="M132 22 L180 14" stroke="var(--info)" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="token-list">
+          <div class="token"><span class="sw" style="background:#f4f7f5"></span><div><div class="nm">bg0</div><div class="hx">#F4F7F5</div></div></div>
+          <div class="token"><span class="sw" style="background:#ffffff"></span><div><div class="nm">bg1</div><div class="hx">#FFFFFF</div></div></div>
+          <div class="token"><span class="sw" style="background:#e9efec"></span><div><div class="nm">bg2</div><div class="hx">#E9EFEC</div></div></div>
+          <div class="token"><span class="sw" style="background:#d5dcd7"></span><div><div class="nm">line</div><div class="hx">#D5DCD7</div></div></div>
+          <div class="token"><span class="sw" style="background:#0b0f0d"></span><div><div class="nm">text</div><div class="hx">#0B0F0D</div></div><span class="cr">17.9</span></div>
+          <div class="token"><span class="sw" style="background:#4a5a53"></span><div><div class="nm">muted</div><div class="hx">#4A5A53</div></div><span class="cr">6.8</span></div>
+          <div class="token"><span class="sw" style="background:#166047"></span><div><div class="nm">accent</div><div class="hx">#166047</div></div><span class="cr">7.0</span></div>
+          <div class="token"><span class="sw" style="background:#b53535"></span><div><div class="nm">danger</div><div class="hx">#B53535</div></div><span class="cr">5.5</span></div>
+          <div class="token"><span class="sw" style="background:#8a5604"></span><div><div class="nm">warn</div><div class="hx">#8A5604</div></div><span class="cr">5.7</span></div>
+          <div class="token"><span class="sw" style="background:#0b6bcb"></span><div><div class="nm">info</div><div class="hx">#0B6BCB</div></div><span class="cr">4.9</span></div>
+          <div class="token"><span class="sw" style="background:#166047"></span><div><div class="nm">up</div><div class="hx">#166047</div></div><span class="cr">7.0</span></div>
+          <div class="token"><span class="sw" style="background:#c23b3b"></span><div><div class="nm">down</div><div class="hx">#C23B3B</div></div><span class="cr">4.9</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g3" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Scelta</h3><span class="micro">3 opzioni</span></div>
+        <p class="muted-line">Scuro predefinito, chiaro a parità di qualità, <b style="color:var(--text)">Sistema</b> esplicito (segue il dispositivo).</p>
+        <div class="theme-choices">
+          <div class="theme-choice on">@@IC_MOON@@Scuro</div>
+          <div class="theme-choice">@@IC_SUN@@Chiaro</div>
+          <div class="theme-choice">@@IC_MONITOR@@Sistema</div>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Web</b> profilo + cache + pre-paint</span>
+          <span class="form-chip"><b>Android</b> scelta locale</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Fondi soft</h3><span class="micro">AA · testo piccolo</span></div>
+        <div class="soft-grid">
+          <div class="soft-head"><span>coppia</span><span>scuro</span><span>chiaro</span></div>
+          <div class="soft-row"><b>danger / danger-soft</b><span class="val"><b>5.89</b></span><span class="val"><b>4.86</b></span></div>
+          <div class="soft-row"><b>warn / warn-soft</b><span class="val"><b>7.35</b></span><span class="val"><b>5.24</b></span></div>
+          <div class="soft-row"><b>accent / accent-soft</b><span class="val"><b>6.09</b></span><span class="val"><b>6.49</b></span></div>
+        </div>
+        <div class="platform-row">
+          <span class="form-chip">Scuro</span><span class="form-chip">Chiaro</span>
+        </div>
+        <p class="note pin">Valori ricavati dai token reali, non stimati. Sotto 4.5 i badge del tema chiaro non sarebbero AA.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Proiezione Android</h3><span class="micro">Token → Compose</span></div>
+        <div class="rules">
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Colori</b> <span>· stessi hex in <span class="mono">Color.kt</span></span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Forme</b> <span>· small 18, medium 18, large 20 dp</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Tipografia</b> <span>· Inter, rampa 11–36 sp</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Icone</b> <span>· vector drawable Lucide</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Material You</b> <span>· nessun colore dinamico</span></div></div>
+        </div>
+        <p class="note pin">Il tema Compose è una proiezione dei token, non un documento parallelo.</p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h3 class="panel-title">Forma e movimento</h3><span class="micro">Token condivisi</span></div>
+      <div class="form-chips" style="margin-top:0">
+        <span class="form-chip"><b>Raggio</b> 18 superfici e controlli</span>
+        <span class="form-chip"><b>Modali</b> 20</span>
+        <span class="form-chip"><b>Pillole</b> 999</span>
+        <span class="form-chip"><b>Motion</b> 150 fast · 200 base</span>
+        <span class="form-chip"><b>Ombra</b> una sola, morbida</span>
+        <span class="form-chip"><b>Glow</b> ambientale su pagina e hero</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 TIPOGRAFIA E FORMATI ================= -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <div>
+        <div class="kicker">DESIGN.md · Tipografia, cifre e formati</div>
+        <h2 class="sec-title">Inter, cifre tabulari, importi raggruppati</h2>
+        <p class="src">Font self-hosted 400/500/600/700 · <span class="mono">tnum</span> su tutta l'interfaccia · <span class="mono">format.ts</span>: raggruppamento sempre attivo, NBSP, 2 decimali.</p>
+      </div>
+    </div>
+    <div class="section-rule"></div>
+
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Famiglia</h3><span class="micro">Inter · 4 pesi</span></div>
+        <div style="display:flex;align-items:baseline;gap:20px">
+          <div class="aa-big">Aa</div>
+          <div>
+            <div style="font-size:13px;font-weight:600;letter-spacing:.01em">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+            <div style="font-size:15px;color:var(--muted)">abcdefghijklmnopqrstuvwxyz</div>
+            <div class="tnum" style="font-size:17px;letter-spacing:.01em">0123456789 € , . — 1.234,56 €</div>
+          </div>
+        </div>
+        <div class="weight-row">
+          <div class="weight-cell"><b>Regular</b><span>400 · testo</span><em style="font-weight:400">Finanze</em></div>
+          <div class="weight-cell"><b>Medium</b><span>500 · enfasi</span><em style="font-weight:500">Finanze</em></div>
+          <div class="weight-cell"><b>SemiBold</b><span>600 · etichette</span><em style="font-weight:600">Finanze</em></div>
+          <div class="weight-cell"><b>Bold</b><span>700 · importi</span><em style="font-weight:700">Finanze</em></div>
+        </div>
+        <div style="display:flex;gap:20px;align-items:baseline;flex-wrap:wrap;margin-top:22px">
+          <span class="tnum" style="font-size:18px;font-weight:600">7.278,01 €</span>
+          <span class="tnum" style="font-size:18px;font-weight:600;color:var(--up)">+1.563,50 €</span>
+          <span class="tnum" style="font-size:18px;font-weight:600;color:var(--down)">-24,90 €</span>
+        </div>
+        <p class="note pin">Solo 400/500/600/700: nessun grasso sintetizzato. Il colore appare solo su negativi e variazioni; gli importi restano neutri.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Scala</h3><span class="micro">Web + Android</span></div>
+        <div class="scale">
+          <div class="scale-row"><span class="demo type-display">Le tue finanze</span><span class="spec"><b>Display</b>clamp 1.7–2.2 rem / 700</span></div>
+          <div class="scale-row"><span class="demo type-h2">Grafi del periodo</span><span class="spec"><b>H2</b>1.25 rem / 600</span></div>
+          <div class="scale-row"><span class="demo type-body">Movimenti, conti, salvadanai e investimenti in un unico posto.</span><span class="spec"><b>Body</b>1 rem / 1.5 / 400</span></div>
+          <div class="scale-row"><span class="demo type-label">Saldo del periodo</span><span class="spec"><b>Label</b>0.75 rem / +0.14 em</span></div>
+          <div class="scale-row"><span class="demo tnum" style="font-size:26px;font-weight:700;letter-spacing:-.02em">1.234,56 €</span><span class="spec"><b>Importo</b>tnum / 700</span></div>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Android</b> display 36/30 · headline 28/24/20</span>
+          <span class="form-chip"><b>Body</b> 16/14/12 sp</span>
+          <span class="form-chip"><b>Label</b> 14/12/11 sp</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Cifre tabulari</h3><span class="micro">.tnum</span></div>
+        <div class="amount-demo">
+          <div class="amount-col">
+            <span class="micro">Proporzionali</span>
+            <div class="figure-col" style="border:0;padding:0;background:transparent">
+              <div class="fig">111,11 €</div>
+              <div class="fig">8.888,88 €</div>
+              <div class="fig">1,00 €</div>
+              <span class="fig-cap bad">virgola fuori colonna</span>
+            </div>
+          </div>
+          <div class="amount-col">
+            <span class="micro">Tabellari · .tnum</span>
+            <div class="figure-col fig-tab" style="border:0;padding:0;background:transparent">
+              <div class="fig">111,11 €</div>
+              <div class="fig">8.888,88 €</div>
+              <div class="fig">1,00 €</div>
+              <span class="fig-cap good">virgola incolonnata</span>
+            </div>
+          </div>
+        </div>
+        <p class="note pin">Cifre tabulari su tutta l'interfaccia: le virgole restano incolonnate in elenchi e tabelle.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Formati</h3><span class="micro">it-IT · EUR</span></div>
+        <div class="fmt-chip" style="margin-top:0"><b class="tnum">1.234,56 €</b><span>raggruppamento sempre attivo</span></div>
+        <div class="fmt-chip"><b class="tnum">14.853,51 €</b><span>stessa regola oltre le 5 cifre</span></div>
+        <div class="fmt-chip"><b class="tnum">-24,90 €</b><span>negativo · segno prima dell'importo</span></div>
+        <div class="fmt-chip"><b class="tnum">07/11/2026</b><span>date gg/mm/aaaa · Europe/Rome</span></div>
+        <p class="note pin">Importi completi da <span class="mono">format.ts</span>; le assi dei grafici usano etichette compatte con lo stesso locale.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 ICONE E ILLUSTRAZIONI ================= -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <div>
+        <div class="kicker">DESIGN.md · Icone e illustrazioni</div>
+        <h2 class="sec-title">Lucide su web e Android, line art mint negli stati vuoti</h2>
+        <p class="src"><span class="mono">lucide-react</span> · vector drawable Compose · illustrazioni <span class="mono">viewBox 160×150</span>, tratto 2, colore accento, 96–120 px.</p>
+      </div>
+    </div>
+    <div class="section-rule"></div>
+
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Icone Lucide</h3><span class="micro">Web + Android</span></div>
+        <div class="icons-row">
+          <div class="icon-cell">@@IC_GRID@@<small>dashboard</small></div>
+          <div class="icon-cell">@@IC_SWAP@@<small>movimenti</small></div>
+          <div class="icon-cell">@@IC_CARD@@<small>conti</small></div>
+          <div class="icon-cell">@@IC_PIG@@<small>salvadanai</small></div>
+          <div class="icon-cell">@@IC_REPEAT@@<small>automazioni</small></div>
+          <div class="icon-cell">@@IC_TREND@@<small>investimenti</small></div>
+          <div class="icon-cell">@@IC_TRASH@@<small>cestino</small></div>
+          <div class="icon-cell">@@IC_TAG@@<small>categorie</small></div>
+          <div class="icon-cell">@@IC_USER@@<small>profilo</small></div>
+          <div class="icon-cell">@@IC_SLIDERS@@<small>impostazioni</small></div>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Tratto</b> 2</span>
+          <span class="form-chip"><b>Colore</b> currentColor</span>
+          <span class="form-chip"><b>Stato attivo</b> accento</span>
+          <span class="form-chip"><b>Android</b> vector drawable Lucide</span>
+        </div>
+        <div class="icons-row" style="margin-top:16px;align-items:flex-end">
+          <div class="icon-cell" style="width:40px;height:40px;--icon:16px">@@IC_GRID@@<small>16</small></div>
+          <div class="icon-cell" style="width:48px;height:48px;--icon:20px">@@IC_GRID@@<small>20</small></div>
+          <div class="icon-cell" style="width:56px;height:56px;--icon:24px">@@IC_GRID@@<small>24</small></div>
+          <span class="note" style="margin-left:6px">Taglie 16 / 20 / 24 px secondo il contesto.</span>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Android</b> 31 drawable Lucide</span>
+          <span class="form-chip"><b>Uso</b> 31 punti</span>
+          <span class="form-chip"><b>Material</b> rimosso</span>
+        </div>
+        <p class="note pin">Le stesse icone su entrambe le piattaforme: nessuna icona Material nell'app (DC-102).</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Illustrazioni</h3><span class="micro">line art mint</span></div>
+        <div class="ill-grid">
+          <div class="ill-cell">@@ILL_ACCOUNTS@@<small>conti</small></div>
+          <div class="ill-cell">@@ILL_MOVEMENTS@@<small>movimenti</small></div>
+          <div class="ill-cell">@@ILL_SAVINGS@@<small>salvadanai</small></div>
+          <div class="ill-cell">@@ILL_INVESTMENTS@@<small>investimenti</small></div>
+          <div class="ill-cell">@@ILL_AUTOMATIONS@@<small>automazioni</small></div>
+          <div class="ill-cell">@@ILL_TRASH@@<small>cestino</small></div>
+        </div>
+        <p class="note pin">Sorgente web in <span class="mono">components/Illustrations.tsx</span>; Android usa gli stessi soggetti come drawable. Decorative: <span class="mono">aria-hidden</span>.</p>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Empty state</h3><span class="micro">Illustrazione + azione</span></div>
+        <div class="empty-demo">
+          <div class="empty-demo-art">@@ILL_MOVEMENTS@@</div>
+          <b>Nessun movimento registrato</b>
+          <p>Aggiungi il primo movimento per iniziare a vedere i grafici.</p>
+          <span class="btn btn-secondary">@@IC_PLUS@@ Aggiungi movimento</span>
+        </div>
+        <p class="note pin">Semantica: <span class="mono">role="group"</span>, titolo collegato, CTA solo se l'azione esiste.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Regole</h3><span class="micro">Perché restino coerenti</span></div>
+        <div class="rules">
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Tratto singolo</b> <span>· 2 px, terminazioni tonde</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Colore accento</b> <span>· dal tema attivo, mai fisso</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Taglia</b> <span>· 96–120 px, proportion 160×150</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Illustrazione come unico messaggio</b> <span>· serve sempre il testo</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>CTA forzata</b> <span>· niente azioni distruttive negli stati vuoti</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Stesso soggetto</b> <span>· web e Android, non due set diversi</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Riempimenti</b> <span>· solo tratto, niente campiture</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 05 STRUTTURA, PAGINE E COMPONENTI ================= -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <div>
+        <div class="kicker">DESIGN.md · Struttura e navigazione · Pagine e flussi · Componenti e feedback</div>
+        <h2 class="sec-title">Topbar web, bottom bar Android, pagine e stati</h2>
+        <p class="src">Sei voci con etichette e menu avatar sul web · cinque tab, ⋮ e swipe su Android · pagine per i flussi lunghi, sovrimpressione per i dettagli, tabelle con scroll.</p>
+      </div>
+    </div>
+    <div class="section-rule"></div>
+
+    <div class="grid g2">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Desktop web</h3><span class="micro">Topbar continua · 6 voci</span></div>
+        <div class="frame scope-dark">
+          <div class="frame-bar"><i></i><i></i><i></i><span class="url">spendy.app / dashboard</span></div>
+          <div class="wf-desktop">
+            <div class="wf-top">
+              @@LOCKUP_H_DARKSMALLWF@@
+              <div class="wf-nav">
+                <i class="on">@@IC_GRID@@Dashboard</i>
+                <i>@@IC_SWAP@@Movimenti</i>
+                <i>@@IC_CARD@@Conti</i>
+                <i>@@IC_PIG@@Salvadanai</i>
+                <i>@@IC_REPEAT@@Automazioni</i>
+                <i>@@IC_TREND@@Investimenti</i>
+              </div>
+              <div class="wf-avatar-wrap">
+                <span class="wf-avatar"></span>
+                <div class="wf-menu">
+                  <span>Profilo</span><span>Impostazioni</span><span>Cestino</span><span>Esci</span>
+                </div>
+              </div>
+            </div>
+            <div class="wf-content">
+              <div class="wf-block tall"></div>
+              <div class="wf-block"></div><div class="wf-block"></div>
+            </div>
+          </div>
+        </div>
+        <div class="callout"><b>Desktop</b> · nav a icone ed etichette con stato attivo, avatar con menu (Profilo, Impostazioni, Cestino, Esci), footer con versione.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Android</h3><span class="micro">5 tab · ⋮ · FAB · swipe</span></div>
+        <div class="wf-phone scope-dark" style="width:250px">
+          <div class="android-top">
+            <span class="mini-avatar">D</span>
+            <span class="t">Dashboard</span>
+            <span class="spacer"></span>
+            @@IC_MORE@@
+          </div>
+          <div class="ph-body" style="padding:6px 12px 0"><i></i><i style="height:58px"></i><i></i></div>
+          <div class="wf-bottom">
+            <i class="on">@@IC_GRID@@Dashboard</i>
+            <i>@@IC_SWAP@@Movimenti</i>
+            <i>@@IC_PIG@@Salvadanai</i>
+            <i>@@IC_TREND@@Investimenti</i>
+            <i>@@IC_MORE@@Altro</i>
+            <span class="sa">swipe tra le tab · safe area</span>
+          </div>
+          <span class="fab">@@IC_PLUS@@</span>
+        </div>
+        <div class="callout"><b>Android</b> · tab con swipe, menu ⋮ per le azioni, FAB per aggiungere, ricerca globale, tema Sistema.</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h3 class="panel-title">Mobile web</h3><span class="micro">≤760 px · bottom bar fissa</span></div>
+      <div class="bottom-bar-mock">
+        <span class="bb-item on">@@IC_GRID@@Dashboard</span>
+        <span class="bb-item">@@IC_SWAP@@Movimenti</span>
+        <span class="bb-item">@@IC_CARD@@Conti</span>
+        <span class="bb-item">@@IC_PIG@@Salvadanai</span>
+        <span class="bb-item">@@IC_REPEAT@@Automazioni</span>
+        <span class="bb-item">@@IC_TREND@@Investimenti</span>
+      </div>
+      <div class="form-chips">
+        <span class="form-chip"><b>Safe area</b> compensata</span>
+        <span class="form-chip"><b>Padding</b> nel contenuto</span>
+        <span class="form-chip"><b>Target</b> ≥ 44 px</span>
+        <span class="form-chip"><b>Tabelle</b> scroll orizzontale, non card</span>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h3 class="panel-title">Pagine e flussi</h3><span class="micro">Web · Android</span></div>
+      <div class="pages-grid">
+        <div>
+          <span class="micro">Web</span>
+          <ul style="margin-top:8px">
+            <li><b>Setup</b><span>primo avvio</span></li>
+            <li><b>Login / Registrazione / Attesa</b><span>pagine + hero</span></li>
+            <li><b>Dashboard</b><span>patrimonio, periodo, grafici, ultimi 6</span></li>
+            <li><b>Movimenti</b><span>form inline, tassonomia in sovrimpressione</span></li>
+            <li><b>Conti · Salvadanai</b><span>form inline</span></li>
+            <li><b>Automazioni</b><span>regole, storico, pausa</span></li>
+            <li><b>Investimenti</b><span>dettaglio in sovrimpressione</span></li>
+            <li><b>Cestino</b><span>filtri tipo/data, retention 30 gg</span></li>
+            <li><b>Import</b><span>anteprima CSV, riepilogo</span></li>
+            <li><b>Profilo</b><span>foto, dati, password</span></li>
+            <li><b>Impostazioni</b><span>ricerca interna, aspetto, dispositivi, import/export</span></li>
+            <li><b>Amministrazione</b><span>Sistema, backup, release</span></li>
+          </ul>
+        </div>
+        <div>
+          <span class="micro">Android</span>
+          <ul style="margin-top:8px">
+            <li><b>Onboarding</b><span>server o archivio locale</span></li>
+            <li><b>Server / QR / Login</b><span>health, token, pairing</span></li>
+            <li><b>Dashboard</b><span>tab e swipe</span></li>
+            <li><b>Movimenti</b><span>filtri completi, calendario</span></li>
+            <li><b>Conti · Salvadanai</b><span>lista e form</span></li>
+            <li><b>Investimenti</b><span>portafoglio, operazioni</span></li>
+            <li><b>Automazioni</b><span>server e motore locale</span></li>
+            <li><b>Categorie e tag</b><span>gestione</span></li>
+            <li><b>Cestino</b><span>soft delete, undo</span></li>
+            <li><b>Profilo · Impostazioni</b><span>cambio utente senza login, aspetto, dati</span></li>
+            <li><b>Dispositivi · Pairing</b><span>token, QR e codice</span></li>
+            <li><b>Ricerca · Notifiche</b><span>globale e locali</span></li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">Ricerca globale solo su Android; sul web esiste la sola ricerca interna delle Impostazioni. Nessuna paginazione, nessuna conversione tabelle→card.</p>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h3 class="panel-title">Profilo e Impostazioni · Android</h3><span class="micro">Ridisegnati sul web</span></div>
+      <div class="android-pair">
+        <div class="and-card">
+          <div class="and-profile-top">
+            <span class="and-avatar">DU</span>
+            <div>
+              <b>Demo Utente</b>
+              <span>demo@spendy.test · @demo</span>
+              <span class="and-badges"><span class="and-badge">Attivo</span><span class="and-badge">Utente</span></span>
+            </div>
+          </div>
+          <div class="and-card-head"><span class="ic">@@IC_USER@@</span>Dati personali</div>
+          <span class="and-label">Nome</span><div class="and-input">Demo</div>
+          <span class="and-label">Email</span><div class="and-input">demo@spendy.test</div>
+          <div class="and-row"><b>Accesso</b><span class="go">Cambia password ›</span></div>
+          <div class="and-row"><b>Account</b><span>Demo Utente · Attivo</span></div>
+          <div class="and-row"><span>Cambio utente senza login</span><span class="go">Cambia ›</span></div>
+          <div class="and-row"><span>Aggiungi un altro account</span><span class="go">›</span></div>
+          <div class="and-row"><span style="color:var(--danger)">Esci</span><span class="go">›</span></div>
+        </div>
+
+        <div class="and-card">
+          <div class="and-card-head"><span class="ic">@@IC_SLIDERS@@</span>Impostazioni</div>
+          <div class="and-row"><b>Accesso</b><span>Profilo ›</span></div>
+          <div class="and-row"><b>Aspetto</b><span>Sistema</span></div>
+          <div class="and-theme">
+            <span class="t">@@IC_MOON@@Scuro</span>
+            <span class="t">@@IC_SUN@@Chiaro</span>
+            <span class="t on">@@IC_MONITOR@@Sistema</span>
+          </div>
+          <div class="and-row" style="margin-top:10px"><b>Blocco screenshot</b><span class="and-switch"></span></div>
+          <div class="and-row"><b>Dati</b><span>Import / Export e migrazione ›</span></div>
+          <div class="and-row"><b>Aggiornamenti</b><span>App 0.8.1 · server 0.8.1</span></div>
+          <div class="and-row"><b>Dispositivi</b><span>Associa con QR ›</span></div>
+          <div class="and-row"><b>Informazioni</b><span>Modalità, Android, licenze ›</span></div>
+        </div>
+      </div>
+      <p class="note">Stessa struttura del web: sezioni in card con intestazione e icona, Aspetto a tre scelte, cambio utente nel Profilo e nessun blocco di cambio utente nelle Impostazioni.</p>
+    </div>
+
+    <div class="grid g3" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Azioni</h3><span class="micro">3 varianti + stati</span></div>
+        <div class="comp-row">
+          <span class="btn btn-primary">@@IC_PLUS@@ Aggiungi</span>
+          <span class="btn btn-secondary">Annulla</span>
+          <span class="btn btn-ghost">Dettagli</span>
+          <span class="btn btn-danger">Elimina</span>
+          <span class="btn btn-primary focus">Focus</span>
+          <span class="btn" aria-disabled="true">Disabilitato</span>
+          <span class="btn btn-primary"><span class="spinner"></span>Salvataggio</span>
+          <span class="btn btn-ghost">Apri il registro @@IC_ARROW_R@@</span>
+        </div>
+        <div class="comp-row" style="margin-top:10px">
+          <span class="btn btn-secondary" style="width:38px;padding:0">@@IC_MORE@@</span>
+          <span class="btn btn-secondary" style="width:38px;padding:0">@@IC_TRASH@@</span>
+          <span class="btn btn-secondary" style="width:38px;padding:0">@@IC_SLIDERS@@</span>
+          <span class="note" style="margin-left:6px">Icon button ≥44 px su touch.</span>
+        </div>
+        <p class="note pin">Primario, secondario, ghost, distruttivo e link; stati default / hover / focus / disabled / loading / error.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Campi e scelte</h3><span class="micro">Errori inline</span></div>
+        <div class="field">
+          <label>Nome del salvadanaio</label>
+          <div class="input err">Salute</div>
+          <span class="msg">@@IC_ALERT@@ Il saldo del salvadanaio non basta.</span>
+        </div>
+        <div class="theme-choices" style="margin-top:14px">
+          <div class="theme-choice on">@@IC_MOON@@Scuro</div>
+          <div class="theme-choice">@@IC_SUN@@Chiaro</div>
+          <div class="theme-choice">@@IC_MONITOR@@Sistema</div>
+        </div>
+        <div class="tabs" style="margin-top:14px">
+          <span class="tab on">Mese corrente</span><span class="tab">Precedente</span><span class="tab">Anno</span>
+        </div>
+        <div class="badges" style="margin-top:14px">
+          <span class="badge accent">Pagato dal salvadanaio</span>
+          <span class="badge warn">In attesa</span>
+          <span class="badge danger">Rifiutato</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Caricamento</h3><span class="micro">Skeleton</span></div>
+        <div class="sk-card" style="border-color:var(--line)">
+          <div class="sk-line" style="width:38%;height:9px"></div>
+          <div class="sk-line" style="width:72%;height:20px"></div>
+          <div class="sk-line" style="width:54%;height:9px"></div>
+        </div>
+        <div class="sk-card" style="margin-top:10px">
+          <div class="sk-line" style="width:30%;height:9px"></div>
+          <div class="sk-line" style="width:58%;height:9px"></div>
+          <div class="sk-line" style="width:44%;height:9px"></div>
+        </div>
+        <div class="skeleton" style="margin-top:10px">
+          <div class="sk-line" style="width:100%"></div>
+          <div class="sk-line" style="width:86%"></div>
+          <div class="sk-line" style="width:64%"></div>
+        </div>
+        <p class="note pin">Skeleton al posto di "Caricamento…" anche nei caricamenti centrali (<span class="mono">aria-busy</span>), con rispetto di <span class="mono">prefers-reduced-motion</span>.</p>
+      </div>
+    </div>
+
+    <div class="grid g3" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Feedback</h3><span class="micro">Due canali</span></div>
+        <div class="toast">
+          <div class="tx">Movimento salvato</div>
+          <span class="undo">Annulla</span>
+          <span class="undo" style="color:var(--muted);font-weight:600">×</span>
+        </div>
+        <div class="notice-demo" style="margin-top:10px">@@IC_CHECK@@ Conto aggiornato</div>
+        <div class="toast" style="margin-top:10px">
+          <div class="tx">Movimento eliminato</div>
+          <span class="undo">Annulla</span>
+          <span class="undo" style="color:var(--muted);font-weight:600">×</span>
+        </div>
+        <p class="note pin">Toast per azioni puntuali (messaggio + azione + ×, 8 s, max 3); notice inline per l'esito dei form.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Modale distruttiva</h3><span class="micro">Esc · focus trap</span></div>
+        <div class="modal-box">
+          <div class="hd"><span class="ic">@@IC_TRASH@@</span><div><h4>Eliminare il conto?</h4><p>Solo i conti senza movimenti si eliminano; altrimenti si archiviano.</p></div></div>
+          <div class="summary">
+            <div class="srow"><span>Conto</span><b>Conto principale</b></div>
+            <div class="srow"><span>Movimenti collegati</span><b>0</b></div>
+            <div class="srow"><span>Saldo attuale</span><b>0,00 €</b></div>
+          </div>
+          <div class="ft"><span class="btn btn-ghost">Annulla</span><span class="btn btn-danger">Elimina</span></div>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Esc</b> chiude</span>
+          <span class="form-chip"><b>Tab</b> resta dentro</span>
+          <span class="form-chip"><b>Focus</b> su Annulla</span>
+        </div>
+        <p class="note pin">Riepilogo sempre presente; focus iniziale su Annulla, Tab resta nella modale, Esc chiude.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Tabelle</h3><span class="micro">Scroll orizzontale</span></div>
+        <div class="scroll-x">
+          <div class="tbl" style="min-width:340px">
+            <div class="tr th"><span>Movimento</span><span>Data</span><span>Importo</span></div>
+            <div class="tr"><span>Spesa · Salute</span><span>07/11</span><span>-24,90 €</span></div>
+            <div class="tr"><span>Stipendio</span><span>01/11</span><span>+2.100,00 €</span></div>
+          </div>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Header</b> sticky</span>
+          <span class="form-chip"><b>Colonna azioni</b> affiancata</span>
+          <span class="form-chip"><b>Nessuna</b> conversione a card</span>
+        </div>
+        <p class="note pin">Amministrazione e anteprima import restano tabelle con scroll; le liste principali sono già card/righe.</p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h3 class="panel-title">Dashboard web</h3><span class="micro">Riferimento per web e Android</span></div>
+      <div class="dash-mock">
+        <div class="dash-mock-head">
+          <div>
+            <span class="micro">Saldo del periodo</span>
+            <div class="dash-mock-big tnum">1.625,01 €</div>
+            <span class="muted-line">01/08/2026 – 10/11/2026 · dall'avvio · dividendi 18,50 €</span>
+          </div>
+          <div class="tabs">
+            <span class="tab">Mese corrente</span><span class="tab">Precedente</span><span class="tab">Anno</span><span class="tab on">Tutto</span>
+          </div>
+        </div>
+        <div class="dash-mock-metrics">
+          <div class="dash-mock-metric"><span>Saldo conti</span><b class="tnum">7.278,01 €</b></div>
+          <div class="dash-mock-metric"><span>Salvadanai</span><b class="tnum">1.563,50 €</b></div>
+          <div class="dash-mock-metric"><span>Investimenti</span><b class="tnum">6.012,00 €</b><small>valore 7.036,50 €</small></div>
+          <div class="dash-mock-metric"><span>Patrimonio</span><b class="tnum">14.853,51 €</b></div>
+        </div>
+      </div>
+      <div class="dash-charts-mock">
+        <span class="micro">Grafici del periodo</span>
+        <div class="chart-head"><span class="t">Andamento saldo e patrimonio</span><span class="micro">ultimi 30 giorni</span></div>
+        <svg viewBox="0 0 620 120" role="img" aria-label="Andamento saldo e patrimonio">
+          <g stroke="var(--line)" stroke-width="1">
+            <line x1="0" y1="26" x2="620" y2="26"/><line x1="0" y1="62" x2="620" y2="62"/><line x1="0" y1="98" x2="620" y2="98"/>
+          </g>
+          <path d="M0 88 L60 84 L120 90 L180 76 L240 80 L300 62 L360 66 L420 46 L480 50 L540 38 L620 30 L620 120 L0 120 Z" fill="color-mix(in srgb,var(--accent) 14%,transparent)"/>
+          <path d="M0 88 L60 84 L120 90 L180 76 L240 80 L300 62 L360 66 L420 46 L480 50 L540 38 L620 30" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M0 104 L60 102 L120 105 L180 98 L240 100 L300 92 L360 94 L420 86 L480 88 L540 82 L620 78" fill="none" stroke="var(--info)" stroke-width="2" stroke-dasharray="6 4" stroke-linecap="round"/>
+        </svg>
+        <div class="legend">
+          <span class="leg"><i class="sw"></i>Saldo (linea continua)</span>
+          <span class="leg"><i class="sw dash"></i>Patrimonio (tratteggio)</span>
+        </div>
+        <div class="charts-row-mock">
+          <div>
+            <span class="micro">Entrate vs uscite · flussi sui conti</span>
+            <div class="inout-mock">
+              <div class="inout-cards-mock">
+                <div class="inout-card-mock up">
+                  <span class="head">@@IC_ARROW_DL@@ Entrate</span>
+                  <b class="tnum">5.258,50 €</b>
+                  <small>59% del totale</small>
+                </div>
+                <div class="inout-card-mock down">
+                  <span class="head">@@IC_ARROW_UR@@ Uscite</span>
+                  <b class="tnum">3.633,49 €</b>
+                  <small>41% del totale</small>
+                </div>
+              </div>
+              <div class="inout-track-mock" role="img" aria-label="Entrate 56%, uscite 44%">
+                <i style="width:59%;background:var(--up)"></i><i style="width:41%;background:var(--down)"></i>
+              </div>
+            </div>
+          </div>
+          <div>
+            <span class="micro">Spese per categoria</span>
+            <div class="cat-mock">
+              <div class="cat-row-mock"><span>Salute</span><span class="cat-track-mock"><i style="width:82%"></i></span></div>
+              <div class="cat-row-mock"><span>Casa</span><span class="cat-track-mock"><i style="width:64%"></i></span></div>
+              <div class="cat-row-mock"><span>Trasporti</span><span class="cat-track-mock"><i style="width:41%"></i></span></div>
+              <div class="cat-row-mock"><span>Svago</span><span class="cat-track-mock"><i style="width:26%"></i></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">Saldo del periodo = Entrate − Uscite. Andamento in SVG artigianale, Entrate vs uscite e categorie in CSS/Compose; nessuna libreria e nessuna previsione. La stessa composizione è usata su web e Android, con l'intervallo <b>Tutto</b> che parte dalla prima attività reale.</p>
+    </div>
+
+    <div class="grid g2" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Empty state e cestino</h3><span class="micro">Illustrazione + azione</span></div>
+        <div class="empty-demo">
+          <div class="empty-demo-art">@@ILL_SAVINGS@@</div>
+          <b>Nessun salvadanaio creato</b>
+          <p>Crea un salvadanaio per mettere da parte per un obiettivo.</p>
+          <span class="btn btn-secondary">@@IC_PLUS@@ Crea salvadanaio</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px;border-top:1px solid var(--line);padding-top:12px;font-size:11.5px;color:var(--muted)">
+          @@IC_TRASH@@<span>Cestino con ripristino e filtri · <b style="color:var(--text)">retention 30 giorni</b> · eliminazione definitiva e svuotamento.</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Regole dei grafici</h3><span class="micro">Forma, non solo colore</span></div>
+        <div class="rules">
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Forma delle linee</b> <span>· continua = saldo, tratteggio = patrimonio</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Etichette e percentuali</b> <span>· il significato resta senza distinguere le tinte</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Periodo Tutto</b> <span>· dalla prima attività, bucket uniformi ≤95</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Solo colore</b> <span>· mai per entrate e uscite</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Previsioni</b> <span>· non esistono nel prodotto</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Librerie di grafici</b> <span>· SVG e CSS/Compose</span></div></div>
+        </div>
+      </div>
+    </div>
+
+  <!-- ================= 06 ACCESSIBILITÀ ================= -->
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <div>
+        <div class="kicker">DESIGN.md · Accessibilità · i18n</div>
+        <h2 class="sec-title">AA su superfici e fondi soft, tastiera e motion</h2>
+        <p class="src">Soglia AA calcolata sui token, focus visibile, Esc e focus trap nelle modali, touch ≥44 px, grafici non solo colore, <span class="mono">prefers-reduced-motion</span>.</p>
+      </div>
+    </div>
+    <div class="section-rule"></div>
+
+    <div class="grid g3">
+      <div class="a11y-card">
+        <div class="top"><span class="ic">@@IC_CHECK@@</span><span class="a11y-badge">AA</span></div>
+        <h4>Contrasto</h4>
+        <p>Testo piccolo ≥4.5:1 su <span class="mono">bg0</span> e sui fondi soft: danger 4.86, warn 5.24, accent 6.49 nel chiaro.</p>
+      </div>
+      <div class="a11y-card">
+        <div class="top"><span class="ic">@@IC_FOCUS@@</span><span class="a11y-badge">2 px</span></div>
+        <h4>Focus visibile</h4>
+        <div class="focus-demo"><span class="btn btn-secondary focus" style="height:30px;font-size:11px">Campo attivo</span></div>
+        <p style="margin-top:2px">Anello esterno con offset, mai <span class="mono">outline:none</span> senza sostituto.</p>
+      </div>
+      <div class="a11y-card">
+        <div class="top"><span class="ic">@@IC_KEY@@</span><span class="a11y-badge">Tastiera</span></div>
+        <h4>Navigazione</h4>
+        <div class="focus-demo" style="margin-top:2px">
+          <span class="key">Tab</span><span class="key">⇧ Tab</span><span class="key">↩</span><span class="key">Esc</span>
+        </div>
+        <p style="margin-top:2px">Esc chiude menu e modali; il focus resta dentro la modale e torna indietro.</p>
+      </div>
+      <div class="a11y-card">
+        <div class="top"><span class="ic">@@IC_TOUCH@@</span><span class="a11y-badge">44 px</span></div>
+        <h4>Target touch</h4>
+        <div class="touch-demo"><span class="touch-target">44×44</span><span class="note" style="font-size:10px">icone, chiusura, ricerca, avatar</span></div>
+      </div>
+      <div class="a11y-card">
+        <div class="top"><span class="ic">@@IC_CHART@@</span><span class="a11y-badge">Forma</span></div>
+        <h4>Grafici non solo colore</h4>
+        <p>Linea piena e tratteggiata, etichette, percentuali, <span class="mono">aria-label</span>: il significato resta.</p>
+      </div>
+      <div class="a11y-card">
+        <div class="top"><span class="ic">@@IC_MOTION@@</span><span class="a11y-badge">150–200 ms</span></div>
+        <h4>Movimento</h4>
+        <p>Nessuna transizione oltre i 200 ms; <span class="mono">prefers-reduced-motion</span> spegne animazioni e scroll morbido.</p>
+      </div>
+    </div>
+
+    <div class="grid g2" style="margin-top:20px">
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Verifica del contrasto</h3><span class="micro">Testo su bg0</span></div>
+        <div class="ratio-table">
+          <div class="r h"><span>Token</span><span class="val">Scuro</span><span class="val">Chiaro</span><span class="ok">Esito</span></div>
+          <div class="r"><span class="tok">text</span><span class="val"><b>17.89</b></span><span class="val"><b>17.89</b></span><span class="ok">AA ✓</span></div>
+          <div class="r"><span class="tok">muted</span><span class="val"><b>8.68</b></span><span class="val"><b>6.76</b></span><span class="ok">AA ✓</span></div>
+          <div class="r"><span class="tok">accent</span><span class="val"><b>7.31</b></span><span class="val"><b>6.96</b></span><span class="ok">AA ✓</span></div>
+          <div class="r"><span class="tok">danger</span><span class="val"><b>6.60</b></span><span class="val"><b>5.52</b></span><span class="ok">AA ✓</span></div>
+          <div class="r"><span class="tok">warn</span><span class="val"><b>8.95</b></span><span class="val"><b>5.70</b></span><span class="ok">AA ✓</span></div>
+          <div class="r"><span class="tok">info</span><span class="val"><b>8.28</b></span><span class="val"><b>4.89</b></span><span class="ok">AA ✓</span></div>
+          <div class="r"><span class="tok">up / down</span><span class="val"><b>9.75 / 7.41</b></span><span class="val"><b>6.96 / 4.89</b></span><span class="ok">AA ✓</span></div>
+        </div>
+        <div class="soft-grid" style="margin-top:12px">
+          <div class="soft-head"><span>fondo</span><span>scuro</span><span>chiaro</span></div>
+          <div class="soft-row"><b>danger-soft</b><span class="val">dark <b>5.89</b></span><span class="val">light <b>4.86</b></span></div>
+          <div class="soft-row"><b>warn-soft</b><span class="val">dark <b>7.35</b></span><span class="val">light <b>5.24</b></span></div>
+          <div class="soft-row"><b>accent-soft</b><span class="val">dark <b>6.09</b></span><span class="val">light <b>6.49</b></span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3 class="panel-title">Semantica e i18n</h3><span class="micro">Regole trasversali</span></div>
+        <div class="rules">
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Errori inline</b> <span>· accanto al campo, con testo esplicito</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Conferma distruttiva</b> <span>· riepilogo e focus iniziale sicuro</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Stati di carico e vuoto</b> <span>· skeleton e illustrazione con azione</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Solo colore</b> <span>· mai per errori o variazioni</span></div></div>
+          <div class="rule-row no"><span class="ic">✕</span><div><b>Animazioni lunghe</b> <span>· 150–200 ms e reduced-motion</span></div></div>
+        </div>
+        <div class="form-chips">
+          <span class="form-chip"><b>Lingua</b> solo italiano</span>
+          <span class="form-chip"><b>Valuta</b> EUR</span>
+          <span class="form-chip"><b>Fuso</b> Europe/Rome</span>
+          <span class="form-chip"><b>Date</b> gg/mm/aaaa</span>
+        </div>
+        <div class="rules" style="margin-top:14px">
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Tema pre-paint</b> <span>· nessun flash scuro con Sistema + OS chiaro</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Toast</b> <span>· <span class="mono">aria-live="polite"</span>, massimo 3</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Modali</b> <span>· <span class="mono">aria-labelledby</span> e focus trap</span></div></div>
+          <div class="rule-row ok"><span class="ic">✓</span><div><b>Illustrazioni</b> <span>· decorative, <span class="mono">aria-hidden</span></span></div></div>
+        </div>
+        <div class="badges pin">
+          <span class="badge">AA</span><span class="badge">Focus</span><span class="badge">Tastiera</span>
+          <span class="badge">Touch 44 px</span><span class="badge">Reduced motion</span><span class="badge">Non solo colore</span>
+          <span class="badge">Web + Android</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="footer">
+    <div>
+      <span class="micro">Mappa della visualizzazione</span>
+      <table class="map-table">
+        <thead><tr><th>DESIGN.md</th><th>Pannello</th><th>Contenuto</th></tr></thead>
+        <tbody>
+          <tr><td>Logo</td><td>01</td><td>Simbolo, lockup, colore, flat/mono</td></tr>
+          <tr><td>Tema · Token e forma</td><td>02</td><td>Scuro, chiaro, Sistema; token e proiezione Android</td></tr>
+          <tr><td>Tipografia, cifre e formati</td><td>03</td><td>Inter, scala web/Android, tnum, importi</td></tr>
+          <tr><td>Icone e illustrazioni</td><td>04</td><td>Lucide, line art mint, empty state</td></tr>
+          <tr><td>Struttura · Pagine · Componenti · Feedback</td><td>05</td><td>Topbar, bottom bar, Android, pagine, stati</td></tr>
+          <tr><td>Accessibilità · i18n</td><td>06</td><td>AA, focus, tastiera, touch, motion, formati</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <span class="micro">Colophon</span>
+      <p class="colophon">Visualizzazione di <b>DESIGN.md 0.9</b> (allineato a <b>Spendy 0.8.1</b>, web + Android) con i valori reali di
+        <b>tokens.css</b>, delle costanti Compose, del pacchetto logo <span class="mono">apps/frontend/public/logo/</span>,
+        dei font <b>Inter</b> e delle illustrazioni di <span class="mono">components/Illustrations.tsx</span>.<br><br>
+        Spendy 0.8.2 · 10 novembre 2026 · documento di design, non un asset di prodotto.</p>
+    </div>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var p = new URLSearchParams(location.search);
+    var t = p.get('theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    var y = parseInt(p.get('scroll') || '0', 10);
+    if (y > 0) window.scrollTo(0, y);
+  })();
+</script>
+</body>
+</html>

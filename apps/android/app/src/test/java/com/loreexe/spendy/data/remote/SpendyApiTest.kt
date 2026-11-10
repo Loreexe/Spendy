@@ -2,7 +2,6 @@ package com.loreexe.spendy.data.remote
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -23,8 +22,7 @@ class SpendyApiTest {
         api = Retrofit.Builder()
             .baseUrl(server.url("/api/v1/"))
             .addConverterFactory(
-                Json { ignoreUnknownKeys = true }
-                    .asConverterFactory("application/json".toMediaType()),
+                SpendyJson.asConverterFactory("application/json".toMediaType()),
             )
             .build()
             .create(SpendyApi::class.java)
@@ -67,5 +65,36 @@ class SpendyApiTest {
 
         assertEquals("1234.56", dashboard.totalBalance)
         assertEquals("-10.00", dashboard.periodBalance)
+    }
+
+    @Test
+    fun investmentDetailToleratesNullQuantityAndUnitPrice() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {
+                      "position": {"id": 7, "uuid": "pos-uuid", "name": "ETF Mondo", "quantity": "3.00000000"},
+                      "summary": {"total_cost": "300.00", "total_value": "330.00"},
+                      "operations": [
+                        {"id": 1, "uuid": "op-1", "position": 7, "kind": "buy", "date": "2026-01-10", "quantity": "3.00000000", "unit_price": "100.00"},
+                        {"id": 2, "uuid": "op-2", "position": 7, "kind": "dividend", "date": "2026-02-01", "quantity": "0.00000000", "unit_price": "0.00000000"},
+                        {"id": 3, "uuid": "op-3", "position": 7, "kind": "sell", "date": "2026-03-01", "quantity": null, "unit_price": null}
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+        )
+
+        val detail = api.investmentDetail(7)
+
+        assertEquals("ETF Mondo", detail.position.name)
+        assertEquals(3L, detail.operations.size.toLong())
+        // I null espliciti del server vengono coerciti ai default dei DTO non-nullable.
+        assertEquals("0.00000000", detail.operations[2].quantity)
+        assertEquals("0.00000000", detail.operations[2].unitPrice)
+        assertEquals("/api/v1/finance/investments/7/", server.takeRequest().path)
     }
 }

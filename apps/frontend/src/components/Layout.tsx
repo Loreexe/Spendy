@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ArrowLeftRight,
+  Clock,
   LayoutDashboard,
   LogOut,
   PiggyBank,
-  Repeat,
+  ReceiptText,
   Settings,
   ShieldCheck,
   Trash2,
   TrendingUp,
-  UserRound,
+  User,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -101,14 +101,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <NavItem to="/" end icon={LayoutDashboard} label="Dashboard" />
                   <NavItem
                     to="/movements"
-                    icon={ArrowLeftRight}
+                    icon={ReceiptText}
                     label="Movimenti"
                   />
                   <NavItem to="/accounts" icon={Wallet} label="Conti" />
                   <NavItem to="/savings" icon={PiggyBank} label="Salvadanai" />
                   <NavItem
                     to="/automations"
-                    icon={Repeat}
+                    icon={Clock}
                     label="Automazioni"
                   />
                   <NavItem
@@ -148,7 +148,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
                 >
-                  <UserRound size={18} aria-hidden="true" />
+                  <User size={18} aria-hidden="true" />
                   <span>Profilo</span>
                 </NavLink>
                 <NavLink

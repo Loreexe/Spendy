@@ -696,9 +696,12 @@ class DashboardIntegrationTests(InvestmentApiTestBase):
 
         self.assertEqual(data["total_balance"], "919.90")
         self.assertEqual(data["total_patrimony"], "1562.94")
-        self.assertEqual(data["period_balance"], "919.90")
-        self.assertEqual(data["income_total"], "12.40")
-        self.assertEqual(data["expense_total"], "0.00")
+        self.assertEqual(data["period_balance"], "-80.10")
+        # Flussi di cassa sui conti: la vendita (1×110 − 1 commissione = 109)
+        # e il dividendo (12,40) sono entrate; l'acquisto (2×100 + 1,50 = 201,50)
+        # è un'uscita. L'apertura della posizione è una voce di capitale, esclusa.
+        self.assertEqual(data["income_total"], "121.40")
+        self.assertEqual(data["expense_total"], "201.50")
 
     def test_recent_transactions_exclude_investments(self):
         response = self.dashboard(start="2000-01-01", end=self.today.isoformat())

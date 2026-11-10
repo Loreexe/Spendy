@@ -53,16 +53,17 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.UUID
 
 interface FinanceRepository {
-    suspend fun dashboard(): Result<DashboardData>
+    suspend fun dashboard(start: String? = null, end: String? = null): Result<DashboardData>
     suspend fun accounts(): Result<List<AccountData>>
     suspend fun transactions(filters: TransactionFilters = TransactionFilters()): Result<List<TransactionData>>
     suspend fun categories(): Result<List<CategoryData>>
     suspend fun tags(): Result<List<TagData>>
-    suspend fun series(): Result<SeriesData>
+    suspend fun series(start: String? = null, end: String? = null): Result<SeriesData>
     suspend fun search(query: String): Result<SearchResults>
     suspend fun createAccount(name: String, type: String, initialBalanceCents: Long): Result<Unit>
     suspend fun updateAccount(account: AccountData, name: String, type: String, archived: Boolean): Result<Unit>
@@ -118,12 +119,13 @@ class SwitchingFinanceRepository(
     private fun delegate(): FinanceRepository =
         if (sessionStore.lastMode == AppMode.LOCAL) local else remote
 
-    override suspend fun dashboard() = delegate().dashboard()
+    override suspend fun dashboard(start: String?, end: String?) =
+        delegate().dashboard(start, end)
     override suspend fun accounts() = delegate().accounts()
     override suspend fun transactions(filters: TransactionFilters) = delegate().transactions(filters)
     override suspend fun categories() = delegate().categories()
     override suspend fun tags() = delegate().tags()
-    override suspend fun series() = delegate().series()
+    override suspend fun series(start: String?, end: String?) = delegate().series(start, end)
     override suspend fun search(query: String) = delegate().search(query)
     override suspend fun createAccount(name: String, type: String, initialBalanceCents: Long) =
         delegate().createAccount(name, type, initialBalanceCents)
@@ -251,9 +253,12 @@ class RemoteFinanceRepository(
         )
     }
 
-    override suspend fun dashboard(): Result<DashboardData> = withContext(Dispatchers.IO) {
+    override suspend fun dashboard(
+        start: String?,
+        end: String?,
+    ): Result<DashboardData> = withContext(Dispatchers.IO) {
         runCatching {
-            val dto = api().dashboard()
+            val dto = api().dashboard(start, end)
             DashboardData(
                 totalBalanceCents = parseMoneyToCents(dto.totalBalance),
                 totalPatrimonyCents = parseMoneyToCents(dto.totalPatrimony),
@@ -264,6 +269,8 @@ class RemoteFinanceRepository(
                 investmentsCostCents = parseMoneyToCents(dto.totalInvestmentsCost),
                 investmentsValueCents = parseMoneyToCents(dto.totalInvestmentsValue),
                 positionsWithoutPrice = dto.positionsWithoutPrice,
+                periodStart = dto.period.start,
+                periodEnd = dto.period.end,
             )
         }
     }
@@ -319,9 +326,12 @@ class RemoteFinanceRepository(
         }
     }
 
-    override suspend fun series(): Result<SeriesData> = withContext(Dispatchers.IO) {
+    override suspend fun series(
+        start: String?,
+        end: String?,
+    ): Result<SeriesData> = withContext(Dispatchers.IO) {
         runCatching {
-            val dto = api().series()
+            val dto = api().series(start, end)
             SeriesData(
                 points = dto.buckets.map {
                     SeriesPoint(
@@ -965,13 +975,19 @@ class LocalFinanceRepository(
 ) : FinanceRepository {
     private var lastDeleted: TrashItemData? = null
     private val now: String get() = java.time.OffsetDateTime.now().toString()
-    override suspend fun dashboard(): Result<DashboardData> = withContext(Dispatchers.IO) {
+    override suspend fun dashboard(
+        start: String?,
+        end: String?,
+    ): Result<DashboardData> = withContext(Dispatchers.IO) {
         runCatching {
             val accounts = dao.observeAllAccounts().first()
             val transactions = dao.observeTransactions().first()
             val balances = accountBalances(accounts, transactions)
-            val income = transactions.filter { it.kind == "income" }.sumOf { it.amountCents }
-            val expense = transactions.filter { it.kind == "expense" }.sumOf { it.amountCents }
+            // Saldi, patrimonio e salvadanai restano il totale corrente; entrate,
+            // uscite e saldo del periodo sono filtrati per l'intervallo richiesto.
+            val periodTransactions = transactions.filter { it.isInPeriod(start, end) }
+            val income = periodTransactions.filter { it.kind == "income" }.sumOf { it.amountCents }
+            val expense = periodTransactions.filter { it.kind == "expense" }.sumOf { it.amountCents }
             val total = balances.values.sum()
             val savingsTotal = savingsBalances(
                 dao.observeSavings().first(),
@@ -990,6 +1006,8 @@ class LocalFinanceRepository(
                 investmentsCostCents = investmentSummary.totalCostCents,
                 investmentsValueCents = investmentSummary.totalValueCents,
                 positionsWithoutPrice = investmentSummary.positionsWithoutPrice,
+                periodStart = start.orEmpty(),
+                periodEnd = end.orEmpty(),
             )
         }
     }
@@ -1077,32 +1095,52 @@ class LocalFinanceRepository(
         }
     }
 
-    override suspend fun series(): Result<SeriesData> = withContext(Dispatchers.IO) {
+    override suspend fun series(
+        start: String?,
+        end: String?,
+    ): Result<SeriesData> = withContext(Dispatchers.IO) {
         runCatching {
             val accounts = dao.observeAllAccounts().first()
             val transactions = dao.observeTransactions().first()
-            val balances = accountBalances(accounts, transactions)
-            val total = balances.values.sum()
+            val initialTotal = accounts.sumOf { it.initialBalanceCents }
             val today = LocalDate.now()
-            val points = (0..29).map { offset ->
-                val day = today.minusDays((29 - offset).toLong())
+            // Senza intervallo si mantengono gli ultimi 30 giorni; con un periodo
+            // esplicito i bucket coprono la finestra richiesta (passo settimanale
+            // sui periodi lunghi, come il backend).
+            val lastDay = end?.let { LocalDate.parse(it) } ?: today
+            val firstDay = start?.let { LocalDate.parse(it) } ?: lastDay.minusDays(29)
+            val spanDays = ChronoUnit.DAYS.between(firstDay, lastDay).toInt()
+            val step = when {
+                spanDays <= 62 -> 1L
+                spanDays <= 7 * 94 -> 7L
+                else -> ((spanDays + 93) / 94).toLong()
+            }
+            val buckets = mutableListOf<LocalDate>()
+            var cursor = firstDay
+            while (cursor <= lastDay) {
+                buckets += cursor
+                cursor = cursor.plusDays(step)
+            }
+            if (buckets.lastOrNull() != lastDay) buckets += lastDay
+            val points = buckets.take(95).map { day ->
+                val dayKey = day.toString()
                 val dayTotal = transactions
-                    .filter { it.date <= day.toString() }
-                    .fold(accounts.sumOf { it.initialBalanceCents }) { acc, transaction ->
+                    .filter { it.date <= dayKey }
+                    .fold(initialTotal) { acc, transaction ->
                         acc + signedAmount(transaction)
                     }
                 SeriesPoint(
-                    date = day.toString(),
+                    date = dayKey,
                     saldoCents = dayTotal,
                     patrimonioCents = dayTotal,
                 )
             }
+            val categories = dao.observeCategories().first()
             val byCategory = transactions
-                .filter { it.kind == "expense" }
+                .filter { it.kind == "expense" && it.isInPeriod(start, end) }
                 .groupBy { it.categoryUuid }
                 .map { (uuid, items) ->
-                    val name = dao.observeCategories().first()
-                        .firstOrNull { it.uuid == uuid }?.name ?: "Altro"
+                    val name = categories.firstOrNull { it.uuid == uuid }?.name ?: "Altro"
                     CategoryTotal(name = name, totalCents = items.sumOf { it.amountCents })
                 }
                 .sortedByDescending { it.totalCents }
@@ -2022,6 +2060,9 @@ class LocalFinanceRepository(
         }
         return balances
     }
+
+    private fun LocalTransactionEntity.isInPeriod(start: String?, end: String?): Boolean =
+        (start == null || date >= start) && (end == null || date <= end)
 
     private fun signedAmount(transaction: LocalTransactionEntity): Long = when (transaction.kind) {
         "income" -> transaction.amountCents

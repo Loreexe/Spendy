@@ -15,6 +15,8 @@ import {
   type DeviceToken,
   type PairingCreated,
 } from "../api";
+import { ConfirmModal } from "./ConfirmModal";
+import { SkeletonLines } from "./SkeletonLines";
 
 function matches(query: string, keywords: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -53,6 +55,7 @@ export function DevicesSection({ query }: { query: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  const [confirmRevoke, setConfirmRevoke] = useState<DeviceToken | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -136,17 +139,11 @@ export function DevicesSection({ query }: { query: string }) {
   }
 
   async function revoke(device: DeviceToken) {
-    if (
-      !window.confirm(
-        `Revocare «${device.name || "dispositivo"}»? Dovrà essere associato di nuovo.`,
-      )
-    ) {
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
       await api.revokeDevice(device.id);
+      setConfirmRevoke(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Revoca non riuscita.");
@@ -194,7 +191,11 @@ export function DevicesSection({ query }: { query: string }) {
       </p>
 
       {loading ? (
-        <p className="muted">Caricamento dispositivi…</p>
+        <SkeletonLines
+          variant="cards"
+          rows={2}
+          label="Caricamento dispositivi"
+        />
       ) : devices.length === 0 ? (
         <p className="muted small">Nessun dispositivo associato.</p>
       ) : (
@@ -266,7 +267,7 @@ export function DevicesSection({ query }: { query: string }) {
                   <button
                     type="button"
                     className="danger small-button"
-                    onClick={() => void revoke(device)}
+                    onClick={() => setConfirmRevoke(device)}
                     disabled={busy}
                   >
                     <Trash2 size={14} aria-hidden="true" /> Revoca
@@ -367,6 +368,22 @@ export function DevicesSection({ query }: { query: string }) {
             </div>
           ))}
         </div>
+      )}
+
+      {confirmRevoke && (
+        <ConfirmModal
+          title={`Revocare il dispositivo «${confirmRevoke.name || "senza nome"}»?`}
+          summary={[
+            "Il dispositivo perderà subito l'accesso ai dati Spendy.",
+            "Per riusarlo servirà una nuova associazione con codice o QR.",
+            "La revoca non si può annullare.",
+          ]}
+          confirmLabel="Revoca"
+          busyLabel="Revoca in corso…"
+          busy={busy}
+          onConfirm={() => void revoke(confirmRevoke)}
+          onCancel={() => setConfirmRevoke(null)}
+        />
       )}
 
       {error && <p className="error">{error}</p>}

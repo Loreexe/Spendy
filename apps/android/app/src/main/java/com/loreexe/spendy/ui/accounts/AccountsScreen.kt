@@ -1,5 +1,6 @@
 package com.loreexe.spendy.ui.accounts
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,8 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -47,6 +47,7 @@ import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
+import com.loreexe.spendy.ui.components.EmptyState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import androidx.compose.ui.res.painterResource
 
 data class AccountsUiState(
     val loading: Boolean = true,
@@ -182,7 +184,7 @@ fun AccountsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = viewModel::showAdd) {
-                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.account_add))
+                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.account_add))
             }
         },
     ) { padding ->
@@ -194,10 +196,13 @@ fun AccountsScreen(
                 }
                 TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }
             }
-            state.accounts.isEmpty() -> Text(
-                stringResource(R.string.account_empty),
-                modifier = Modifier.padding(padding).padding(24.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            state.accounts.isEmpty() -> EmptyState(
+                illustration = R.drawable.ill_empty_accounts,
+                title = stringResource(R.string.empty_accounts_title),
+                description = stringResource(R.string.empty_accounts_body),
+                actionLabel = stringResource(R.string.account_add),
+                onAction = viewModel::showAdd,
+                modifier = Modifier.padding(padding),
             )
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -223,11 +228,13 @@ fun AccountsScreen(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(account.name, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    if (account.archived) "Archiviato" else account.uuid.take(8),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                if (account.archived) {
+                                    Text(
+                                        "Archiviato",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                             Text(formatCents(account.balanceCents), fontWeight = FontWeight.SemiBold)
                         }
@@ -278,7 +285,13 @@ private fun AccountDialog(
                     label = { Text(stringResource(R.string.account_name)) },
                     singleLine = true,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     listOf(
                         "cash" to R.string.account_type_cash,
                         "bank" to R.string.account_type_bank,
@@ -290,6 +303,8 @@ private fun AccountDialog(
                                 text = stringResource(label),
                                 color = if (type == key) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false,
                             )
                         }
                     }

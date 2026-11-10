@@ -1,10 +1,14 @@
+const euroFormat = new Intl.NumberFormat("it-IT", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: true,
+});
+
+/** Importo in euro: raggruppamento sempre attivo, 2 decimali, NBSP prima di €. */
 export function money(value: string | number): string {
   const number = typeof value === "string" ? Number(value) : value;
   if (!Number.isFinite(number)) return "—";
-  return new Intl.NumberFormat("it-IT", {
-    style: "currency",
-    currency: "EUR",
-  }).format(number);
+  return `${euroFormat.format(number)}\u00A0€`;
 }
 
 export function signedMoney(value: string | number): string {

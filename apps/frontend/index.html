@@ -10,17 +10,38 @@
     <meta property="og:description" content="Gestione personale di conti, salvadanai e investimenti." />
     <meta property="og:image" content="/logo/og-1200x630.png" />
     <link rel="icon" type="image/svg+xml" href="/logo/favicon.svg" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/logo/favicon-light.svg"
+      media="(prefers-color-scheme: light)"
+    />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Spendy</title>
     <script>
-      try {
-        var t = window.localStorage.getItem("spendy-theme");
-        if (t === "dark" || t === "light") {
-          document.documentElement.dataset.theme = t;
+      // Pre-paint: risolve il tema (dark/light/system) prima del primo
+      // disegno e allinea meta theme-color e data-theme. Default: scuro.
+      (function () {
+        var resolved = "dark";
+        try {
+          var stored = window.localStorage.getItem("spendy-theme");
+          if (stored === "light") {
+            resolved = "light";
+          } else if (stored === "system") {
+            var light = window.matchMedia
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+              : false;
+            resolved = light ? "light" : "dark";
+          }
+        } catch (e) {
+          // localStorage non disponibile: resta il default scuro.
         }
-      } catch (e) {
-        /* localStorage non disponibile: resta il default scuro. */
-      }
+        document.documentElement.dataset.theme = resolved;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          meta.setAttribute("content", resolved === "light" ? "#F4F7F5" : "#0B0F0D");
+        }
+      })();
     </script>
   </head>
   <body>

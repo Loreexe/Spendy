@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Illustrazione line art per lo stato vuoto "automazioni": ingranaggio (ricorrenze).
+     viewport 160x150, stroke 2, cap/join round; il colore accento arriva dal tint di Compose. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="150dp"
+    android:viewportWidth="160"
+    android:viewportHeight="150">
+    <path
+        android:pathData="M78 54 a22 22 0 1 0 0 44 a22 22 0 1 0 0-44"
+        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+    <path
+        android:pathData="M78 66 a10 10 0 1 0 0 20 a10 10 0 1 0 0-20"
+        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+    <path
+        android:pathData="M78 40 v10 M78 102 v10 M40 76 h10 M106 76 h10 M50 48 l7 7 M99 97 l7 7 M50 104 l7-7 M99 55 l7-7"
+        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+</vector>

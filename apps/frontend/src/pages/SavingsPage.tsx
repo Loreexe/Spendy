@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   api,
   type Account,
   type SavingsAccount,
 } from "../api";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { EmptyState } from "../components/EmptyState";
 import { LoadingScreen } from "../components/Guards";
 import { useToast } from "../components/Toast";
 import { amountClass, money, todayISO } from "../format";
@@ -184,6 +191,7 @@ export function SavingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,6 +264,7 @@ export function SavingsPage() {
               <label>
                 Nome
                 <input
+                  ref={nameInputRef}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Salute, Vacanze…"
@@ -286,7 +295,21 @@ export function SavingsPage() {
         <section className="card scroll-list">
           <h2>I tuoi salvadanai ({savings.length})</h2>
           {savings.length === 0 ? (
-            <p className="muted">Nessun salvadanaio creato.</p>
+            <EmptyState
+              illustration="savings"
+              title="Nessun salvadanaio creato"
+              description={
+                accounts.length === 0
+                  ? "Crea prima un conto: serve come appoggio per versamenti e prelievi."
+                  : "Metti da parte un obiettivo e versa quando vuoi dal conto di appoggio."
+              }
+              actionLabel={accounts.length > 0 ? "Crea salvadanaio" : undefined}
+              onAction={
+                accounts.length > 0
+                  ? () => nameInputRef.current?.focus()
+                  : undefined
+              }
+            />
           ) : (
             <ul className="entity-list">
               {savings.map((item) => (

@@ -5,7 +5,13 @@ import { useAuth } from "../auth";
 export function LoadingScreen() {
   return (
     <div className="screen-center">
-      <p className="muted">Caricamento…</p>
+      <div className="loading-card" aria-busy="true">
+        <span className="visually-hidden">Caricamento…</span>
+        <div className="skeleton loading-card-title" aria-hidden="true" />
+        <div className="skeleton loading-bar" aria-hidden="true" />
+        <div className="skeleton loading-bar short" aria-hidden="true" />
+        <div className="skeleton loading-bar tiny" aria-hidden="true" />
+      </div>
     </div>
   );
 }

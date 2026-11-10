@@ -8,9 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +34,7 @@ import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.data.model.TrashItemData
 import com.loreexe.spendy.ui.components.OverflowMenu
+import com.loreexe.spendy.ui.components.EmptyState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +42,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import androidx.compose.ui.res.painterResource
 
 data class TrashUiState(
     val loading: Boolean = true,
@@ -115,10 +114,11 @@ fun TrashScreen(
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }
             }
-            state.items.isEmpty() -> Text(
-                stringResource(R.string.trash_empty),
-                modifier = Modifier.padding(padding).padding(24.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            state.items.isEmpty() -> EmptyState(
+                illustration = R.drawable.ill_empty_trash,
+                title = stringResource(R.string.empty_trash_title),
+                description = stringResource(R.string.empty_trash_body),
+                modifier = Modifier.padding(padding),
             )
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
@@ -140,7 +140,7 @@ fun TrashScreen(
                                 )
                             }
                             IconButton(onClick = { viewModel.restore(item) }) {
-                                Icon(Icons.Outlined.Restore, contentDescription = "Ripristina")
+                                Icon(painterResource(R.drawable.ic_lucide_rotate_ccw), contentDescription = "Ripristina")
                             }
                             OverflowMenu(
                                 onDelete = { viewModel.purge(item) },

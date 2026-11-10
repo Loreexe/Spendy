@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Illustrazione line art per lo stato vuoto "salvadanai": salvadanaio e moneta.
+     viewport 160x150, stroke 2, cap/join round; il colore accento arriva dal tint di Compose. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="150dp"
+    android:viewportWidth="160"
+    android:viewportHeight="150">
+    <path
+        android:pathData="M42 96 a28 22 0 1 0 56 0 a28 22 0 1 0 -56 0"
+        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+    <path
+        android:pathData="M104 88 a9 9 0 1 0 0 14 M94 70 l9 9 M58 84 h16 M54 114 v10 M88 114 v10"
+        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+    <path
+        android:pathData="M74 54 a8 8 0 1 0 0 16 a8 8 0 1 0 0-16"
+        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+</vector>

@@ -16,6 +16,8 @@ import {
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { EmptyState } from "../components/EmptyState";
+import { SkeletonLines } from "../components/SkeletonLines";
 import { useToast } from "../components/Toast";
 import { money, signedMoney, todayISO } from "../format";
 
@@ -490,6 +492,7 @@ function PositionDetail({
   } | null>(null);
   const [name, setName] = useState(position.name);
   const [confirmDeletePosition, setConfirmDeletePosition] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [confirmDeleteOperation, setConfirmDeleteOperation] =
     useState<InvestmentOperation | null>(null);
   const { notify } = useToast();
@@ -567,23 +570,13 @@ function PositionDetail({
   }
 
   async function toggleArchive() {
-    const action = archived ? "riattivare" : "archiviare";
-    if (
-      !window.confirm(
-        `Vuoi ${action} la posizione "${position.name}"? ` +
-          (archived
-            ? "Tornerà disponibile per nuove operazioni."
-            : "Potrai registrare nuove operazioni solo dopo averla riattivata."),
-      )
-    ) {
-      return;
-    }
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
       await api.updateInvestmentPosition(position.id, { archived: !archived });
       setMessage(archived ? "Posizione riattivata." : "Posizione archiviata.");
+      setConfirmArchive(false);
       await loadDetail();
       await onChanged();
     } catch (err) {
@@ -725,7 +718,7 @@ function PositionDetail({
           <button
             type="button"
             className="secondary"
-            onClick={() => void toggleArchive()}
+            onClick={() => setConfirmArchive(true)}
             disabled={busy || (open && !archived)}
             title={
               open && !archived
@@ -915,7 +908,7 @@ function PositionDetail({
         <h3>Operazioni ({operations.length})</h3>
       </div>
       {loadingDetail ? (
-        <p className="muted">Caricamento operazioni…</p>
+        <SkeletonLines rows={3} label="Caricamento operazioni" />
       ) : operations.length === 0 ? (
         <p className="muted">Nessuna operazione registrata.</p>
       ) : (
@@ -991,6 +984,32 @@ function PositionDetail({
             );
           })}
         </ul>
+      )}
+      {confirmArchive && (
+        <ConfirmModal
+          title={
+            archived
+              ? `Riattivare la posizione «${position.name}»?`
+              : `Archiviare la posizione «${position.name}»?`
+          }
+          summary={
+            archived
+              ? [
+                  "Tornerà disponibile per registrare nuove operazioni.",
+                  "Lo storico delle operazioni e i saldi restano invariati.",
+                ]
+              : [
+                  "Non potrai registrare nuove operazioni finché non la riattivi.",
+                  "Lo storico delle operazioni e i saldi restano invariati.",
+                  "La posizione resterà consultabile nell'archivio.",
+                ]
+          }
+          confirmLabel={archived ? "Riattiva" : "Archivia"}
+          busyLabel={archived ? "Riattivazione…" : "Archiviazione…"}
+          busy={busy}
+          onConfirm={() => void toggleArchive()}
+          onCancel={() => setConfirmArchive(false)}
+        />
       )}
       {confirmDeletePosition && (
         <ConfirmModal
@@ -1190,7 +1209,7 @@ export function InvestmentsPage() {
       {error && <p className="error">{error}</p>}
 
       {showNew && (
-        <section className="card">
+        <section className="card" id="new-position">
           <h2>Nuova posizione</h2>
           <NewPositionForm
             busy={busy}
@@ -1258,11 +1277,28 @@ export function InvestmentsPage() {
           )}
         </div>
         {visiblePositions.length === 0 ? (
-          <p className="muted">
-            {portfolio?.positions.length
-              ? "Nessuna posizione attiva."
-              : "Nessuna posizione: crea la prima con “Nuova posizione”."}
-          </p>
+          portfolio?.positions.length ? (
+            <EmptyState
+              illustration="investments"
+              title="Nessuna posizione attiva"
+              description="Le posizioni archiviate restano consultabili dall'archivio, in alto a destra."
+            />
+          ) : (
+            <EmptyState
+              illustration="investments"
+              title="Portafoglio vuoto"
+              description="Crea la prima posizione per seguire quantità, costi, valore e plusvalenze."
+              actionLabel="Nuova posizione"
+              onAction={() => {
+                setShowNew(true);
+                requestAnimationFrame(() => {
+                  document
+                    .getElementById("new-position")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                });
+              }}
+            />
+          )
         ) : (
           <ul className="entity-list position-list">
             {visiblePositions.map((position) => {

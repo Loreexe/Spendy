@@ -6,6 +6,12 @@ export type ResolvedTheme = "dark" | "light";
 const KEY = "spendy-theme";
 const MEDIA = "(prefers-color-scheme: light)";
 
+/** Colori di sfondo del tema risolto, allineati a --bg0 in tokens.css. */
+const THEME_COLOR: Record<ResolvedTheme, string> = {
+  dark: "#0B0F0D",
+  light: "#F4F7F5",
+};
+
 function isTheme(value: unknown): value is Theme {
   return value === "dark" || value === "light" || value === "system";
 }
@@ -13,6 +19,12 @@ function isTheme(value: unknown): value is Theme {
 function systemTheme(): ResolvedTheme {
   if (typeof window === "undefined") return "dark";
   return window.matchMedia(MEDIA).matches ? "light" : "dark";
+}
+
+/** Tiene allineato il meta theme-color della pagina al tema risolto. */
+function syncThemeColor(resolved: ResolvedTheme): void {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", THEME_COLOR[resolved]);
 }
 
 /** Tema iniziale: preferenza locale o scuro di default. */
@@ -27,8 +39,9 @@ export function getInitialTheme(): Theme {
 }
 
 export function applyTheme(theme: Theme): void {
-  document.documentElement.dataset.theme =
-    theme === "system" ? systemTheme() : theme;
+  const resolved = theme === "system" ? systemTheme() : theme;
+  document.documentElement.dataset.theme = resolved;
+  syncThemeColor(resolved);
   try {
     window.localStorage.setItem(KEY, theme);
   } catch {

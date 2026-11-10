@@ -15,10 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -32,11 +28,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.loreexe.spendy.R
+import androidx.compose.ui.res.painterResource
 
 @Composable
 fun OnboardingScreen(
     onServer: () -> Unit,
     onLocal: () -> Unit,
+    onPairing: () -> Unit,
+    lastServer: String? = null,
 ) {
     Column(
         modifier = Modifier
@@ -73,18 +72,34 @@ fun OnboardingScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(28.dp))
+        lastServer?.let { server ->
+            ChoiceCard(
+                title = "Accedi di nuovo a $server",
+                subtitle = "Ultimo server usato su questo telefono.",
+                onClick = onServer,
+                icon = { Icon(painterResource(R.drawable.ic_lucide_cloud), contentDescription = null) },
+            )
+            Spacer(Modifier.height(12.dp))
+        }
         ChoiceCard(
             title = stringResource(R.string.onboarding_server),
             subtitle = stringResource(R.string.onboarding_server_hint),
             onClick = onServer,
-            icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
+            icon = { Icon(painterResource(R.drawable.ic_lucide_cloud), contentDescription = null) },
         )
         Spacer(Modifier.height(12.dp))
         ChoiceCard(
             title = stringResource(R.string.onboarding_local),
             subtitle = stringResource(R.string.onboarding_local_hint),
             onClick = onLocal,
-            icon = { Icon(Icons.Outlined.PhoneAndroid, contentDescription = null) },
+            icon = { Icon(painterResource(R.drawable.ic_lucide_smartphone), contentDescription = null) },
+        )
+        Spacer(Modifier.height(12.dp))
+        ChoiceCard(
+            title = "Associa con QR",
+            subtitle = "Accedi inquadrando il QR generato da un dispositivo già collegato.",
+            onClick = onPairing,
+            icon = { Icon(painterResource(R.drawable.ic_lucide_qr_code), contentDescription = null) },
         )
     }
 }
@@ -137,7 +152,7 @@ private fun ChoiceCard(
                 )
             }
             Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                painter = painterResource(R.drawable.ic_lucide_arrow_right),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp),

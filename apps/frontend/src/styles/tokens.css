@@ -1,6 +1,7 @@
-/* Spendy — design token F2 (DC-085, DC-090). Nessun selettore di elemento:
-   solo @font-face e variabili. Il tema si attiva con data-theme su <html>
-   (default: scuro); senza attributo valgono le variabili storiche di styles.css. */
+/* Spendy — design token F2 (DC-085, DC-090). Unica fonte della palette e delle
+   forme: @font-face e variabili, nessuna regola di layout. Il tema si attiva
+   con data-theme su <html> (index.html lo imposta risolto prima del primo
+   paint); in assenza di attributo vale il tema scuro. */
 
 @font-face {
   font-family: "Inter";
@@ -34,7 +35,10 @@
   font-display: swap;
 }
 
+/* Tema scuro: anche default quando data-theme non è ancora impostato. */
+:root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg0: #0b0f0d;
   --bg1: #111614;
   --bg2: #18201c;
@@ -43,11 +47,17 @@
   --muted: #9db3a8;
   --accent: #1db48b;
   --accent-ink: #0b0f0d;
+  --accent-hover: #3fd08c;
+  --accent-soft: #16241f;
   --danger: #f26d6d;
+  --danger-soft: #2a1518;
   --warn: #e8a33d;
+  --warn-soft: #2a2111;
   --info: #5eb1ef;
   --up: #3fd08c;
   --down: #f27e7e;
+  --glow1: rgb(29 180 139 / 0.08);
+  --glow2: rgb(94 177 239 / 0.06);
   --radius: 18px;
   --radius-lg: 20px;
   --shadow-soft: 0 8px 28px rgb(0 0 0 / 0.35);
@@ -56,6 +66,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg0: #f4f7f5;
   --bg1: #ffffff;
   --bg2: #e9efec;
@@ -64,11 +75,17 @@
   --muted: #4a5a53;
   --accent: #166047;
   --accent-ink: #ffffff;
-  --danger: #c23b3b;
-  --warn: #9a6206;
+  --accent-hover: #0d4a34;
+  --accent-soft: #e3f2eb;
+  --danger: #b53535;
+  --danger-soft: #f9e3e3;
+  --warn: #8a5604;
+  --warn-soft: #f7ecd4;
   --info: #0b6bcb;
   --up: #166047;
   --down: #c23b3b;
+  --glow1: #e7f3ec;
+  --glow2: #eaf0f8;
   --radius: 18px;
   --radius-lg: 20px;
   --shadow-soft: 0 8px 28px rgb(11 15 13 / 0.1);

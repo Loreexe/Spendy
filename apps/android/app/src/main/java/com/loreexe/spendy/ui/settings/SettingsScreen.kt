@@ -1,21 +1,27 @@
 package com.loreexe.spendy.ui.settings
 
 import android.os.Build
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -23,12 +29,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -39,8 +46,11 @@ import com.loreexe.spendy.BuildConfig
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.AccountRepository
 import com.loreexe.spendy.data.AppMode
-import com.loreexe.spendy.data.ServerRepository
 import com.loreexe.spendy.data.SessionStore
+import com.loreexe.spendy.ui.components.FactRow
+import com.loreexe.spendy.ui.components.SectionCard
+import com.loreexe.spendy.ui.components.SectionDivider
+import com.loreexe.spendy.ui.components.SectionRow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,15 +68,12 @@ data class SettingsUiState(
     val serverVersion: String? = null,
     val loadingVersion: Boolean = false,
     val error: String? = null,
-    val passwordMessage: String? = null,
-    val changingPassword: Boolean = false,
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val accounts: AccountRepository,
-    private val serverRepository: ServerRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         SettingsUiState(
@@ -86,7 +93,7 @@ class SettingsViewModel @Inject constructor(
     fun checkServerVersion() {
         val origin = sessionStore.serverOrigin ?: return
         viewModelScope.launch {
-            _state.update { it.copy(loadingVersion = true) }
+            _state.update { it.copy(loadingVersion = true, error = null) }
             accounts.healthVersion(origin)
                 .onSuccess { version ->
                     _state.update { it.copy(loadingVersion = false, serverVersion = version) }
@@ -106,36 +113,6 @@ class SettingsViewModel @Inject constructor(
         sessionStore.blockScreenshots = value
         _state.update { it.copy(blockScreenshots = value) }
     }
-
-    fun changePassword(current: String, new: String, revoke: Boolean) {
-        viewModelScope.launch {
-            _state.update { it.copy(changingPassword = true, error = null, passwordMessage = null) }
-            accounts.changePassword(current, new, revoke)
-                .onSuccess { response ->
-                    _state.update {
-                        it.copy(
-                            changingPassword = false,
-                            passwordMessage = response.detail +
-                                if (response.revokedDevices > 0) {
-                                    " Dispositivi revocati: ${response.revokedDevices}."
-                                } else {
-                                    ""
-                                },
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _state.update { it.copy(changingPassword = false, error = error.message) }
-                }
-        }
-    }
-
-    fun logout(onDone: () -> Unit) {
-        viewModelScope.launch {
-            serverRepository.logout()
-            onDone()
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,17 +123,25 @@ fun SettingsScreen(
     onDevices: () -> Unit,
     onPairing: () -> Unit,
     onData: () -> Unit,
-    onLoggedOut: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var showPassword by remember { mutableStateOf(false) }
+    // Il tema è un override locale: ricrea l'activity solo quando cambia davvero.
+    val applyTheme: (String) -> Unit = { mode ->
+        if (state.themeMode != mode) {
+            viewModel.setTheme(mode)
+            (context as? android.app.Activity)?.recreate()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Indietro") } },
+                navigationIcon = {
+                    TextButton(onClick = onBack) { Text("Indietro") }
+                },
             )
         },
     ) { padding ->
@@ -165,172 +150,246 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Accesso", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Card(onClick = onProfile, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    "Profilo" + if (state.userName.isNotBlank()) " · ${state.userName}" else "",
-                    modifier = Modifier.padding(16.dp),
+            SectionCard(
+                title = stringResource(R.string.settings_section_access),
+                iconRes = R.drawable.ic_lucide_key_round,
+            ) {
+                SectionRow(
+                    title = stringResource(R.string.settings_profile_row),
+                    subtitle = state.userName.ifBlank {
+                        stringResource(R.string.settings_profile_hint)
+                    },
+                    iconRes = R.drawable.ic_lucide_user,
+                    onClick = onProfile,
                 )
             }
-            if (state.serverMode) {
-                Card(onClick = onDevices, modifier = Modifier.fillMaxWidth()) {
-                    Text("Dispositivi", modifier = Modifier.padding(16.dp))
-                }
-                Card(onClick = onPairing, modifier = Modifier.fillMaxWidth()) {
-                    Text("Associa un dispositivo (QR)", modifier = Modifier.padding(16.dp))
-                }
-                Card(
-                    onClick = { showPassword = true },
-                    modifier = Modifier.fillMaxWidth(),
+
+            SectionCard(
+                title = stringResource(R.string.settings_section_appearance),
+                iconRes = R.drawable.ic_lucide_sliders_horizontal,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectableGroup(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Cambia password", modifier = Modifier.padding(16.dp))
+                    ThemeChoice(
+                        label = stringResource(R.string.settings_theme_dark),
+                        iconRes = R.drawable.ic_lucide_moon,
+                        selected = state.themeMode == "DARK",
+                        onClick = { applyTheme("DARK") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ThemeChoice(
+                        label = stringResource(R.string.settings_theme_light),
+                        iconRes = R.drawable.ic_lucide_sun,
+                        selected = state.themeMode == "LIGHT",
+                        onClick = { applyTheme("LIGHT") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ThemeChoice(
+                        label = stringResource(R.string.settings_theme_system),
+                        iconRes = R.drawable.ic_lucide_monitor,
+                        selected = state.themeMode == "SYSTEM",
+                        onClick = { applyTheme("SYSTEM") },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
 
-            Text("Aspetto", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("SYSTEM" to "Sistema", "DARK" to "Scuro", "LIGHT" to "Chiaro")
-                    .forEach { (value, label) ->
-                        TextButton(onClick = {
-                            viewModel.setTheme(value)
-                            (context as? android.app.Activity)?.recreate()
-                        }) {
-                            Text(
-                                label,
-                                color = if (state.themeMode == value) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-            }
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text(
-                    "Blocca gli screenshot",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Switch(
-                    checked = state.blockScreenshots,
-                    onCheckedChange = {
-                        viewModel.setBlockScreenshots(it)
-                        (context as? android.app.Activity)?.recreate()
+            SectionCard(
+                title = stringResource(R.string.settings_section_screenshots),
+                iconRes = R.drawable.ic_lucide_eye_off,
+            ) {
+                SectionRow(
+                    title = stringResource(R.string.settings_screenshots_label),
+                    subtitle = stringResource(R.string.settings_screenshots_hint),
+                    trailing = {
+                        Switch(
+                            checked = state.blockScreenshots,
+                            onCheckedChange = {
+                                viewModel.setBlockScreenshots(it)
+                                (context as? android.app.Activity)?.recreate()
+                            },
+                        )
                     },
                 )
             }
 
-            Text("Dati", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Card(onClick = onData, modifier = Modifier.fillMaxWidth()) {
-                Text("Import / Export e migrazione", modifier = Modifier.padding(16.dp))
+            SectionCard(
+                title = stringResource(R.string.settings_section_data),
+                iconRes = R.drawable.ic_lucide_package,
+            ) {
+                SectionRow(
+                    title = stringResource(R.string.settings_data_row),
+                    subtitle = stringResource(R.string.settings_data_hint),
+                    iconRes = R.drawable.ic_lucide_arrow_left_right,
+                    onClick = onData,
+                )
             }
 
-            Text("Aggiornamenti", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Versione app: ${BuildConfig.VERSION_NAME}" +
-                    if (state.serverMode) {
-                        "\nVersione server: " + (
-                            state.serverVersion ?: if (state.loadingVersion) "verifica…" else "—"
-                            )
-                    } else {
-                        "\nArchivio locale: nessun server collegato"
-                    },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (state.serverMode) {
-                TextButton(onClick = viewModel::checkServerVersion) { Text("Ricontrolla") }
-            }
-
-            Text("Informazioni", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Modalità: " + if (state.serverMode) "server" else "archivio locale" +
-                    "\nServer: ${state.serverOrigin ?: "—"}" +
-                    "\nAndroid: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})" +
-                    "\nDispositivo: ${Build.MANUFACTURER} ${Build.MODEL}",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text("Licenze", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Spendy è distribuita con licenza GPLv3. Componenti open source: " +
-                    "Kotlin (Apache-2.0), Jetpack Compose e AndroidX (Apache-2.0), " +
-                    "Hilt/Dagger (Apache-2.0), Retrofit e OkHttp (Apache-2.0), " +
-                    "kotlinx.serialization (Apache-2.0), Room (Apache-2.0), " +
-                    "SQLCipher for Android (BSD), WorkManager (Apache-2.0), " +
-                    "ZXing core (Apache-2.0), Material Icons (Apache-2.0), " +
-                    "Lucide (ISC).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            state.passwordMessage?.let {
-                Text(it, color = MaterialTheme.colorScheme.primary)
-            }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-
-            if (state.serverMode) {
-                TextButton(
-                    onClick = { viewModel.logout(onLoggedOut) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Esci dal server", color = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-
-        if (showPassword) {
-            var current by remember { mutableStateOf("") }
-            var new by remember { mutableStateOf("") }
-            var confirm by remember { mutableStateOf("") }
-            var revoke by remember { mutableStateOf(false) }
-            AlertDialog(
-                onDismissRequest = { showPassword = false },
-                title = { Text("Cambia password") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = current,
-                            onValueChange = { current = it },
-                            label = { Text("Password attuale") },
-                            singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = new,
-                            onValueChange = { new = it },
-                            label = { Text("Nuova password") },
-                            singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = confirm,
-                            onValueChange = { confirm = it },
-                            label = { Text("Conferma nuova password") },
-                            singleLine = true,
-                        )
-                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("Revoca gli altri dispositivi", modifier = Modifier.weight(1f))
-                            Switch(checked = revoke, onCheckedChange = { revoke = it })
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (new == confirm && new.isNotBlank()) {
-                                viewModel.changePassword(current, new, revoke)
-                                showPassword = false
-                            }
+            SectionCard(
+                title = stringResource(R.string.settings_section_updates),
+                iconRes = R.drawable.ic_lucide_rotate_ccw,
+            ) {
+                Column {
+                    FactRow(
+                        label = stringResource(R.string.settings_app_version),
+                        value = BuildConfig.VERSION_NAME,
+                    )
+                    FactRow(
+                        label = stringResource(R.string.settings_server_version),
+                        value = when {
+                            !state.serverMode -> stringResource(R.string.settings_local_no_server)
+                            state.loadingVersion -> stringResource(R.string.settings_server_checking)
+                            else -> state.serverVersion
+                                ?: stringResource(R.string.settings_server_unknown)
                         },
-                        enabled = !state.changingPassword,
-                    ) { Text("Aggiorna") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showPassword = false }) {
-                        Text(stringResource(R.string.cancel))
+                    )
+                    if (state.serverMode) {
+                        TextButton(
+                            onClick = viewModel::checkServerVersion,
+                            enabled = !state.loadingVersion,
+                        ) {
+                            Text(stringResource(R.string.settings_recheck))
+                        }
                     }
-                },
+                }
+            }
+
+            if (state.serverMode) {
+                SectionCard(
+                    title = stringResource(R.string.settings_section_devices),
+                    iconRes = R.drawable.ic_lucide_smartphone,
+                ) {
+                    Column {
+                        SectionRow(
+                            title = stringResource(R.string.settings_devices_row),
+                            subtitle = stringResource(R.string.settings_devices_hint),
+                            onClick = onDevices,
+                        )
+                        SectionDivider()
+                        SectionRow(
+                            title = stringResource(R.string.settings_pairing_row),
+                            subtitle = stringResource(R.string.settings_pairing_hint),
+                            iconRes = R.drawable.ic_lucide_qr_code,
+                            onClick = onPairing,
+                        )
+                    }
+                }
+            }
+
+            SectionCard(
+                title = stringResource(R.string.settings_section_info),
+                iconRes = R.drawable.ic_lucide_info,
+            ) {
+                Column {
+                    FactRow(
+                        label = stringResource(R.string.settings_mode),
+                        value = stringResource(
+                            if (state.serverMode) {
+                                R.string.settings_mode_server
+                            } else {
+                                R.string.settings_mode_local
+                            },
+                        ),
+                    )
+                    FactRow(
+                        label = stringResource(R.string.settings_server),
+                        value = state.serverOrigin ?: "—",
+                    )
+                    FactRow(
+                        label = stringResource(R.string.settings_android),
+                        value = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+                    )
+                    SectionDivider()
+                    Text(
+                        text = stringResource(R.string.settings_licenses),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_licenses_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            state.error?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error)
+            }
+
+            if (state.loadingVersion) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Scelta del tema come card con icona: sostituisce i tre TextButton in fila. */
+@Composable
+private fun ThemeChoice(
+    label: String,
+    @DrawableRes iconRes: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.selectable(
+            selected = selected,
+            onClick = onClick,
+            role = Role.RadioButton,
+        ),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+            } else {
+                Color.Transparent
+            },
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+            },
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             )
         }
-
-        if (state.changingPassword) CircularProgressIndicator()
     }
 }

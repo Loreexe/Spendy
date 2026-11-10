@@ -23,11 +23,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,6 +38,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.loreexe.spendy.data.AccountRepository
+import com.loreexe.spendy.data.SessionStore
 import com.loreexe.spendy.data.model.PairingCreateDto
 import com.loreexe.spendy.data.model.PairingDto
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -59,18 +61,26 @@ data class PairingUiState(
     val claimStatus: String? = null,
     val claiming: Boolean = false,
     val paired: Boolean = false,
+    val authenticated: Boolean = false,
 )
 
 @HiltViewModel
 class PairingViewModel @Inject constructor(
     private val accounts: AccountRepository,
+    private val sessionStore: SessionStore,
 ) : ViewModel() {
     private val _state = MutableStateFlow(PairingUiState())
     val state: StateFlow<PairingUiState> = _state.asStateFlow()
 
-    init { refresh() }
+    init {
+        // In modalità "solo associazione" (prima di accedere) non c'è un token.
+        val authenticated = sessionStore.token != null
+        _state.update { it.copy(authenticated = authenticated, loading = authenticated) }
+        if (authenticated) refresh()
+    }
 
     fun refresh() {
+        if (sessionStore.token == null) return
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             accounts.pairings()
@@ -109,9 +119,27 @@ class PairingViewModel @Inject constructor(
     fun setClaimServer(value: String) = _state.update { it.copy(claimServer = value) }
     fun setClaimCode(value: String) = _state.update { it.copy(claimCode = value) }
 
+    /** Riempie i campi dal QR (o dal codice) e avvia l'associazione. */
+    fun applyScannedPayload(payload: String) {
+        val trimmed = payload.trim()
+        val uri = runCatching { android.net.Uri.parse(trimmed) }.getOrNull()
+        val server = uri?.getQueryParameter("server")
+        val code = uri?.getQueryParameter("code")
+            ?: trimmed.substringAfter("code=", trimmed).substringBefore("&")
+        _state.update {
+            it.copy(
+                claimServer = server?.takeIf(String::isNotBlank) ?: it.claimServer,
+                claimCode = code,
+                error = null,
+            )
+        }
+        claim()
+    }
+
     fun claim() {
         val current = _state.value
         if (current.claiming) return
+        if (current.claimServer.isBlank() || current.claimCode.isBlank()) return
         viewModelScope.launch {
             _state.update {
                 it.copy(claiming = true, error = null, claimStatus = "Invio del codice…", paired = false)
@@ -180,17 +208,30 @@ class PairingViewModel @Inject constructor(
 fun PairingScreen(
     onBack: () -> Unit,
     onPaired: () -> Unit,
+    standalone: Boolean = false,
     viewModel: PairingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    var showScanner by remember { mutableStateOf(false) }
     if (state.paired) {
         androidx.compose.runtime.LaunchedEffect(Unit) { onPaired() }
+    }
+    if (showScanner) {
+        QrScannerScreen(
+            onScanned = { payload ->
+                showScanner = false
+                viewModel.applyScannedPayload(payload)
+            },
+            onClose = { showScanner = false },
+        )
+        return
     }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Associa un dispositivo") },
+                title = {
+                    Text(if (standalone) "Accedi con QR" else "Associa un dispositivo")
+                },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Indietro") } },
             )
         },
@@ -203,65 +244,85 @@ fun PairingScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                "Su questo dispositivo genera il QR e approva l'altro dispositivo. " +
-                    "Sull'altro dispositivo inserisci indirizzo server e codice, oppure " +
-                    "inquadra il QR quando la fotocamera sarà disponibile.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Button(onClick = viewModel::generate, modifier = Modifier.fillMaxWidth()) {
-                Text("Genera QR")
-            }
-            state.created?.let { created ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        QrImage(created.qrPayload)
-                        Text("Codice: ${created.code}", fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Server: ${created.serverUrl}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        Text(
-                            "Il codice scade dopo 5 minuti.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            if (standalone) {
+                Text(
+                    "Inquadra il QR generato da un altro dispositivo già collegato " +
+                        "(Impostazioni → Associa un dispositivo), oppure inserisci indirizzo " +
+                        "del server e codice a mano. Il dispositivo originale dovrà approvare " +
+                        "l'accesso.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Inquadra il QR") }
+            } else {
+                Text(
+                    "Genera il QR da qui e approva l'altro dispositivo, oppure associa un " +
+                        "altro account inquadrando il suo QR.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = viewModel::generate, modifier = Modifier.fillMaxWidth()) {
+                    Text("Genera QR")
+                }
+                state.created?.let { created ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            QrImage(created.qrPayload)
+                            Text("Codice: ${created.code}", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Server: ${created.serverUrl}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(
+                                "Il codice scade dopo 5 minuti.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
-            }
 
-            Text("Richieste in attesa", style = MaterialTheme.typography.titleMedium)
-            if (state.loading) CircularProgressIndicator()
-            state.pending.forEach { pairing ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(pairing.newDeviceName.ifBlank { "Nuovo dispositivo" })
-                        Text(
-                            "${pairing.newDevicePlatform} · ${pairing.status}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            TextButton(
-                                onClick = { viewModel.approve(pairing) },
-                                enabled = pairing.status == "claimed",
-                            ) { Text("Approva") }
-                            TextButton(onClick = { viewModel.reject(pairing) }) {
-                                Text("Rifiuta", color = MaterialTheme.colorScheme.error)
+                Text("Richieste in attesa", style = MaterialTheme.typography.titleMedium)
+                if (state.loading) CircularProgressIndicator()
+                state.pending.forEach { pairing ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(pairing.newDeviceName.ifBlank { "Nuovo dispositivo" })
+                            Text(
+                                "${pairing.newDevicePlatform} · ${pairing.status}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(
+                                    onClick = { viewModel.approve(pairing) },
+                                    enabled = pairing.status == "claimed",
+                                ) { Text("Approva") }
+                                TextButton(onClick = { viewModel.reject(pairing) }) {
+                                    Text("Rifiuta", color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
                 }
+                Text(
+                    "Associa un altro account",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Button(
+                    onClick = { showScanner = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Inquadra il QR") }
             }
 
-            Text("Associa questo dispositivo", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Inserisci il codice mostrato dal dispositivo che ha generato il QR.",
-                style = MaterialTheme.typography.bodySmall,
+                "Oppure inserisci i dati a mano",
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedTextField(
@@ -294,12 +355,6 @@ fun PairingScreen(
             state.claimStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Text(
-                "Suggerimento: puoi incollare l'indirizzo del server e il codice del QR. " +
-                    "La scansione fotocamera resta da implementare.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

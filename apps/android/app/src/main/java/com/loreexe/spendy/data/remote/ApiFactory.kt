@@ -12,13 +12,21 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import java.util.concurrent.TimeUnit
 
+/**
+ * Configurazione JSON condivisa da produzione e test: `coerceInputValues` tollera i `null`
+ * espliciti inviati dal server su proprietà con default (es. `operations[].quantity`/`unit_price`)
+ * invece di far fallire il parsing.
+ */
+val SpendyJson: Json = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+    coerceInputValues = true
+}
+
 class ApiFactory(
     private val sessionStore: SessionStore,
 ) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
+    private val json = SpendyJson
 
     private val authInterceptor = Interceptor { chain ->
         val builder = chain.request().newBuilder()

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   api,
   type Account,
@@ -10,6 +16,7 @@ import {
   type SavingsAccount,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
+import { EmptyState } from "../components/EmptyState";
 import { useMatchedHeight } from "../components/useMatchHeight";
 import { useToast } from "../components/Toast";
 import { money, todayISO } from "../format";
@@ -141,6 +148,7 @@ export function AutomationsPage() {
 
   const [kind, setKind] = useState<AutomationKind>("expense");
   const [amount, setAmount] = useState("");
+  const amountInputRef = useRef<HTMLInputElement | null>(null);
   const [description, setDescription] = useState("");
   const [intervalCount, setIntervalCount] = useState("1");
   const [intervalUnit, setIntervalUnit] =
@@ -372,6 +380,7 @@ export function AutomationsPage() {
               <label>
                 Importo
                 <input
+                  ref={amountInputRef}
                   type="number"
                   step="0.01"
                   min="0.01"
@@ -465,7 +474,19 @@ export function AutomationsPage() {
         <section className="card scroll-list" ref={setListHeight}>
           <h2>Le tue automazioni ({automations.length})</h2>
           {automations.length === 0 ? (
-            <p className="muted">Nessuna automazione impostata.</p>
+            <EmptyState
+              illustration="automations"
+              title="Nessuna automazione impostata"
+              description="Programma una spesa ricorrente o un versamento periodico su un salvadanaio."
+              actionLabel={
+                activeAccounts.length > 0 ? "Crea automazione" : undefined
+              }
+              onAction={
+                activeAccounts.length > 0
+                  ? () => amountInputRef.current?.focus()
+                  : undefined
+              }
+            />
           ) : (
             <ul className="entity-list">
               {automations.map((automation) => {
@@ -637,7 +658,11 @@ export function AutomationsPage() {
           <span className="muted small">{executions.length} occorrenze</span>
         </div>
         {executions.length === 0 ? (
-          <p className="muted">Nessuna occorrenza registrata.</p>
+          <EmptyState
+            illustration="automations"
+            title="Nessuna occorrenza registrata"
+            description="Le esecuzioni delle automazioni compariranno qui con esito e data."
+          />
         ) : (
           <ul className="entity-list">
             {executions.map((execution) => (

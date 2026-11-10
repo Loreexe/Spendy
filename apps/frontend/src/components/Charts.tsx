@@ -1,4 +1,5 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { money } from "../format";
 
 export interface SeriesPoint {
   date: string;
@@ -12,14 +13,15 @@ export interface CategoryTotal {
   total: string;
 }
 
+/** Etichetta compatta per le assi: stessa lingua e stesso separatore di money(). */
 function shortEuro(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1000) {
     return `${(value / 1000).toLocaleString("it-IT", {
       maximumFractionDigits: 1,
-    })}k €`;
+    })}k\u00A0€`;
   }
-  return `${value.toLocaleString("it-IT", { maximumFractionDigits: 0 })} €`;
+  return `${value.toLocaleString("it-IT", { maximumFractionDigits: 0 })}\u00A0€`;
 }
 
 function shortDate(iso: string): string {
@@ -152,26 +154,14 @@ export function InOutBars({
           <span className="inout-card-head">
             <ArrowDownLeft size={14} aria-hidden="true" /> Entrate
           </span>
-          <strong>
-            {inc.toLocaleString("it-IT", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}{" "}
-            €
-          </strong>
+          <strong>{money(inc)}</strong>
           <span className="muted">{pct(incShare)} del totale</span>
         </div>
         <div className="inout-card down">
           <span className="inout-card-head">
             <ArrowUpRight size={14} aria-hidden="true" /> Uscite
           </span>
-          <strong>
-            {exp.toLocaleString("it-IT", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}{" "}
-            €
-          </strong>
+          <strong>{money(exp)}</strong>
           <span className="muted">{pct(expShare)} del totale</span>
         </div>
       </div>
@@ -200,7 +190,7 @@ export function CategoryBars({ rows }: { rows: CategoryTotal[] }) {
           <div
             className="chart-bar-track"
             role="img"
-            aria-label={`${row.name}: ${Number(row.total).toLocaleString("it-IT")} euro`}
+            aria-label={`${row.name}: ${money(row.total)}`}
           >
             <div
               className="chart-bar-fill"
@@ -210,13 +200,7 @@ export function CategoryBars({ rows }: { rows: CategoryTotal[] }) {
               }}
             />
           </div>
-          <strong className="chart-bar-value">
-            {Number(row.total).toLocaleString("it-IT", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}{" "}
-            €
-          </strong>
+          <strong className="chart-bar-value">{money(row.total)}</strong>
         </div>
       ))}
     </div>

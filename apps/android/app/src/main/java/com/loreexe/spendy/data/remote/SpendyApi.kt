@@ -79,7 +79,10 @@ interface SpendyApi {
     suspend fun me(): MeResponse
 
     @GET("finance/dashboard/")
-    suspend fun dashboard(): DashboardDto
+    suspend fun dashboard(
+        @Query("start") start: String? = null,
+        @Query("end") end: String? = null,
+    ): DashboardDto
 
     @GET("finance/accounts/")
     suspend fun accounts(): AccountsResponse

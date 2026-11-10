@@ -4,6 +4,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.roundToInt
 
 fun parseMoneyToCents(value: String?): Long {
     if (value.isNullOrBlank()) return 0L
@@ -28,6 +29,23 @@ fun parseMoneyToCents(value: String?): Long {
 fun formatCents(cents: Long): String {
     val formatter = NumberFormat.getCurrencyInstance(Locale.ITALY)
     return formatter.format(BigDecimal(cents).movePointLeft(2))
+}
+
+/**
+ * Percentuale intera (0 decimali, come il web) di una parte sul totale.
+ * Con totale nullo o negativo restituisce 0, senza dividere per zero.
+ */
+fun percentShare(part: Long, total: Long): Int {
+    if (total <= 0L) return 0
+    return ((part.toDouble() * 100.0) / total.toDouble()).roundToInt()
+}
+
+/** Data ISO `yyyy-MM-dd` nel formato italiano `gg/mm/aaaa`; invariata se non riconosciuta. */
+fun formatIsoDateItalian(iso: String): String {
+    val parts = iso.split("-")
+    if (parts.size != 3) return iso
+    val (year, month, day) = parts
+    return "$day/$month/$year"
 }
 
 fun parsePriceToMicros(value: String?): Long? {

@@ -203,6 +203,10 @@ class DashboardView(FinanceView):
         end = self._parse_date(request.query_params.get("end"), today)
         if start > end:
             raise ValidationError({"detail": "La data iniziale supera quella finale."})
+        # Un periodo che parte prima dei primi dati non aggiunge informazione ma
+        # produce etichette e grafici fuorvianti (es. "Tutto" dal 2000): si parte
+        # dalla prima attività reale del profilo.
+        start = self._clamp_start(profile, start, end)
 
         accounts = list(Account.objects.filter(profile=profile))
         savings = list(SavingsAccount.objects.filter(profile=profile))
@@ -210,38 +214,34 @@ class DashboardView(FinanceView):
 
         total_balance = sum((account.balance for account in accounts), ZERO)
         total_savings = sum((savings_account.balance for savings_account in savings), ZERO)
-        # The period balance is the variation of the total balance, so the
-        # account openings inside the period count too (DC-012, REQ-DASH-05).
-        period_balance = (
+        # Entrate/Uscite = flussi di cassa **sui conti**, calcolati sul saldo
+        # netto delle righe di ogni transazione: i trasferimenti interni e le
+        # aperture di conto sono voci di capitale (escluse), i movimenti pagati
+        # dal salvadanaio si annullano sui conti (ponte tecnico) e quindi non
+        # alterano i flussi. Acquisti, vendite e dividendi restano flussi reali.
+        capital_kinds = (Transaction.Kind.OPENING, Transaction.Kind.TRANSFER)
+        cash_flows = (
             Line.objects.filter(
                 account__profile=profile,
                 transaction__date__gte=start,
                 transaction__date__lte=end,
                 transaction__is_deleted=False,
-            ).aggregate(total=Sum("amount"))["total"]
-            or ZERO
+            )
+            .exclude(transaction__kind__in=capital_kinds)
+            .values("transaction_id")
+            .annotate(net=Sum("amount"))
         )
-        income_total = (
-            Transaction.objects.filter(
-                profile=profile,
-                kind__in=(
-                    Transaction.Kind.INCOME,
-                    Transaction.Kind.INVESTMENT_DIVIDEND,
-                ),
-                date__gte=start,
-                date__lte=end,
-            ).aggregate(total=Sum("amount"))["total"]
-            or ZERO
+        income_total = sum(
+            (row["net"] for row in cash_flows if row["net"] > ZERO), ZERO
         )
-        expense_total = (
-            Transaction.objects.filter(
-                profile=profile,
-                kind=Transaction.Kind.EXPENSE,
-                date__gte=start,
-                date__lte=end,
-            ).aggregate(total=Sum("amount"))["total"]
-            or ZERO
+        expense_total = -sum(
+            (row["net"] for row in cash_flows if row["net"] < ZERO), ZERO
         )
+        # Il Saldo del periodo è per definizione Entrate − Uscite: stessa base
+        # di flussi di cassa dei conti, così i numeri delle card quadrano
+        # sempre. Le variazioni di capitale (aperture, trasferimenti) restano
+        # fuori dai flussi e si vedono nella variazione dei saldi dei conti.
+        period_balance = income_total - expense_total
         recent = (
             Transaction.objects.filter(profile=profile)
             .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
@@ -303,6 +303,54 @@ class DashboardView(FinanceView):
         )
 
     @staticmethod
+    def _first_activity(profile: Profile):
+        """Prima data con dati reali del profilo (movimenti, conti, salvadanai,
+        investimenti), oppure None se il profilo è vuoto."""
+        candidates = []
+        movement = (
+            Transaction.objects.filter(profile=profile, is_deleted=False)
+            .order_by("date")
+            .values_list("date", flat=True)
+            .first()
+        )
+        if movement:
+            candidates.append(movement)
+        account = (
+            Account.objects.filter(profile=profile)
+            .order_by("created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
+        if account:
+            candidates.append(timezone.localtime(account).date())
+        savings = (
+            SavingsAccount.objects.filter(profile=profile)
+            .order_by("created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
+        if savings:
+            candidates.append(timezone.localtime(savings).date())
+        operation = (
+            InvestmentOperation.objects.filter(profile=profile, is_deleted=False)
+            .order_by("date")
+            .values_list("date", flat=True)
+            .first()
+        )
+        if operation:
+            candidates.append(operation)
+        return min(candidates) if candidates else None
+
+    @staticmethod
+    def _clamp_start(profile: Profile, start: date, end: date) -> date:
+        first = DashboardView._first_activity(profile)
+        # Se non esiste attività prima della fine del periodo richiesto, il
+        # periodo è legittimamente vuoto: non lo si sposta.
+        if first and start < first <= end:
+            return first
+        return start
+
+    @staticmethod
     def _period_investments(profile: Profile, start: date, end: date):
         realized = ZERO
         for position in profile.investment_positions.all():
@@ -352,17 +400,22 @@ class DashboardSeriesView(FinanceView):
             raise ValidationError(
                 {"detail": "La data iniziale supera quella finale."}
             )
+        start = DashboardView._clamp_start(profile, start, end)
 
+        # Bucket uniformi su tutto l'intervallo, con l'ultimo esattamente alla
+        # data finale e al massimo 95 punti: un range lungo (es. "Tutto") non
+        # deve troncare i primi 95 bucket lasciando fuori i dati recenti.
         span = (end - start).days
-        step = 1 if span <= 62 else 7
+        max_points = 95
+        step = 1 if span <= 62 else max(1, -(-span // (max_points - 1)))
         buckets: list[date] = []
         cursor = start
         while cursor <= end:
             buckets.append(cursor)
             cursor += timedelta(days=step)
-        if buckets[-1] != end:
+        if buckets and buckets[-1] != end:
             buckets.append(end)
-        buckets = buckets[:95]
+        buckets = buckets[:max_points]
 
         account_lines = Line.objects.filter(
             account__profile=profile,

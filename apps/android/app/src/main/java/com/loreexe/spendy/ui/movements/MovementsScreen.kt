@@ -1,6 +1,9 @@
 package com.loreexe.spendy.ui.movements
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -12,20 +15,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -45,6 +46,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,9 +56,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -73,6 +78,7 @@ import com.loreexe.spendy.data.model.TagData
 import com.loreexe.spendy.data.model.TransactionFilters
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
+import com.loreexe.spendy.ui.components.EmptyState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -81,9 +87,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.inject.Inject
+import androidx.compose.ui.res.painterResource
+import androidx.annotation.DrawableRes
 
 data class MovementsUiState(
     val loading: Boolean = true,
@@ -257,8 +268,6 @@ fun MovementsScreen(
     viewModel: MovementsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var startText by remember { mutableStateOf("") }
-    var endText by remember { mutableStateOf("") }
     var minText by remember { mutableStateOf("") }
     var maxText by remember { mutableStateOf("") }
     var showFilters by rememberSaveable { mutableStateOf(false) }
@@ -292,7 +301,7 @@ fun MovementsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = viewModel::showAdd) {
-                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.movement_add))
+                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.movement_add))
             }
         },
     ) { padding ->
@@ -305,7 +314,10 @@ fun MovementsScreen(
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 FilterChipLike(
@@ -343,7 +355,7 @@ fun MovementsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Outlined.Search,
+                        painterResource(R.drawable.ic_lucide_search),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
@@ -375,7 +387,7 @@ fun MovementsScreen(
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
-                            Icons.Outlined.Tune,
+                            painterResource(R.drawable.ic_lucide_sliders_horizontal),
                             contentDescription = "Filtri",
                             tint = if (showFilters) {
                                 MaterialTheme.colorScheme.primary
@@ -431,19 +443,18 @@ fun MovementsScreen(
                         }
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            OutlinedTextField(
-                                value = startText,
-                                onValueChange = { startText = it; viewModel.setStart(it) },
-                                label = { Text("Dal") },
-                                singleLine = true,
+                            DatePickerField(
+                                label = "Dal",
+                                value = state.filters.start,
+                                onDateChange = { viewModel.setStart(it ?: "") },
                                 modifier = Modifier.weight(1f),
                             )
-                            OutlinedTextField(
-                                value = endText,
-                                onValueChange = { endText = it; viewModel.setEnd(it) },
-                                label = { Text("Al") },
-                                singleLine = true,
+                            DatePickerField(
+                                label = "Al",
+                                value = state.filters.end,
+                                onDateChange = { viewModel.setEnd(it ?: "") },
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -481,25 +492,14 @@ fun MovementsScreen(
                     }
                     TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }
                 }
-                state.transactions.isEmpty() -> Column(
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.ReceiptLong,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    Text(
-                        stringResource(R.string.movement_empty),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    TextButton(onClick = viewModel::showAdd) {
-                        Text(stringResource(R.string.movement_add))
-                    }
-                }
+                state.transactions.isEmpty() -> EmptyState(
+                    illustration = R.drawable.ill_empty_movements,
+                    title = stringResource(R.string.empty_movements_title),
+                    description = stringResource(R.string.empty_movements_body),
+                    actionLabel = stringResource(R.string.movement_add),
+                    onAction = viewModel::showAdd,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -603,7 +603,14 @@ private fun FilterChipLike(label: String, selected: Boolean, onClick: () -> Unit
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label) },
+        label = {
+            Text(
+                label,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Visible,
+            )
+        },
     )
 }
 
@@ -692,20 +699,33 @@ private fun AddMovementDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     listOf(
                         "expense" to R.string.movement_expense,
                         "income" to R.string.movement_income,
                         "transfer" to R.string.movement_transfer,
                     ).forEach { (key, label) ->
-                        TextButton(onClick = { kind = key }) {
-                            Text(
-                                stringResource(label),
-                                color = if (kind == key) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        FilterChip(
+                            selected = kind == key,
+                            onClick = { kind = key },
+                            label = {
+                                Text(
+                                    stringResource(label),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Visible,
+                                )
+                            },
+                        )
                     }
                 }
                 OutlinedTextField(
@@ -720,21 +740,21 @@ private fun AddMovementDialog(
                     label = { Text(stringResource(R.string.movement_description)) },
                     singleLine = true,
                 )
-                OutlinedTextField(
+                DatePickerField(
+                    label = stringResource(R.string.movement_date),
                     value = date,
-                    onValueChange = { date = it },
-                    label = { Text(stringResource(R.string.movement_date)) },
-                    singleLine = true,
+                    onDateChange = { picked -> date = picked ?: date },
+                    allowClear = false,
                 )
                 if (kind == "transfer") {
-                    Selector(
+                    OutlinedSelectorField(
                         label = stringResource(R.string.movement_from),
                         selected = accounts.firstOrNull { it.uuid == fromAccount }?.name ?: "—",
                         options = accounts.map { it.uuid to it.name },
                         onSelect = { fromAccount = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Selector(
+                    OutlinedSelectorField(
                         label = stringResource(R.string.movement_to),
                         selected = accounts.firstOrNull { it.uuid == toAccount }?.name ?: "—",
                         options = accounts.map { it.uuid to it.name },
@@ -742,14 +762,14 @@ private fun AddMovementDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    Selector(
+                    OutlinedSelectorField(
                         label = stringResource(R.string.movement_account),
                         selected = accounts.firstOrNull { it.uuid == account }?.name ?: "—",
                         options = accounts.map { it.uuid to it.name },
                         onSelect = { account = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Selector(
+                    OutlinedSelectorField(
                         label = stringResource(R.string.movement_category),
                         selected = categories.firstOrNull { it.uuid == category }?.name ?: "—",
                         options = categories.map { it.uuid to it.name },
@@ -788,4 +808,168 @@ private fun AddMovementDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+private val movementDateFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ITALY)
+
+private fun formatIsoDate(iso: String): String =
+    runCatching { LocalDate.parse(iso).format(movementDateFormatter) }.getOrDefault(iso)
+
+private fun isoDateToUtcMillis(iso: String): Long? =
+    runCatching {
+        LocalDate.parse(iso).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    }.getOrNull()
+
+private fun utcMillisToIsoDate(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
+
+/**
+ * Campo che mostra una data (gg/MM/aaaa) e apre un calendario Material3.
+ * [value] è la data in formato ISO (yyyy-MM-dd); [onDateChange] riceve null
+ * quando l'utente cancella la data.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerField(
+    label: String,
+    value: String?,
+    onDateChange: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+    allowClear: Boolean = true,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    OutlinedPickerField(
+        label = label,
+        value = value?.let(::formatIsoDate).orEmpty(),
+        placeholder = if (allowClear) "Nessuna" else "—",
+        onClick = { showPicker = true },
+        iconRes = R.drawable.ic_lucide_calendar,
+        modifier = modifier,
+    )
+    if (showPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = value?.let(::isoDateToUtcMillis),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            onDateChange(utcMillisToIsoDate(millis))
+                        }
+                        showPicker = false
+                    },
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                Row {
+                    if (allowClear && value != null) {
+                        TextButton(
+                            onClick = {
+                                onDateChange(null)
+                                showPicker = false
+                            },
+                        ) { Text("Cancella") }
+                    }
+                    TextButton(onClick = { showPicker = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            },
+        ) {
+            DatePicker(state = pickerState, showModeToggle = false)
+        }
+    }
+}
+
+/**
+ * Campo "outlined" cliccabile con label, valore e icona finale:
+ * usato per aprire calendari e menu a tendina.
+ */
+@Composable
+private fun OutlinedPickerField(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "—",
+    @DrawableRes iconRes: Int = R.drawable.ic_lucide_chevron_down,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, borderColor, shape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    value.ifBlank { placeholder },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                painterResource(iconRes),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Variante di [OutlinedPickerField] con menu a tendina: evidenzia che il valore
+ * (es. conto o categoria) è modificabile.
+ */
+@Composable
+private fun OutlinedSelectorField(
+    label: String,
+    selected: String,
+    options: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "—",
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        OutlinedPickerField(
+            label = label,
+            value = selected,
+            placeholder = placeholder,
+            onClick = { expanded = true },
+            iconRes = R.drawable.ic_lucide_chevron_down,
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (value, name) ->
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    onClick = {
+                        expanded = false
+                        onSelect(value)
+                    },
+                )
+            }
+        }
+    }
 }

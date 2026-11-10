@@ -9,6 +9,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -18,6 +21,37 @@ enum class ThemeMode {
     DARK,
     LIGHT,
 }
+
+/**
+ * Colori semantici che il tema Material 3 non espone: "in aumento" (entrate) e
+ * "in diminuzione" (uscite), con i rispettivi fondi soft. Derivano dai token
+ * Spendy (`--up`, `--down`, `--accent-soft`, `--danger-soft`) e vengono forniti
+ * dal tema, così i componenti non inventano colori.
+ */
+@Immutable
+data class SpendySemanticColors(
+    val up: Color,
+    val down: Color,
+    val upSoft: Color,
+    val downSoft: Color,
+)
+
+private val DarkSemanticColors = SpendySemanticColors(
+    up = SpendyUpDark,
+    down = SpendyDownDark,
+    upSoft = SpendyUpSoftDark,
+    downSoft = SpendyDownSoftDark,
+)
+
+private val LightSemanticColors = SpendySemanticColors(
+    up = SpendyUpLight,
+    down = SpendyDownLight,
+    upSoft = SpendyUpSoftLight,
+    downSoft = SpendyDownSoftLight,
+)
+
+/** Colori semantici del tema attivo (scuro o chiaro). */
+val LocalSpendySemanticColors = staticCompositionLocalOf { DarkSemanticColors }
 
 private val DarkColors = darkColorScheme(
     primary = SpendyAccentDark,
@@ -36,6 +70,7 @@ private val DarkColors = darkColorScheme(
     onSurfaceVariant = SpendyMutedDark,
     outline = SpendyLineDark,
     error = SpendyDangerDark,
+    // Derivato dal token danger: fondo d'errore con la stessa tinta, alpha 22% (tema scuro).
     errorContainer = SpendyDangerDark.copy(alpha = 0.22f),
     onErrorContainer = SpendyTextDark,
     tertiary = SpendyInfoDark,
@@ -43,7 +78,7 @@ private val DarkColors = darkColorScheme(
     tertiaryContainer = SpendyBg2Dark,
     onTertiaryContainer = SpendyTextDark,
     surfaceDim = SpendyBg0Dark,
-    surfaceBright = Color(0xFF2A3530),
+    surfaceBright = SpendyBg2Dark,
     surfaceContainerLowest = SpendyBg0Dark,
     surfaceContainerLow = SpendyBg1Dark,
     surfaceContainer = SpendyBg1Dark,
@@ -58,7 +93,7 @@ private val DarkColors = darkColorScheme(
 
 private val LightColors = lightColorScheme(
     primary = SpendyAccentLight,
-    onPrimary = SpendyBg0Light,
+    onPrimary = Color.White,
     primaryContainer = SpendyBg2Light,
     onPrimaryContainer = SpendyTextLight,
     secondary = SpendyInfoLight,
@@ -73,14 +108,15 @@ private val LightColors = lightColorScheme(
     onSurfaceVariant = SpendyMutedLight,
     outline = SpendyLineLight,
     error = SpendyDangerLight,
+    // Derivato dal token danger: fondo d'errore con la stessa tinta, alpha 14% (tema chiaro).
     errorContainer = SpendyDangerLight.copy(alpha = 0.14f),
     onErrorContainer = SpendyTextLight,
     tertiary = SpendyInfoLight,
     onTertiary = SpendyBg0Light,
     tertiaryContainer = SpendyBg2Light,
     onTertiaryContainer = SpendyTextLight,
-    surfaceDim = Color(0xFFDCE3DF),
-    surfaceBright = Color(0xFFFFFFFF),
+    surfaceDim = SpendyBg2Light,
+    surfaceBright = SpendyBg1Light,
     surfaceContainerLowest = SpendyBg1Light,
     surfaceContainerLow = SpendyBg1Light,
     surfaceContainer = SpendyBg1Light,
@@ -94,7 +130,7 @@ private val LightColors = lightColorScheme(
 )
 
 private val SpendyShapes = Shapes(
-    small = RoundedCornerShape(14.dp),
+    small = RoundedCornerShape(18.dp),
     medium = RoundedCornerShape(18.dp),
     large = RoundedCornerShape(20.dp),
 )
@@ -109,16 +145,20 @@ fun SpendyTheme(
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
     }
-    MaterialTheme(
-        colorScheme = if (dark) DarkColors else LightColors,
-        typography = SpendyTypography,
-        shapes = SpendyShapes,
+    CompositionLocalProvider(
+        LocalSpendySemanticColors provides if (dark) DarkSemanticColors else LightSemanticColors,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            content = content,
-        )
+        MaterialTheme(
+            colorScheme = if (dark) DarkColors else LightColors,
+            typography = SpendyTypography,
+            shapes = SpendyShapes,
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
+                content = content,
+            )
+        }
     }
 }

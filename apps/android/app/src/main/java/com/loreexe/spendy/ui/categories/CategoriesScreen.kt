@@ -8,9 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -50,6 +47,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import androidx.compose.ui.res.painterResource
 
 data class CategoriesUiState(
     val loading: Boolean = true,
@@ -243,7 +241,7 @@ private fun SectionHeader(title: String, action: String, onClick: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
         TextButton(onClick = onClick) {
-            Icon(Icons.Outlined.Add, contentDescription = null)
+            Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = null)
             Text(action)
         }
     }

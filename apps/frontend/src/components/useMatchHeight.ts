@@ -19,9 +19,14 @@ export function useMatchedHeight(enabled = true) {
     const reference = refRef.current;
     if (!enabled || !boxed || !reference) return;
     if (window.matchMedia("(min-width: 761px)").matches) {
-      boxed.style.height = `${reference.offsetHeight}px`;
+      const height = `${reference.offsetHeight}px`;
+      // Altezza e tetto insieme: la card gemella non può né restare più bassa
+      // né crescere col contenuto (la lista interna scorre).
+      boxed.style.height = height;
+      boxed.style.maxHeight = height;
     } else {
       boxed.style.height = "";
+      boxed.style.maxHeight = "";
     }
   }, [enabled]);
 

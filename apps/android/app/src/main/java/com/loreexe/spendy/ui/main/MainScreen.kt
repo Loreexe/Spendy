@@ -5,8 +5,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,29 +24,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
-import androidx.compose.material.icons.automirrored.outlined.TrendingUp
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.ArrowDownward
-import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.ImportExport
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Savings
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.ShowChart
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -73,6 +59,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -89,7 +76,10 @@ import com.loreexe.spendy.data.model.SeriesData
 import com.loreexe.spendy.ui.investments.InvestmentsScreen
 import com.loreexe.spendy.ui.movements.MovementsScreen
 import com.loreexe.spendy.ui.savings.SavingsScreen
+import com.loreexe.spendy.ui.theme.LocalSpendySemanticColors
 import com.loreexe.spendy.util.formatCents
+import com.loreexe.spendy.util.formatIsoDateItalian
+import androidx.annotation.DrawableRes
 
 private data class MainTab(
     val label: Int,
@@ -111,11 +101,11 @@ fun MainScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val tabs = listOf(
-        MainTab(R.string.nav_dashboard) { Icon(Icons.Outlined.Dashboard, contentDescription = null) },
-        MainTab(R.string.nav_movements) { Icon(Icons.AutoMirrored.Outlined.ReceiptLong, contentDescription = null) },
-        MainTab(R.string.nav_savings) { Icon(Icons.Outlined.Savings, contentDescription = null) },
-        MainTab(R.string.nav_investments) { Icon(Icons.AutoMirrored.Outlined.TrendingUp, contentDescription = null) },
-        MainTab(R.string.nav_more) { Icon(Icons.Outlined.MoreHoriz, contentDescription = null) },
+        MainTab(R.string.nav_dashboard) { Icon(painterResource(R.drawable.ic_lucide_layout_dashboard), contentDescription = null) },
+        MainTab(R.string.nav_movements) { Icon(painterResource(R.drawable.ic_lucide_receipt_text), contentDescription = null) },
+        MainTab(R.string.nav_savings) { Icon(painterResource(R.drawable.ic_lucide_piggy_bank), contentDescription = null) },
+        MainTab(R.string.nav_investments) { Icon(painterResource(R.drawable.ic_lucide_trending_up), contentDescription = null) },
+        MainTab(R.string.nav_more) { Icon(painterResource(R.drawable.ic_lucide_more_horizontal), contentDescription = null) },
     )
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
@@ -185,6 +175,7 @@ fun MainScreen(
                 0 -> DashboardContent(
                     state = state,
                     onRetry = viewModel::load,
+                    onSelectPeriod = viewModel::setPeriod,
                     onOpenAccounts = onAccounts,
                     onOpenMovements = {
                         scope.launch { pagerState.animateScrollToPage(1) }
@@ -224,53 +215,105 @@ fun MainScreen(
 private fun DashboardContent(
     state: DashboardUiState,
     onRetry: () -> Unit,
+    onSelectPeriod: (DashboardPeriod) -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenMovements: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    when {
-        state.loading -> Column(
-            modifier = modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            CircularProgressIndicator()
+    Column(modifier = modifier.fillMaxSize()) {
+        DashboardPeriodSelector(
+            selected = state.period,
+            onSelect = onSelectPeriod,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+        )
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            when {
+                state.loading -> Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    CircularProgressIndicator()
+                }
+                state.error != null -> Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = state.error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                    TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+                }
+                state.data == null -> DashboardDataContent(
+                    data = DashboardData(0, 0, 0, 0, 0),
+                    series = null,
+                    period = state.period,
+                    onOpenAccounts = onOpenAccounts,
+                    onOpenMovements = onOpenMovements,
+                )
+                else -> DashboardDataContent(
+                    data = state.data,
+                    series = state.series,
+                    period = state.period,
+                    onOpenAccounts = onOpenAccounts,
+                    onOpenMovements = onOpenMovements,
+                )
+            }
         }
-        state.error != null -> Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = state.error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
+    }
+}
+
+/**
+ * Selettore del periodo della dashboard: chip orizzontalmente scrollabili con i
+ * preset del web (BUG-024). Le etichette sono in italiano, coerenti con l'app.
+ */
+@Composable
+private fun DashboardPeriodSelector(
+    selected: DashboardPeriod,
+    onSelect: (DashboardPeriod) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DashboardPeriod.entries.forEach { period ->
+            val isSelected = period == selected
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelect(period) },
+                label = {
+                    Text(
+                        text = period.label,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                ),
             )
-            TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
         }
-        state.data == null -> DashboardDataContent(
-            data = DashboardData(0, 0, 0, 0, 0),
-            series = null,
-            onOpenAccounts = onOpenAccounts,
-            onOpenMovements = onOpenMovements,
-            modifier = modifier,
-        )
-        else -> DashboardDataContent(
-            data = state.data,
-            series = state.series,
-            onOpenAccounts = onOpenAccounts,
-            onOpenMovements = onOpenMovements,
-            modifier = modifier,
-        )
     }
 }
 
 private fun DashboardData.isEffectivelyEmpty(): Boolean =
     totalBalanceCents == 0L &&
         totalPatrimonyCents == 0L &&
+        savingsCents == 0L &&
+        investmentsCostCents == 0L &&
         incomeCents == 0L &&
         expenseCents == 0L
 
@@ -278,6 +321,7 @@ private fun DashboardData.isEffectivelyEmpty(): Boolean =
 private fun DashboardDataContent(
     data: DashboardData,
     series: SeriesData?,
+    period: DashboardPeriod,
     onOpenAccounts: () -> Unit,
     onOpenMovements: () -> Unit,
     modifier: Modifier = Modifier,
@@ -293,33 +337,8 @@ private fun DashboardDataContent(
         if (empty) {
             EmptyDashboard(onOpenAccounts = onOpenAccounts, onOpenMovements = onOpenMovements)
         } else {
-            HeroBalanceCard(data)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FlowCard(
-                    label = stringResource(R.string.dashboard_income),
-                    value = formatCents(data.incomeCents),
-                    icon = Icons.Outlined.ArrowDownward,
-                    accent = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                FlowCard(
-                    label = stringResource(R.string.dashboard_expense),
-                    value = formatCents(data.expenseCents),
-                    icon = Icons.Outlined.ArrowUpward,
-                    accent = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            SectionTitle(stringResource(R.string.dashboard_trend))
-            ChartCard(title = stringResource(R.string.dashboard_charts_balance)) {
-                BalanceChart(series?.points.orEmpty().map { it.saldoCents to it.patrimonioCents })
-            }
-            ChartCard(title = stringResource(R.string.dashboard_charts_cashflow)) {
-                CashflowChart(data.incomeCents, data.expenseCents)
-            }
-            ChartCard(title = stringResource(R.string.dashboard_charts_categories)) {
-                CategoryBars(series?.byCategory.orEmpty())
-            }
+            HeroBalanceCard(data = data, period = period)
+            DashboardChartsCard(data = data, series = series)
         }
     }
 }
@@ -350,7 +369,7 @@ private fun EmptyDashboard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.AccountBalanceWallet,
+                    painter = painterResource(R.drawable.ic_lucide_wallet),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                 )
@@ -425,7 +444,37 @@ private fun StepRow(number: String, title: String, body: String) {
 }
 
 @Composable
-private fun HeroBalanceCard(data: DashboardData) {
+private fun HeroBalanceCard(data: DashboardData, period: DashboardPeriod) {
+    val semantic = LocalSpendySemanticColors.current
+    // Il server può restringere l'inizio (es. "Tutto" parte dalla prima
+    // attività reale): si mostra l'intervallo effettivo, non quello richiesto.
+    val (presetStart, presetEnd) = period.range()
+    val startIso = data.periodStart.ifBlank { presetStart }
+    val endIso = data.periodEnd.ifBlank { presetEnd }
+    val periodNote = "${formatIsoDateItalian(startIso)} – ${formatIsoDateItalian(endIso)}" + stringResource(R.string.dashboard_period_flow_note)
+    val investmentsNote = buildString {
+        append(
+            stringResource(
+                R.string.dashboard_investments_value,
+                formatCents(data.investmentsValueCents),
+            ),
+        )
+        if (data.positionsWithoutPrice > 0) {
+            append(" · ")
+            append(
+                pluralStringResource(
+                    R.plurals.dashboard_positions_without_price,
+                    data.positionsWithoutPrice,
+                    data.positionsWithoutPrice,
+                ),
+            )
+        }
+    }
+    val balanceColor = when {
+        data.totalBalanceCents > 0L -> semantic.up
+        data.totalBalanceCents < 0L -> semantic.down
+        else -> MaterialTheme.colorScheme.onSurface
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -439,154 +488,107 @@ private fun HeroBalanceCard(data: DashboardData) {
         ),
     ) {
         Box(
-            modifier = Modifier.background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        Color.Transparent,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            Color.Transparent,
+                        ),
                     ),
                 ),
-            ),
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val wide = maxWidth >= 560.dp
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
                         text = stringResource(R.string.dashboard_period),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.weight(1f))
-                    Icon(
-                        imageVector = Icons.Outlined.ShowChart,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = formatCents(data.periodBalanceCents),
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.SemiBold,
                     )
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = formatCents(data.periodBalanceCents),
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (data.periodBalanceCents < 0) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    MiniMetric(
-                        stringResource(R.string.dashboard_account_balance),
-                        formatCents(data.totalBalanceCents),
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = periodNote,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    MiniMetric(
-                        stringResource(R.string.dashboard_investments),
-                        formatCents(data.investmentsCostCents),
-                        note = if (data.investmentsValueCents > 0) {
-                            stringResource(
-                                R.string.dashboard_investments_value,
-                                formatCents(data.investmentsValueCents),
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                    Spacer(Modifier.height(14.dp))
+                    if (wide) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_account_balance),
+                                value = formatCents(data.totalBalanceCents),
+                                valueColor = balanceColor,
+                                modifier = Modifier.weight(1f),
                             )
-                        } else {
-                            null
-                        },
-                    )
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_savings),
+                                value = formatCents(data.savingsCents),
+                                modifier = Modifier.weight(1f),
+                            )
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_investments),
+                                value = formatCents(data.investmentsCostCents),
+                                note = investmentsNote,
+                                modifier = Modifier.weight(1f),
+                            )
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_patrimony),
+                                value = formatCents(data.totalPatrimonyCents),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_account_balance),
+                                value = formatCents(data.totalBalanceCents),
+                                valueColor = balanceColor,
+                                modifier = Modifier.weight(1f),
+                            )
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_savings),
+                                value = formatCents(data.savingsCents),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_investments),
+                                value = formatCents(data.investmentsCostCents),
+                                note = investmentsNote,
+                                modifier = Modifier.weight(1f),
+                            )
+                            DashboardMetric(
+                                label = stringResource(R.string.dashboard_patrimony),
+                                value = formatCents(data.totalPatrimonyCents),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+/**
+ * Unica card "Grafici del periodo", come la sezione `.dash-charts` del web:
+ * andamento saldo/patrimonio, poi Entrate vs uscite e Spese per categoria
+ * affiancati quando lo spazio lo consente, impilati sul telefono.
+ */
 @Composable
-private fun MiniMetric(label: String, value: String, note: String? = null) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        note?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun FlowCard(
-    label: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    accent: Color,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(17.dp))
-            }
-            Column {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(top = 4.dp),
-    )
-}
-
-@Composable
-private fun ChartCard(title: String, content: @Composable () -> Unit) {
+private fun DashboardChartsCard(data: DashboardData, series: SeriesData?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -599,16 +601,86 @@ private fun ChartCard(title: String, content: @Composable () -> Unit) {
             MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
         ),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(12.dp))
-            content()
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.dashboard_trend),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChartSubtitle(stringResource(R.string.dashboard_charts_balance))
+                BalanceChart(series?.points.orEmpty().map { it.saldoCents to it.patrimonioCents })
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val wide = maxWidth >= 620.dp
+                if (wide) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ChartSubtitle(stringResource(R.string.dashboard_charts_cashflow))
+                            Text(
+                                text = stringResource(R.string.dashboard_cashflow_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            InOutBars(
+                                incomeCents = data.incomeCents,
+                                expenseCents = data.expenseCents,
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ChartSubtitle(stringResource(R.string.dashboard_charts_categories))
+                            CategoryBars(series?.byCategory.orEmpty())
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ChartSubtitle(stringResource(R.string.dashboard_charts_cashflow))
+                            Text(
+                                text = stringResource(R.string.dashboard_cashflow_note),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            InOutBars(
+                                incomeCents = data.incomeCents,
+                                expenseCents = data.expenseCents,
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ChartSubtitle(stringResource(R.string.dashboard_charts_categories))
+                            CategoryBars(series?.byCategory.orEmpty())
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun EmptyChart() {
+private fun ChartSubtitle(text: String) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelSmall.copy(
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp,
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun EmptyChart(message: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -617,16 +689,17 @@ private fun EmptyChart() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            imageVector = Icons.Outlined.ShowChart,
+            painter = painterResource(R.drawable.ic_lucide_line_chart),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             modifier = Modifier.size(26.dp),
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = stringResource(R.string.chart_empty),
+            text = message,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -634,7 +707,7 @@ private fun EmptyChart() {
 @Composable
 private fun BalanceChart(points: List<Pair<Long, Long>>) {
     if (points.size < 2 || points.all { it.first == 0L && it.second == 0L }) {
-        EmptyChart()
+        EmptyChart(stringResource(R.string.chart_empty))
         return
     }
     val accent = MaterialTheme.colorScheme.primary
@@ -733,56 +806,9 @@ private fun LegendDot(color: Color, label: String) {
 }
 
 @Composable
-private fun CashflowChart(income: Long, expense: Long) {
-    val max = maxOf(income, expense, 1L)
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        CashflowRow(
-            label = stringResource(R.string.dashboard_income),
-            amount = formatCents(income),
-            fraction = income.toFloat() / max.toFloat(),
-            color = MaterialTheme.colorScheme.primary,
-        )
-        CashflowRow(
-            label = stringResource(R.string.dashboard_expense),
-            amount = formatCents(expense),
-            fraction = expense.toFloat() / max.toFloat(),
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-}
-
-@Composable
-private fun CashflowRow(label: String, amount: String, fraction: Float, color: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = amount,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        LinearProgressIndicator(
-            progress = { fraction.coerceIn(0f, 1f) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp)),
-            color = color,
-            trackColor = MaterialTheme.colorScheme.background,
-        )
-    }
-}
-
-@Composable
 private fun CategoryBars(categories: List<CategoryTotal>) {
     if (categories.isEmpty()) {
-        EmptyChart()
+        EmptyChart(stringResource(R.string.chart_empty_categories))
         return
     }
     val max = categories.maxOf { it.totalCents }.coerceAtLeast(1L)
@@ -840,28 +866,28 @@ private fun MoreContent(
         )
         MenuGroup(title = stringResource(R.string.more_group_manage)) {
             MenuRow(
-                icon = Icons.Outlined.AccountBalanceWallet,
+                iconRes = R.drawable.ic_lucide_wallet,
                 title = stringResource(R.string.more_accounts),
                 subtitle = stringResource(R.string.more_accounts_hint),
                 onClick = onAccounts,
             )
             MenuDivider()
             MenuRow(
-                icon = Icons.Outlined.Category,
+                iconRes = R.drawable.ic_lucide_tag,
                 title = stringResource(R.string.more_categories),
                 subtitle = stringResource(R.string.more_categories_hint),
                 onClick = onCategories,
             )
             MenuDivider()
             MenuRow(
-                icon = Icons.Outlined.Schedule,
+                iconRes = R.drawable.ic_lucide_clock,
                 title = stringResource(R.string.automations_title),
                 subtitle = "Spese e versamenti ricorrenti",
                 onClick = onAutomations,
             )
             MenuDivider()
             MenuRow(
-                icon = Icons.Outlined.Search,
+                iconRes = R.drawable.ic_lucide_search,
                 title = stringResource(R.string.more_search),
                 subtitle = stringResource(R.string.more_search_hint),
                 onClick = onSearch,
@@ -869,14 +895,14 @@ private fun MoreContent(
         }
         MenuGroup(title = stringResource(R.string.more_group_data)) {
             MenuRow(
-                icon = Icons.Outlined.DeleteOutline,
+                iconRes = R.drawable.ic_lucide_trash_2,
                 title = stringResource(R.string.trash_title),
                 subtitle = stringResource(R.string.more_trash_hint),
                 onClick = onTrash,
             )
             MenuDivider()
             MenuRow(
-                icon = Icons.Outlined.ImportExport,
+                iconRes = R.drawable.ic_lucide_arrow_left_right,
                 title = stringResource(R.string.data_title),
                 subtitle = stringResource(R.string.more_data_hint),
                 onClick = onData,
@@ -884,14 +910,14 @@ private fun MoreContent(
         }
         MenuGroup(title = stringResource(R.string.more_group_app)) {
             MenuRow(
-                icon = Icons.Outlined.Person,
+                iconRes = R.drawable.ic_lucide_user,
                 title = stringResource(R.string.profile_title),
                 subtitle = stringResource(R.string.more_profile_hint),
                 onClick = onProfile,
             )
             MenuDivider()
             MenuRow(
-                icon = Icons.Outlined.Settings,
+                iconRes = R.drawable.ic_lucide_settings,
                 title = stringResource(R.string.settings_title),
                 subtitle = stringResource(R.string.more_settings_hint),
                 onClick = onSettings,
@@ -928,7 +954,7 @@ private fun MenuGroup(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun MenuRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    @DrawableRes iconRes: Int,
     title: String,
     subtitle: String,
     onClick: () -> Unit,
@@ -949,7 +975,7 @@ private fun MenuRow(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = icon,
+                painter = painterResource(iconRes),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -964,7 +990,7 @@ private fun MenuRow(
             )
         }
         Icon(
-            imageVector = Icons.Outlined.ChevronRight,
+            painter = painterResource(R.drawable.ic_lucide_chevron_right),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),

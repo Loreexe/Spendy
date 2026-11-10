@@ -266,7 +266,7 @@ export function DashboardPage() {
                 {money(data.period_balance)}
               </strong>
               <p className="muted small">
-                {formatDay(data.period.start)} – {formatDay(data.period.end)}
+                {formatDay(data.period.start)} – {formatDay(data.period.end)} · Entrate − Uscite
                 {Number(data.period_dividends) > 0
                   ? ` · dividendi ${money(data.period_dividends)}`
                   : ""}
@@ -313,6 +313,9 @@ export function DashboardPage() {
                 <div className="dash-charts-row">
                   <div>
                     <h3 className="stat-label">Entrate vs uscite</h3>
+                    <p className="muted small">
+                      Flussi di cassa sui conti · esclusi trasferimenti interni e apertura.
+                    </p>
                     <InOutBars
                       income={data.income_total}
                       expense={data.expense_total}

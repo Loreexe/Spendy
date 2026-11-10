@@ -1,6 +1,6 @@
 # Spendy Android
 
-Client Android nativo di Spendy (DC-102…106), **release 0.8.1**. Due modalità: server (`/api/v1/` con token per dispositivo) e archivio locale standalone con SQLCipher e biometria. Conti, movimenti, categorie/tag, grafici, ricerca, salvadanai, investimenti, automazioni, cestino/undo, import/export, migrazione in sostituzione, profilo, impostazioni, dispositivi e pairing QR.
+Client Android nativo di Spendy (DC-102…106), **release 0.8.2**. Due modalità: server (`/api/v1/` con token per dispositivo) e archivio locale standalone con SQLCipher e biometria. Conti, movimenti, categorie/tag, grafici, ricerca, salvadanai, investimenti, automazioni, cestino/undo, import/export, migrazione in sostituzione, profilo, impostazioni, dispositivi e pairing QR.
 
 ## Requisiti
 
@@ -70,8 +70,19 @@ Verifiche:
 - Impostazioni: Accesso, Aspetto (tema Sistema/Scuro/Chiaro, blocco screenshot), Dati, Aggiornamenti, Informazioni con licenze e diagnostica.
 - Dispositivi: elenco, rinomina, revoca e indicazione del dispositivo corrente.
 - Pairing: QR generato con ZXing, approvazione/rifiuto, inserimento manuale di server e codice, polling e completamento con token.
-- Mancano: scansione QR con fotocamera, blocco app biometrico in modalità server, audit di accessibilità formale, prova su device.
+- Mancano: blocco app biometrico in modalità server, audit di accessibilità formale, prova su device.
 - Nota: al cambio di schema Room l'archivio locale viene ricreato (`fallbackToDestructiveMigration`); le migrazioni Room vanno aggiunte prima della release 1.0.0.
+
+## Correzioni 2026-11-09
+
+- **Account multipli sullo stesso telefono**: più profili server salvati (token cifrato per account), cambio utente dalle Impostazioni senza reinserire la password, «Aggiungi un altro account» e logout che rimuove solo l'account attivo; la sessione singola delle versioni precedenti viene migrata.
+- **Accesso con QR**: il pairing è raggiungibile già dall'onboarding; scansione del QR con fotocamera (CameraX + ZXing core) oltre all'inserimento manuale di server e codice.
+- **Campi di accesso**: pulsante mostra/nascondi password. Il riempimento automatico dei gestori di password resta un limite noto: la versione di Compose usata (1.7.x) non espone l'API pubblica per i content type di autofill.
+- **Dashboard**: selettore del periodo (Mese corrente, Mese precedente, Anno corrente, Tutto) con `start`/`end` propagati a dashboard e grafici.
+- **Movimenti**: filtro date con calendario Material3, chip dei filtri che non vanno più a capo, dialog «Salva movimento» ridisegnato con categoria modificabile.
+- **Conti**: rimossa la sigla dell'UUID sotto il nome; tipi di conto su una riga.
+- **Investimenti**: i `null` su `operations[].quantity`/`unit_price` non mandano più l'app in errore (JSON con `coerceInputValues`) e gli errori mostrano un messaggio leggibile con «Riprova».
+- Verifiche: `assembleDebug`, 18 test unitari e `lintDebug` verdi; su dispositivo fisico (Realme RMX5061) verificati account multipli, cambio utente bidirezionale, aggiunta account e uscita con conferma. Restano da provare su device la scansione QR con fotocamera e l'autofill dei gestori di password (limite noto della versione Compose).
 
 ## Note
 

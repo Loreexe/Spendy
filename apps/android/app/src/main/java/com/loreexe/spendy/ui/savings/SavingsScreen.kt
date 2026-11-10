@@ -10,10 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +47,7 @@ import com.loreexe.spendy.data.model.NewTransaction
 import com.loreexe.spendy.data.model.SavingsData
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
+import com.loreexe.spendy.ui.components.EmptyState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -61,6 +58,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
+import androidx.compose.ui.res.painterResource
 
 data class SavingsUiState(
     val loading: Boolean = true,
@@ -192,7 +190,7 @@ fun SavingsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = viewModel::openCreate) {
-                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.savings_add))
+                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.savings_add))
             }
         },
     ) { padding ->
@@ -210,34 +208,14 @@ fun SavingsScreen(
                     )
                     androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
                 }
-                Card(
+                EmptyState(
+                    illustration = R.drawable.ill_empty_savings,
+                    title = stringResource(R.string.empty_savings_title),
+                    description = stringResource(R.string.empty_savings_body),
+                    actionLabel = stringResource(R.string.savings_add),
+                    onAction = viewModel::openCreate,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            Icons.Outlined.Savings,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            stringResource(R.string.savings_empty),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                        Button(onClick = viewModel::openCreate) {
-                            Text(stringResource(R.string.savings_add))
-                        }
-                    }
-                }
+                )
             }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),

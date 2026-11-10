@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type TrashItem, type TrashType } from "../api";
 import { ConfirmModal } from "../components/ConfirmModal";
+import { EmptyState } from "../components/EmptyState";
+import { SkeletonLines } from "../components/SkeletonLines";
 import { useToast } from "../components/Toast";
 
 const TYPE_LABELS: Record<TrashType, string> = {
@@ -180,11 +182,25 @@ export function TrashPage() {
           )}
         </div>
         {loading ? (
-          <p className="muted">Caricamento…</p>
+          <SkeletonLines rows={4} label="Caricamento cestino" />
         ) : items.length === 0 ? (
-          <p className="muted">Il cestino è vuoto.</p>
+          <EmptyState
+            illustration="trash"
+            title="Il cestino è vuoto"
+            description="Gli elementi eliminati restano qui per 30 giorni prima della rimozione definitiva."
+          />
         ) : visibleItems.length === 0 ? (
-          <p className="muted">Nessun elemento per questo filtro.</p>
+          <EmptyState
+            illustration="trash"
+            title="Nessun elemento per questo filtro"
+            description="Prova a cambiare tipo o intervallo di date per trovare gli elementi eliminati."
+            actionLabel="Mostra tutto"
+            onAction={() => {
+              setFilterType("");
+              setFilterFrom("");
+              setFilterTo("");
+            }}
+          />
         ) : (
           <ul className="entity-list">
             {visibleItems.map((item) => (

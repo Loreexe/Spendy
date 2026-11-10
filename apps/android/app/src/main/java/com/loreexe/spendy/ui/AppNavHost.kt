@@ -37,11 +37,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.net.URI
 import javax.inject.Inject
 
 object Routes {
     const val ONBOARDING = "onboarding"
     const val SERVER = "server"
+    const val ADD_ACCOUNT = "add-account"
     const val LOCAL_SETUP = "local-setup"
     const val LOCAL_GATE = "local-gate"
     const val MAIN = "main"
@@ -55,6 +57,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val DEVICES = "devices"
     const val PAIRING = "pairing"
+    const val PAIRING_LOGIN = "pairing-login"
 }
 
 @HiltViewModel
@@ -65,8 +68,17 @@ class StartViewModel @Inject constructor(
     private val _start = MutableStateFlow<String?>(null)
     val start: StateFlow<String?> = _start.asStateFlow()
 
+    private val _lastServer = MutableStateFlow<String?>(null)
+    val lastServer: StateFlow<String?> = _lastServer.asStateFlow()
+
+    /** true se esiste un account attivo (dopo login, cambio utente o uscita). */
+    fun hasSession(): Boolean = sessionStore.token != null
+
     init {
         viewModelScope.launch {
+            _lastServer.value = sessionStore.lastServerOrigin?.let { origin ->
+                runCatching { URI(origin).host ?: origin }.getOrDefault(origin)
+            }
             _start.value = when {
                 sessionStore.lastMode == AppMode.LOCAL && localFinanceRepository.hasProfile() ->
                     Routes.LOCAL_GATE
@@ -80,6 +92,7 @@ class StartViewModel @Inject constructor(
 @Composable
 fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
     val start by viewModel.start.collectAsStateWithLifecycle()
+    val lastServer by viewModel.lastServer.collectAsStateWithLifecycle()
     val destination = start
     if (destination == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -89,21 +102,45 @@ fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
     }
 
     val navController = rememberNavController()
+
+    // Dopo login, cambio account o uscita si riparte con uno stack pulito: così
+    // i ViewModel vengono ricreati e leggono il profilo attivo dal SessionStore.
+    // (Activity.recreate() non va bene: Navigation ripristina il back stack salvato.)
+    val goHome = {
+        val target = if (viewModel.hasSession()) Routes.MAIN else Routes.ONBOARDING
+        navController.navigate(target) {
+            popUpTo(0)
+        }
+    }
     NavHost(navController = navController, startDestination = destination) {
         composable(Routes.ONBOARDING) {
             OnboardingScreen(
                 onServer = { navController.navigate(Routes.SERVER) },
                 onLocal = { navController.navigate(Routes.LOCAL_SETUP) },
+                onPairing = { navController.navigate(Routes.PAIRING_LOGIN) },
+                lastServer = lastServer,
             )
         }
         composable(Routes.SERVER) {
             ServerFlowScreen(
                 onBack = { navController.popBackStack() },
-                onLoggedIn = {
-                    navController.navigate(Routes.MAIN) {
-                        popUpTo(0)
-                    }
-                },
+                onLoggedIn = { goHome() },
+                onPairing = { navController.navigate(Routes.PAIRING_LOGIN) },
+            )
+        }
+        composable(Routes.ADD_ACCOUNT) {
+            ServerFlowScreen(
+                addAccount = true,
+                onBack = { navController.popBackStack() },
+                onLoggedIn = { goHome() },
+                onPairing = { navController.navigate(Routes.PAIRING_LOGIN) },
+            )
+        }
+        composable(Routes.PAIRING_LOGIN) {
+            PairingScreen(
+                standalone = true,
+                onBack = { navController.popBackStack() },
+                onPaired = { goHome() },
             )
         }
         composable(Routes.LOCAL_SETUP) {
@@ -155,7 +192,11 @@ fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
             DataScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.PROFILE) {
-            ProfileScreen(onBack = { navController.popBackStack() })
+            ProfileScreen(
+                onBack = { navController.popBackStack() },
+                onAddAccount = { navController.navigate(Routes.ADD_ACCOUNT) },
+                onSessionChanged = { goHome() },
+            )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(
@@ -164,9 +205,6 @@ fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
                 onDevices = { navController.navigate(Routes.DEVICES) },
                 onPairing = { navController.navigate(Routes.PAIRING) },
                 onData = { navController.navigate(Routes.DATA) },
-                onLoggedOut = {
-                    navController.navigate(Routes.ONBOARDING) { popUpTo(0) }
-                },
             )
         }
         composable(Routes.DEVICES) {
@@ -175,9 +213,7 @@ fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
         composable(Routes.PAIRING) {
             PairingScreen(
                 onBack = { navController.popBackStack() },
-                onPaired = {
-                    navController.navigate(Routes.MAIN) { popUpTo(0) }
-                },
+                onPaired = { goHome() },
             )
         }
     }

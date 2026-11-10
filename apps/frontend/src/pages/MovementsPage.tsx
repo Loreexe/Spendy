@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { Tags, X } from "lucide-react";
 import {
   api,
@@ -13,6 +19,7 @@ import {
   type TransactionPayload,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
+import { EmptyState } from "../components/EmptyState";
 import { useToast } from "../components/Toast";
 import { amountClass, money, signedMoney, todayISO } from "../format";
 
@@ -125,6 +132,7 @@ export function MovementsPage() {
   const [date, setDate] = useState(todayISO());
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const amountInputRef = useRef<HTMLInputElement | null>(null);
 
   const [accountId, setAccountId] = useState("");
   const [savingsId, setSavingsId] = useState("");
@@ -612,6 +620,15 @@ export function MovementsPage() {
 
   if (loading && transactions.length === 0) return <LoadingScreen />;
 
+  const filtersActive = Boolean(
+    filterAccount ||
+      filterSavings ||
+      filterStart ||
+      filterEnd ||
+      filterCategory ||
+      filterTag,
+  );
+
   return (
     <div className="stack-page">
       <section className="page-heading">
@@ -658,6 +675,7 @@ export function MovementsPage() {
             <label>
               Importo
               <input
+                ref={amountInputRef}
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -1011,11 +1029,25 @@ export function MovementsPage() {
           </div>
         </div>
         {transactions.length === 0 ? (
-          <p className="muted">
-            {filterAccount || filterSavings || filterCategory || filterTag
-              ? "Nessun movimento per questo filtro."
-              : "Nessun movimento registrato."}
-          </p>
+          <EmptyState
+            illustration="movements"
+            title={
+              filtersActive
+                ? "Nessun movimento per questo filtro"
+                : "Nessun movimento registrato"
+            }
+            description={
+              filtersActive
+                ? "Prova a cambiare conto, periodo, categoria o tag per vedere più movimenti."
+                : "Registra la prima entrata, spesa o trasferimento: comparirà qui nel registro."
+            }
+            actionLabel={filtersActive ? "Mostra tutto" : "Aggiungi movimento"}
+            onAction={
+              filtersActive
+                ? clearFilters
+                : () => amountInputRef.current?.focus()
+            }
+          />
         ) : (
           <>
             <ul className="movement-list">

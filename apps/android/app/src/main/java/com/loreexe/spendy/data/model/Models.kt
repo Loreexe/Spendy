@@ -54,6 +54,12 @@ data class MeResponse(
 )
 
 @Serializable
+data class PeriodDto(
+    val start: String = "",
+    val end: String = "",
+)
+
+@Serializable
 data class DashboardDto(
     @SerialName("total_balance") val totalBalance: String = "0.00",
     @SerialName("total_patrimony") val totalPatrimony: String = "0.00",
@@ -64,6 +70,7 @@ data class DashboardDto(
     @SerialName("total_investments_cost") val totalInvestmentsCost: String = "0.00",
     @SerialName("total_investments_value") val totalInvestmentsValue: String = "0.00",
     @SerialName("positions_without_price") val positionsWithoutPrice: Int = 0,
+    val period: PeriodDto = PeriodDto(),
 )
 
 @Serializable
@@ -212,6 +219,8 @@ data class DashboardData(
     val investmentsCostCents: Long = 0,
     val investmentsValueCents: Long = 0,
     val positionsWithoutPrice: Int = 0,
+    val periodStart: String = "",
+    val periodEnd: String = "",
 )
 
 data class AccountData(
