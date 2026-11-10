@@ -35,14 +35,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -75,16 +73,14 @@ import com.loreexe.spendy.data.model.DashboardData
 import com.loreexe.spendy.data.model.SeriesData
 import com.loreexe.spendy.ui.investments.InvestmentsScreen
 import com.loreexe.spendy.ui.movements.MovementsScreen
+import com.loreexe.spendy.ui.components.LocalBottomBarInset
+import com.loreexe.spendy.ui.components.SpendyBottomBar
+import com.loreexe.spendy.ui.components.SpendyBottomBarItem
 import com.loreexe.spendy.ui.savings.SavingsScreen
 import com.loreexe.spendy.ui.theme.LocalSpendySemanticColors
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.formatIsoDateItalian
 import androidx.annotation.DrawableRes
-
-private data class MainTab(
-    val label: Int,
-    val icon: @Composable () -> Unit,
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,112 +97,100 @@ fun MainScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val tabs = listOf(
-        MainTab(R.string.nav_dashboard) { Icon(painterResource(R.drawable.ic_lucide_layout_dashboard), contentDescription = null) },
-        MainTab(R.string.nav_movements) { Icon(painterResource(R.drawable.ic_lucide_receipt_text), contentDescription = null) },
-        MainTab(R.string.nav_savings) { Icon(painterResource(R.drawable.ic_lucide_piggy_bank), contentDescription = null) },
-        MainTab(R.string.nav_investments) { Icon(painterResource(R.drawable.ic_lucide_trending_up), contentDescription = null) },
-        MainTab(R.string.nav_more) { Icon(painterResource(R.drawable.ic_lucide_more_horizontal), contentDescription = null) },
+        SpendyBottomBarItem(R.string.nav_dashboard, R.drawable.ic_lucide_layout_dashboard),
+        SpendyBottomBarItem(R.string.nav_movements, R.drawable.ic_lucide_receipt_text),
+        SpendyBottomBarItem(R.string.nav_savings, R.drawable.ic_lucide_piggy_bank),
+        SpendyBottomBarItem(R.string.nav_investments, R.drawable.ic_lucide_trending_up),
+        SpendyBottomBarItem(R.string.nav_more, R.drawable.ic_lucide_user),
     )
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    val darkTheme =
-                        MaterialTheme.colorScheme.background.luminance() < 0.5f
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(
-                                if (darkTheme) {
-                                    R.drawable.spendy_lockup_dark
-                                } else {
-                                    R.drawable.spendy_lockup_light
-                                },
-                            ),
-                            contentDescription = "Spendy",
-                            modifier = Modifier.height(26.dp),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp,
-            ) {
-                tabs.forEachIndexed { index, tab ->
-                    NavigationBarItem(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            scope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        icon = tab.icon,
-                        label = {
-                            Text(
-                                text = stringResource(tab.label),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    letterSpacing = 0.sp,
+    CompositionLocalProvider(LocalBottomBarInset provides 72.dp) {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                TopAppBar(
+                    title = {
+                        val darkTheme =
+                            MaterialTheme.colorScheme.background.luminance() < 0.5f
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(
+                                    if (darkTheme) {
+                                        R.drawable.spendy_lockup_dark
+                                    } else {
+                                        R.drawable.spendy_lockup_light
+                                    },
                                 ),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
+                                contentDescription = "Spendy",
+                                modifier = Modifier.height(26.dp),
+                                contentScale = ContentScale.Fit,
                             )
-                        },
-                    )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                    ),
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                ) {
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize(),
+                        beyondViewportPageCount = 1,
+                    ) { page ->
+                        when (page) {
+                            0 -> DashboardContent(
+                                state = state,
+                                onRetry = viewModel::load,
+                                onSelectPeriod = viewModel::setPeriod,
+                                onOpenAccounts = onAccounts,
+                                onOpenMovements = {
+                                    scope.launch { pagerState.animateScrollToPage(1) }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            1 -> MovementsScreen(
+                                onBack = null,
+                                showTopBar = false,
+                                onCategories = onCategories,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            2 -> SavingsScreen(
+                                showTopBar = false,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            3 -> InvestmentsScreen(
+                                showTopBar = false,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            4 -> MoreContent(
+                                onAccounts = onAccounts,
+                                onSearch = onSearch,
+                                onAutomations = onAutomations,
+                                onTrash = onTrash,
+                                onData = onData,
+                                onProfile = onProfile,
+                                onSettings = onSettings,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
                 }
             }
-        },
-    ) { padding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize().padding(padding),
-            beyondViewportPageCount = 1,
-        ) { page ->
-            when (page) {
-                0 -> DashboardContent(
-                    state = state,
-                    onRetry = viewModel::load,
-                    onSelectPeriod = viewModel::setPeriod,
-                    onOpenAccounts = onAccounts,
-                    onOpenMovements = {
-                        scope.launch { pagerState.animateScrollToPage(1) }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-                1 -> MovementsScreen(
-                    onBack = null,
-                    showTopBar = false,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                2 -> SavingsScreen(
-                    showTopBar = false,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                3 -> InvestmentsScreen(
-                    showTopBar = false,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                4 -> MoreContent(
-                    onAccounts = onAccounts,
-                    onCategories = onCategories,
-                    onSearch = onSearch,
-                    onAutomations = onAutomations,
-                    onTrash = onTrash,
-                    onData = onData,
-                    onProfile = onProfile,
-                    onSettings = onSettings,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+
+            SpendyBottomBar(
+                items = tabs,
+                selectedIndex = pagerState.currentPage,
+                onSelect = { index ->
+                    scope.launch { pagerState.animateScrollToPage(index) }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
@@ -331,7 +315,7 @@ private fun DashboardDataContent(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 28.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 28.dp + LocalBottomBarInset.current),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (empty) {
@@ -624,11 +608,6 @@ private fun DashboardChartsCard(data: DashboardData, series: SeriesData?) {
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             ChartSubtitle(stringResource(R.string.dashboard_charts_cashflow))
-                            Text(
-                                text = stringResource(R.string.dashboard_cashflow_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                             InOutBars(
                                 incomeCents = data.incomeCents,
                                 expenseCents = data.expenseCents,
@@ -646,11 +625,6 @@ private fun DashboardChartsCard(data: DashboardData, series: SeriesData?) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             ChartSubtitle(stringResource(R.string.dashboard_charts_cashflow))
-                            Text(
-                                text = stringResource(R.string.dashboard_cashflow_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                             InOutBars(
                                 incomeCents = data.incomeCents,
                                 expenseCents = data.expenseCents,
@@ -711,7 +685,7 @@ private fun BalanceChart(points: List<Pair<Long, Long>>) {
         return
     }
     val accent = MaterialTheme.colorScheme.primary
-    val info = MaterialTheme.colorScheme.secondary
+    val patrimonyColor = MaterialTheme.colorScheme.onSurfaceVariant
     val grid = MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)
     Canvas(modifier = Modifier.fillMaxWidth().height(170.dp)) {
         val all = points.flatMap { listOf(it.first, it.second) }
@@ -767,7 +741,7 @@ private fun BalanceChart(points: List<Pair<Long, Long>>) {
         }
         drawPath(
             path = patrimonyPath,
-            color = info.copy(alpha = 0.85f),
+            color = patrimonyColor.copy(alpha = 0.9f),
             style = Stroke(
                 width = 1.8.dp.toPx(),
                 cap = StrokeCap.Round,
@@ -787,7 +761,7 @@ private fun BalanceChart(points: List<Pair<Long, Long>>) {
     Spacer(Modifier.height(10.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         LegendDot(color = accent, label = "Saldo")
-        LegendDot(color = info, label = "Patrimonio")
+        LegendDot(color = patrimonyColor, label = "Patrimonio")
     }
 }
 
@@ -844,7 +818,6 @@ private fun CategoryBars(categories: List<CategoryTotal>) {
 @Composable
 private fun MoreContent(
     onAccounts: () -> Unit,
-    onCategories: () -> Unit,
     onSearch: () -> Unit,
     onAutomations: () -> Unit,
     onTrash: () -> Unit,
@@ -857,7 +830,7 @@ private fun MoreContent(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 28.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 28.dp + LocalBottomBarInset.current),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text(
@@ -870,13 +843,6 @@ private fun MoreContent(
                 title = stringResource(R.string.more_accounts),
                 subtitle = stringResource(R.string.more_accounts_hint),
                 onClick = onAccounts,
-            )
-            MenuDivider()
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_tag,
-                title = stringResource(R.string.more_categories),
-                subtitle = stringResource(R.string.more_categories_hint),
-                onClick = onCategories,
             )
             MenuDivider()
             MenuRow(

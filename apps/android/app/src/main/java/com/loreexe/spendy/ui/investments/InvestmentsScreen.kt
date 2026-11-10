@@ -1,6 +1,7 @@
 package com.loreexe.spendy.ui.investments
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
+import com.loreexe.spendy.ui.components.LocalBottomBarInset
 import com.loreexe.spendy.data.AppMode
 import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.ui.components.OverflowMenu
@@ -230,8 +232,10 @@ fun InvestmentsScreen(
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = viewModel::openCreate) {
-                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.investments_add))
+            Box(modifier = Modifier.padding(bottom = LocalBottomBarInset.current)) {
+                FloatingActionButton(onClick = viewModel::openCreate) {
+                    Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.investments_add))
+                }
             }
         },
     ) { padding ->
@@ -263,7 +267,7 @@ fun InvestmentsScreen(
             }
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalBottomBarInset.current),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (!showTopBar) {

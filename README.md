@@ -8,14 +8,15 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.2`. Consolida il **design system** (documento
-> `DESIGN.md` e tavola grafica in `docs/design/`), con token unici, icone Lucide
-> anche su Android, illustrazioni degli stati vuoti e skeleton. La dashboard
-> allinea web e Android: **Entrate/Uscite come flussi di cassa sui conti** e
-> **Saldo del periodo = Entrate − Uscite**, con il periodo «Tutto» corretto.
-> L'app Android ridisegna dashboard, Profilo e Impostazioni (cambio utente senza
-> login) e completa le icone Lucide; le automazioni hanno card a altezza fissa.
-> Restano fuori gruppi, MCP e notifiche push/email.
+> **Stato:** release `v0.8.3`. Livello operativo del **design system** in `design/`
+> (catalogo componenti, token, layout, matrice piattaforme, verifiche) e controlli
+> automatici in CI; componente condiviso `InlineMessage` su Profilo e Dispositivi.
+> **Entrate/Uscite** ora sono i **movimenti dei conti**: includono aperture e
+> trasferimenti (anche tra conti) e le operazioni con salvadanai e investimenti;
+> **Saldo del periodo = Entrate − Uscite** coincide con la somma delle variazioni
+> dei conti. Android ha la nuova barra **«Minimal»** ancorata al bordo, icona
+> profilo per «Altro», scorciatoia Categorie e tag in Movimenti e patrimonio
+> grigio nel grafico come sul web. Restano fuori gruppi, MCP e notifiche push/email.
 
 ## Screenshot
 
@@ -322,8 +323,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.2
-./scripts/update.sh v0.8.2
+./scripts/update.sh --dry-run v0.8.3
+./scripts/update.sh v0.8.3
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

@@ -209,7 +209,7 @@ p {
   height: 2.5rem;
   min-width: 2.75rem;
   min-height: 2.75rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft);
   border: 1px solid var(--line);
   cursor: pointer;
@@ -226,7 +226,7 @@ p {
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--accent);
   font-weight: 700;
   font-size: 0.95rem;
@@ -298,7 +298,7 @@ p {
 }
 
 .auth-logo-glow {
-  filter: drop-shadow(0 0 22px rgb(29 180 139 / 0.4));
+  filter: drop-shadow(0 0 22px var(--accent-glow));
 }
 
 /* Componenti base: skeleton, toast, modale (inventario DC-085) */
@@ -362,7 +362,7 @@ p {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgb(0 0 0 / 0.55);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -401,7 +401,7 @@ p {
   min-width: 2.75rem;
   min-height: 2.75rem;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text);
   border: none;
@@ -493,14 +493,14 @@ p {
 .chart-bar-track {
   min-width: 0;
   height: 0.85rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--line);
   opacity: 0.45;
 }
 
 .chart-bar-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   min-width: 2px;
 }
 
@@ -574,7 +574,7 @@ p {
 .inout-track {
   display: flex;
   height: 0.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--line);
 }
@@ -671,23 +671,6 @@ p {
   border: 0;
 }
 
-.error {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-radius: var(--radius);
-  padding: 0.65rem 0.8rem;
-  margin: 0;
-}
-
-.notice.success,
-.notice {
-  color: var(--accent-hover);
-  background: var(--accent-soft);
-  border-radius: var(--radius);
-  padding: 0.65rem 0.8rem;
-  margin: 0;
-}
-
 label {
   display: flex;
   flex-direction: column;
@@ -778,7 +761,7 @@ button.ghost:hover,
 
 .badge {
   display: inline-block;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.15rem 0.6rem;
   font-size: 0.78rem;
   font-weight: 700;
@@ -1032,7 +1015,7 @@ th {
   padding: 0.22rem;
   background: var(--bg1);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .preset-indicator {
@@ -1040,7 +1023,7 @@ th {
   top: 0.22rem;
   bottom: 0.22rem;
   left: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft);
   pointer-events: none;
   transition:
@@ -1058,7 +1041,7 @@ th {
   z-index: 1;
   padding: 0.42rem 0.8rem;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
   font-size: 0.84rem;
@@ -1086,7 +1069,7 @@ th {
   padding: 0.22rem 0.28rem 0.22rem 0.85rem;
   background: var(--bg1);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .dash-range:focus-within {
@@ -1127,7 +1110,7 @@ th {
 
 .dash-apply {
   padding: 0.42rem 0.85rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.82rem;
   font-weight: 700;
 }
@@ -1388,7 +1371,7 @@ th {
   justify-content: center;
   width: 6rem;
   height: 6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--accent-soft);
   color: var(--accent);
@@ -1411,7 +1394,7 @@ th {
   width: 2rem;
   height: 2rem;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--accent-ink);
   border: 2px solid var(--bg1);
@@ -1554,7 +1537,7 @@ th {
   height: 1.6rem;
   padding: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -1565,7 +1548,7 @@ th {
   content: "";
   position: absolute;
   inset: -0.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .search-clear:hover {
@@ -2210,7 +2193,7 @@ button.danger:hover {
   z-index: 1;
   width: 6rem;
   background: var(--bg1);
-  box-shadow: -8px 0 8px -8px rgba(16, 24, 20, 0.25);
+  box-shadow: -8px 0 8px -8px var(--scroll-shadow);
 }
 
 .import-table tr.row-error td:last-child {
@@ -2297,7 +2280,7 @@ button.danger:hover {
 }
 
 .pending-box .entity-list > li {
-  border-bottom-color: rgba(138, 90, 18, 0.2);
+  border-bottom-color: var(--warn-line);
 }
 
 .pending-box .entity-list > li:last-child {
@@ -2305,11 +2288,6 @@ button.danger:hover {
 }
 
 /* Investments */
-.notice.warning {
-  color: var(--warn);
-  background: var(--warn-soft);
-}
-
 .investment-account {
   display: flex;
   gap: 0.75rem;
@@ -2617,7 +2595,7 @@ button.danger:hover {
 .device-badge {
   margin-left: 0.45rem;
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: 0.7rem;
@@ -2690,7 +2668,7 @@ button.danger:hover {
   place-items: center;
   padding: 0.6rem;
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--qr-surface);
 }
 
 .pairing-details {

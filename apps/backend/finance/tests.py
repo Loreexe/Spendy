@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.urls import reverse
 from django.utils import timezone
@@ -170,7 +171,7 @@ class TransactionTests(FinanceTestBase):
         account = Account.objects.get(pk=self.account["id"])
         self.assertEqual(account.balance, 1380)
 
-    def test_account_transfer_is_not_income_or_expense(self):
+    def test_account_transfer_counts_both_sides(self):
         other = self.create_account(name="Banca", initial="0.00").data
         response = self.create_transaction(
             {
@@ -187,9 +188,12 @@ class TransactionTests(FinanceTestBase):
         self.assertEqual(Account.objects.get(pk=other["id"]).balance, 200)
 
         dashboard = self.client.get(reverse("finance-dashboard"))
-        self.assertEqual(dashboard.data["period_balance"], "0.00")
-        self.assertEqual(dashboard.data["income_total"], "0.00")
-        self.assertEqual(dashboard.data["expense_total"], "0.00")
+        # Entrate/Uscite sono i movimenti dei conti: il trasferimento genera
+        # un'uscita dal conto di origine e un'entrata sul conto di destinazione;
+        # l'apertura iniziale di 1000 è un'entrata del periodo.
+        self.assertEqual(dashboard.data["income_total"], "1200.00")
+        self.assertEqual(dashboard.data["expense_total"], "200.00")
+        self.assertEqual(dashboard.data["period_balance"], "1000.00")
 
     def test_transfer_to_savings_and_back(self):
         savings = self.create_savings(self.account["id"]).data
@@ -327,9 +331,11 @@ class SavingsPaymentTests(FinanceTestBase):
         )
 
         dashboard = self.client.get(reverse("finance-dashboard"))
-        # Pagamento dal salvadanaio: i conti non si muovono (ponte tecnico),
-        # quindi non entra nei flussi di cassa dei conti.
-        self.assertEqual(dashboard.data["expense_total"], "0.00")
+        # Pagamento dal salvadanaio: sul conto di appoggio la riga tecnica
+        # (+50) è un'entrata e la riga principale (−50) un'uscita; il saldo
+        # del periodo resta 0.
+        self.assertEqual(dashboard.data["income_total"], "150.00")
+        self.assertEqual(dashboard.data["expense_total"], "150.00")
         self.assertEqual(dashboard.data["period_balance"], "0.00")
 
     def test_partial_savings_payment_requires_confirmation(self):
@@ -434,9 +440,60 @@ class DashboardAndIsolationTests(FinanceTestBase):
         self.assertEqual(response.data["total_balance"], "900.00")
         self.assertEqual(response.data["total_savings"], "200.00")
         self.assertEqual(response.data["total_patrimony"], "1100.00")
-        self.assertEqual(response.data["period_balance"], "100.00")
+        # Movimenti dei conti: apertura 1000 + entrata 100 − trasferimento 200.
+        self.assertEqual(response.data["income_total"], "1100.00")
+        self.assertEqual(response.data["expense_total"], "200.00")
+        self.assertEqual(response.data["period_balance"], "900.00")
 
-    def test_entrate_uscite_are_account_cash_flows(self):
+    def test_account_period_balances_sum_to_period_balance(self):
+        account = self.create_account(initial="1000.00").data
+        other = self.create_account(name="Banca", initial="0.00").data
+        savings = self.create_savings(account["id"]).data
+        self.create_transaction(
+            {
+                "kind": "transfer",
+                "date": self.today.isoformat(),
+                "amount": "200.00",
+                "from_account": account["id"],
+                "to_savings": savings["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "transfer",
+                "date": self.today.isoformat(),
+                "amount": "50.00",
+                "from_account": account["id"],
+                "to_account": other["id"],
+            }
+        )
+        self.create_transaction(
+            {
+                "kind": "income",
+                "date": self.today.isoformat(),
+                "amount": "100.00",
+                "account": account["id"],
+            }
+        )
+        response = self.client.get(reverse("finance-dashboard"))
+        self.assertEqual(response.status_code, 200)
+        # La somma delle variazioni del periodo dei singoli conti deve coincidere
+        # con il Saldo del periodo, che a sua volta è Entrate − Uscite.
+        period_total = sum(
+            (Decimal(item["period_balance"]) for item in response.data["accounts"]),
+            Decimal("0"),
+        )
+        self.assertEqual(period_total, Decimal(response.data["period_balance"]))
+        self.assertEqual(
+            Decimal(response.data["income_total"])
+            - Decimal(response.data["expense_total"]),
+            Decimal(response.data["period_balance"]),
+        )
+        self.assertEqual(response.data["income_total"], "1150.00")
+        self.assertEqual(response.data["expense_total"], "250.00")
+        self.assertEqual(response.data["period_balance"], "900.00")
+
+    def test_entrate_uscite_are_account_movements(self):
         account = self.create_account(initial="1000.00").data
         savings = self.create_savings(account["id"]).data
         self.create_transaction(
@@ -474,11 +531,11 @@ class DashboardAndIsolationTests(FinanceTestBase):
             }
         )
         response = self.client.get(reverse("finance-dashboard"))
-        self.assertEqual(response.data["income_total"], "100.00")
-        self.assertEqual(response.data["expense_total"], "40.00")
-        # Apertura esclusa, trasferimento escluso, spesa da salvadanaio neutra:
-        # il saldo del periodo è esattamente Entrate − Uscite.
-        self.assertEqual(response.data["period_balance"], "60.00")
+        # Movimenti dei conti: aperture, redditi, spese, trasferimenti e
+        # ponte tecnico del salvadanaio contano tutti col loro segno.
+        self.assertEqual(response.data["income_total"], "1130.00")
+        self.assertEqual(response.data["expense_total"], "270.00")
+        self.assertEqual(response.data["period_balance"], "860.00")
 
     def test_deleted_transactions_are_excluded_from_flows(self):
         account = self.create_account(initial="1000.00").data
@@ -492,12 +549,12 @@ class DashboardAndIsolationTests(FinanceTestBase):
         )
         Transaction.objects.filter(pk=created.data["id"]).update(is_deleted=True)
         response = self.client.get(reverse("finance-dashboard"))
-        self.assertEqual(response.data["income_total"], "0.00")
+        # La spesa eliminata non conta; l'apertura del conto invece sì.
+        self.assertEqual(response.data["income_total"], "1000.00")
         self.assertEqual(response.data["expense_total"], "0.00")
-        # Nessun flusso attivo: il saldo del periodo è Entrate − Uscite = 0.
-        self.assertEqual(response.data["period_balance"], "0.00")
+        self.assertEqual(response.data["period_balance"], "1000.00")
 
-    def test_full_range_period_balance_is_net_cash_flow(self):
+    def test_full_range_period_balance_includes_opening(self):
         account = self.create_account(initial="1000.00").data
         self.create_transaction(
             {
@@ -519,9 +576,11 @@ class DashboardAndIsolationTests(FinanceTestBase):
             reverse("finance-dashboard"),
             {"start": "2000-01-01", "end": self.today.isoformat()},
         )
-        # Il saldo del periodo è Entrate − Uscite (10 − 40); l'apertura di 1000
-        # è capitale e resta visibile nel saldo totale dei conti.
-        self.assertEqual(response.data["period_balance"], "-30.00")
+        # Il saldo del periodo è Entrate − Uscite e include l'apertura:
+        # 1010 − 40 = 970, pari alla variazione dei saldi dei conti.
+        self.assertEqual(response.data["income_total"], "1010.00")
+        self.assertEqual(response.data["expense_total"], "40.00")
+        self.assertEqual(response.data["period_balance"], "970.00")
         self.assertEqual(response.data["total_balance"], "970.00")
 
     def test_accounts_expose_period_value_and_total_with_savings(self):

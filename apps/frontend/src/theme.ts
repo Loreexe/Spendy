@@ -12,6 +12,14 @@ const THEME_COLOR: Record<ResolvedTheme, string> = {
   light: "#F4F7F5",
 };
 
+/**
+ * Valori usati da JavaScript dove non è possibile leggere una custom property
+ * CSS (QR generato in SVG). Devono restare identici ai token omonimi di
+ * `styles/tokens.css`; `design/checks/check_design.py` verifica l'allineamento.
+ */
+export const QR_SURFACE = "#FFFFFF";
+export const QR_INK = "#0B0F0D";
+
 function isTheme(value: unknown): value is Theme {
   return value === "dark" || value === "light" || value === "system";
 }

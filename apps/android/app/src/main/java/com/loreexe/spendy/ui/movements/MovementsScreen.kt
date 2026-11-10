@@ -68,6 +68,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
+import com.loreexe.spendy.ui.components.LocalBottomBarInset
 import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.data.model.AccountData
@@ -264,6 +265,7 @@ class MovementsViewModel @Inject constructor(
 fun MovementsScreen(
     onBack: (() -> Unit)? = null,
     showTopBar: Boolean = true,
+    onCategories: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: MovementsViewModel = hiltViewModel(),
 ) {
@@ -296,22 +298,49 @@ fun MovementsScreen(
                     navigationIcon = {
                         if (onBack != null) TextButton(onClick = onBack) { Text("Indietro") }
                     },
+                    actions = {
+                        if (onCategories != null) {
+                            IconButton(onClick = onCategories) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_lucide_tag),
+                                    contentDescription = stringResource(R.string.more_categories),
+                                )
+                            }
+                        }
+                    },
                 )
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = viewModel::showAdd) {
-                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.movement_add))
+            Box(modifier = Modifier.padding(bottom = LocalBottomBarInset.current)) {
+                FloatingActionButton(onClick = viewModel::showAdd) {
+                    Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.movement_add))
+                }
             }
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (!showTopBar) {
-                Text(
-                    stringResource(R.string.movements_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.movements_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    )
+                    if (onCategories != null) {
+                        IconButton(onClick = onCategories) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_lucide_tag),
+                                contentDescription = stringResource(R.string.more_categories),
+                            )
+                        }
+                    }
+                }
             }
             Row(
                 modifier = Modifier

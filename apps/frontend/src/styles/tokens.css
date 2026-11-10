@@ -60,7 +60,18 @@
   --glow2: rgb(94 177 239 / 0.06);
   --radius: 18px;
   --radius-lg: 20px;
+  /* Pillole, badge, switch e avatar circolari. */
+  --radius-pill: 999px;
+  /* Sfondo del QR: deve restare chiaro in entrambi i temi per la leggibilità
+     del codice (eccezione intenzionale al tema, non un colore semantico). */
+  --qr-surface: #ffffff;
   --shadow-soft: 0 8px 28px rgb(0 0 0 / 0.35);
+  /* Superfici e ombre fisse: valori uguali nei due temi, non semantici.
+     Restano token perché sono valori condivisi dal design system. */
+  --overlay: rgb(0 0 0 / 0.55);
+  --scroll-shadow: rgba(16, 24, 20, 0.25);
+  --accent-glow: rgb(29 180 139 / 0.4);
+  --warn-line: rgba(138, 90, 18, 0.2);
   --motion-fast: 150ms;
   --motion-base: 200ms;
 }
@@ -88,7 +99,14 @@
   --glow2: #eaf0f8;
   --radius: 18px;
   --radius-lg: 20px;
+  --radius-pill: 999px;
+  --qr-surface: #ffffff;
   --shadow-soft: 0 8px 28px rgb(11 15 13 / 0.1);
+  /* Superfici e ombre fisse: valori uguali nei due temi, non semantici. */
+  --overlay: rgb(0 0 0 / 0.55);
+  --scroll-shadow: rgba(16, 24, 20, 0.25);
+  --accent-glow: rgb(29 180 139 / 0.4);
+  --warn-line: rgba(138, 90, 18, 0.2);
   --motion-fast: 150ms;
   --motion-base: 200ms;
 }

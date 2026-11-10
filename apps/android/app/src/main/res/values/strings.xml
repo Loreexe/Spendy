@@ -168,7 +168,6 @@
     <string name="more_settings_hint">Tema, sicurezza e dispositivi</string>
     <string name="dashboard_charts_balance">Andamento saldo e patrimonio</string>
     <string name="dashboard_charts_cashflow">Entrate vs uscite</string>
-    <string name="dashboard_cashflow_note">Flussi di cassa sui conti · esclusi trasferimenti e aperture.</string>
     <string name="dashboard_period_flow_note"> · Entrate − Uscite</string>
     <string name="dashboard_charts_categories">Spese per categoria</string>
     <string name="loading">Caricamento…</string>

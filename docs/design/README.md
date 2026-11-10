@@ -1,6 +1,6 @@
 # Spendy — visualizzazione del design
 
-Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) 0.9, allineata a **Spendy 0.8.2**
+Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) 0.9, allineata a **Spendy 0.8.3**
 (10 novembre 2026) e al sistema di design di prodotto **web + Android**. I valori vengono dai
 sorgenti reali: token CSS, costanti Compose, pacchetto logo, font self-hosted e illustrazioni
 dell'app. Non è un asset di prodotto e non introduce decisioni nuove.
@@ -56,6 +56,8 @@ per la variante chiara.
 ## Fonti e vincoli
 
 - `DESIGN.md` (fonte normativa pubblica) e `.spendy-wiki/UX.md` (decisioni private).
+- `../design/` (livello operativo: catalogo componenti, layout, piattaforme, verifiche, stato) e
+  `../design/checks/check_design.py` (controlli statici, eseguito anche in CI).
 - Token: `apps/frontend/src/styles/tokens.css`; proiezione Android in `Color.kt`, `Theme.kt`, `Type.kt`.
 - Logo: `apps/frontend/public/logo/` (pacchetto approvato, nessun font a runtime).
 - Font: `apps/frontend/public/fonts/` (Inter, SIL OFL) — incorporati nell'HTML.

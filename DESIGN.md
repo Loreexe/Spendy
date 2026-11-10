@@ -1,7 +1,7 @@
 # Spendy — Design
 
 Identità visiva e sistema di design di **prodotto**: interfaccia web (React/TypeScript) e app
-Android (Kotlin/Compose). Documento pubblico, allineato alla release **0.8.2** (10 novembre 2026).
+Android (Kotlin/Compose). Documento pubblico, allineato alla release **0.8.3** (10 novembre 2026).
 Le decisioni e la progettazione vivono in `.spendy-wiki/` (privata); questo file ne è la
 proiezione pubblica e la fonte normativa per l'implementazione.
 
@@ -92,15 +92,21 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 
 ### Forma, ombre, movimento
 
-- **Raggio**: `18 px` per superfici e controlli (card, campi, bottoni, toast, notice, skeleton),
-  `20 px` per le modali, `999 px` per pillole, badge, switch e avatar circolari.
+- **Raggio**: `--radius` `18 px` per superfici e controlli (card, campi, bottoni, toast, notice,
+  skeleton), `--radius-lg` `20 px` per le modali, `--radius-pill` `999 px` per pillole, badge, switch
+  e avatar circolari.
 - **Ombre**: una sola elevazione, `--shadow-soft = 0 8px 28px rgb(0 0 0 / .35)` nello scuro e
   `0 8px 28px rgb(11 15 13 / .10)` nel chiaro. Niente ombre multiple o colorate.
 - **Movimento**: `--motion-fast 150 ms` (hover, focus, piccoli cambi di stato) e
   `--motion-base 200 ms` (apertura di modali, pannelli, skeleton). Nessuna transizione oltre i 200 ms.
   Ogni animazione rispetta `prefers-reduced-motion` (override globale).
 - **Spaziatura**: base 4 px; ritmo 8/12/16/24/32. Contenuto fluido, nessuna larghezza fissa;
-  densità maggiore nelle tabelle, respiro nelle pagine.
+  densità maggiore nelle tabelle, respiro nelle pagine. Il ritmo è documentato, ma non è ancora
+  tokenizzato: è una convenzione osservata (proposta aperta in `design/decisions.md`).
+- **Superfici fisse**: `--overlay` (backdrop delle modali), `--scroll-shadow`, `--accent-glow`
+  (alone del logo nell'hero), `--warn-line` (bordo del riquadro in attesa) e `--qr-surface` (sfondo
+  del QR, chiaro in entrambi i temi per la scansione) sono token perché valori condivisi, non
+  perché semantici.
 
 ### Proiezione Android
 
@@ -155,11 +161,11 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 - **Mobile (≤760 px)**: la stessa navigazione diventa **bottom bar fissa** con icone + etichette,
   sfondo con blur e rispetto della safe-area; il contenuto ha padding di compensazione.
 - **Dashboard**: selettore periodo a pillole (Mese corrente, Mese precedente, Anno corrente,
-  Tutto); card **Saldo del periodo = Entrate − Uscite** (flussi di cassa dei conti) con intervallo,
+  Tutto); card **Saldo del periodo = Entrate − Uscite** (movimenti dei conti: aperture e trasferimenti inclusi) con intervallo,
   eventuali dividendi e quattro metriche (Saldo conti, Salvadanai, Investimenti con valore,
   Patrimonio); card **Grafici del periodo**
   con, nell'ordine, **Andamento saldo e patrimonio** (linea piena = saldo, tratteggio =
-  patrimonio), **Entrate vs uscite** (flussi di cassa dei conti: due card con frecce,
+  patrimonio), **Entrate vs uscite** (movimenti dei conti: due card con frecce,
   importo e percentuale del totale, una barra segmentata verde/corallo) e **Spese per categoria** (barre orizzontali); sotto, elenchi
   (conti, salvadanai, investimenti) e ultimi 6 movimenti. Su mobile la stessa sequenza in colonna.
 - Il periodo **Tutto** parte dalla prima attività reale del profilo, non da una data convenzionale:
@@ -169,7 +175,11 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 ### Android
 
 - **Bottom bar** a cinque voci: Dashboard, Movimenti, Salvadanai, Investimenti, **Altro**;
-  "Altro" apre Conti, Categorie e tag, Automazioni, Cestino, Profilo, Impostazioni.
+  "Altro" apre Conti, Automazioni, Cestino, Profilo, Impostazioni. Le **Categorie e tag** si
+  aprono dall'icona accanto al titolo della schermata Movimenti. La barra è
+  **ancorata al bordo** (60 px + safe area) con superficie piena e una sfumatura di 16 px in
+  alto, senza linea di stacco e senza blur. Nessun indicatore:
+  la voce attiva è d'accento (icone 20 px, etichette 9,5–10 sp sempre visibili).
 - **Dashboard**: stessa sequenza del web — saldo del periodo con quattro metriche, poi
   **Grafici del periodo** (andamento saldo/patrimonio, entrate vs uscite, spese per categoria).
 - **Profilo**: avatar a iniziali, nome/email/username, badge stato e ruolo; card «Dati personali»,
@@ -226,6 +236,10 @@ sempre un anello di 2 px con offset 2.
 - **Bottoni**: primario (accento su `accent-ink`), secondario (bordo `line`, sfondo trasparente),
   ghost (testo accento, hover `accent-soft`), distruttivo (`danger`), link testuale. Altezza
   minima 44 px su touch; il caricamento mostra spinner e mantiene la larghezza.
+- **Bottom bar mobile (Android)**: barra ancorata al bordo con superficie piena, cinque voci con
+  etichette sempre visibili; la voce attiva è d'accento senza indicatore; una sfumatura di 16 px
+  in alto evita lo stacco con il contenuto, che scorre dietro la barra senza essere visibile
+  attraverso; i FAB e i contenuti riservano 72 px in fondo.
 - **Campi**: label maiuscola, input/select/textarea con `bg2` e bordo `line`, errore con bordo e
   messaggio `danger` sotto il campo. Ricerca con icona e pulsante di pulizia.
 - **Card, liste, righe**: sfondo `bg1`, bordo `line`, raggio 18; densità maggiore nelle tabelle.
@@ -236,12 +250,14 @@ sempre un anello di 2 px con offset 2.
   `arrow-up-right`), importo e percentuale arrotondata del totale; sotto una barra unica
   segmentata con `up` (verde) e `down` (corallo). Identico su web e Android, con totali a zero
   gestiti senza divisioni per zero.
-  **Che cosa contano**: sono i **flussi di cassa sui conti**, cioè la somma netta delle righe
-  di ogni transazione; escludono trasferimenti interni e aperture di conto (voci di capitale),
-  includono acquisti/vendite di investimento e dividendi come flussi reali; le spese pagate dal
-  salvadanaio si annullano sul conto (ponte tecnico) e non rientrano nei flussi dei conti, pur
-  restando nelle Spese per categoria. Il **Saldo del periodo è per definizione Entrate − Uscite**;
-  aperture e trasferimenti netti restano fuori dai flussi e si riflettono nei saldi dei conti.
+  **Che cosa contano**: sono i **movimenti dei conti**, non dei salvadanai o degli investimenti:
+  ogni riga di conto nel periodo conta col suo segno. Quindi rientrano **aperture di conto** e
+  **trasferimenti** (anche tra conti dello stesso profilo: generano sia un'uscita sia un'entrata),
+  i versamenti/prelievi dai salvadanai e le operazioni sugli investimenti, comprese le righe
+  tecniche di ponte. Il **Saldo del periodo è per definizione Entrate − Uscite** e coincide con
+  la somma delle variazioni del periodo dei singoli conti; le spese pagate da un salvadanaio
+  restano comunque nelle Spese per categoria. L'interfaccia non mostra didascalie
+  «inclusi/esclusi»: i tre numeri devono semplicemente quadrare.
 - **Grafici**: andamento in SVG artigianale (web) / Canvas (Android), barre in CSS / Compose;
   niente librerie. Legenda ed etichette rendono il significato indipendente dal colore.
 - **Menu**: dropdown ancorato all'avatar; voce con icona Lucide, chiusura con Esc/esterno.
@@ -300,7 +316,17 @@ Due canali distinti, non sovrapposti:
 - **Cambiare un token**: aggiornare token web e costante Compose nello stesso commit, verificare i
   contrasti, rigenerare la tavola in `docs/design/`.
 - **Gerarchia dei documenti**: `.spendy-wiki/` (privata) decide; questo file è la proiezione
-  pubblica e normativa per l'implementazione; `docs/design/` è la rappresentazione grafica.
+  pubblica e normativa per l'implementazione; `design/` è il livello operativo (catalogo componenti,
+  regole di layout, matrice delle piattaforme, verifiche, stato di decisioni e proposte) e non
+  duplica i valori; `docs/design/` è la rappresentazione grafica.
+- **Manutenzione**: la skill `maintain-design-system` (privata, `.opencode/skills/` + wrapper
+  `.dsh/skills/`) e la sua versione pubblica `design/maintenance.md` guidano ogni modifica UI:
+  consultare il sistema, riusare token e componenti, aggiornare i documenti nella stessa modifica,
+  eseguire `check_contrast.py`, `check_design.py` e la build, dichiarare i controlli non eseguiti.
+  Non esiste manutenzione automatica in background.
+- **Controlli**: `design/checks/check_design.py` verifica token obbligatori, assenza di colori grezzi
+  nei CSS, allineamento dei valori JS/HTML ai token e parità web↔Android (le divergenze note sono
+  elencate e non nascoste); il job CI `design-system` esegue questo controllo insieme ai contrasti.
 - **Versioning**: questo documento segue la release del prodotto. La sezione "Cronologia" elenca
   ogni allineamento.
 - **Cosa non è negoziabile qui**: stack (Django + DRF, React/TypeScript, PostgreSQL, Kotlin +
@@ -308,6 +334,11 @@ Due canali distinti, non sovrapposti:
 
 ## Cronologia
 
+- **0.9.1 — 2026-11-10** — Release 0.8.3: navbar Android «Minimal» ancorata al bordo
+  (superficie piena con sfumatura, nessun indicatore), icona profilo per «Altro», Categorie e tag
+  in Movimenti, patrimonio grigio nel grafico come sul web; livello operativo `design/` e
+  `InlineMessage`; Entrate/Uscite ridefinite come movimenti dei conti (aperture e trasferimenti
+  inclusi).
 - **0.9 — 2026-11-10** — Release 0.8.2: allineamento design system e correzioni di collaudo: tema Sistema su web e Android; topbar
   continua con avatar e menu; Profilo e Impostazioni separati; Dispositivi e pairing QR; pagine
   Automazioni, Investimenti, Import, Cestino e Admin documentate; app Android inclusa; token unici;

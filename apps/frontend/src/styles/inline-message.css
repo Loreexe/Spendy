@@ -1,0 +1,25 @@
+/* Messaggi inline (InlineMessage): notice di successo/attenzione ed errori
+   di form. I colori arrivano dai token del tema attivo, quindi funzionano
+   sia in tema scuro sia in tema chiaro. */
+
+.error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.8rem;
+  margin: 0;
+}
+
+.notice.success,
+.notice {
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.8rem;
+  margin: 0;
+}
+
+.notice.warning {
+  color: var(--warn);
+  background: var(--warn-soft);
+}

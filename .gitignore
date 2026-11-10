@@ -34,6 +34,9 @@ maintenance/on
 AGENTS.md
 .opencode/
 
+# Skill dell'harness DSH (private, come .opencode/)
+.dsh/
+
 # Demo locale: snapshot del database (mai in Git)
 demo/*.sqlite3
 *.sqlite3.bak.*
@@ -42,3 +45,9 @@ demo/run/
 
 # APK di collaudo collegati nella radice per il plugin Anteprima
 Spendy-*.apk
+
+# Anteprime locali di design (non asset di prodotto)
+.preview/
+docs/design/navbar-preview.html
+docs/design/navbar-m3-preview.html
+docs/design/navbar-lab-preview.html

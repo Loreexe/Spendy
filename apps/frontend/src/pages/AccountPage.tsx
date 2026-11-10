@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Camera, KeyRound, Trash2, UserRound } from "lucide-react";
 import { api, type UserStatus } from "../api";
 import { useAuth } from "../auth";
+import { InlineMessage } from "../components/InlineMessage";
 
 const STATUS_LABEL: Record<UserStatus, string> = {
   pending: "In attesa di approvazione",
@@ -209,8 +210,8 @@ export function AccountPage() {
               {new Date(user.date_joined).toLocaleDateString("it-IT")}
             </span>
           </div>
-          {avatarMessage && <p className="notice success">{avatarMessage}</p>}
-          {avatarError && <p className="error">{avatarError}</p>}
+          {avatarMessage && <InlineMessage tone="success">{avatarMessage}</InlineMessage>}
+          {avatarError && <InlineMessage tone="error">{avatarError}</InlineMessage>}
         </div>
 
         <div className="profile-hero-actions">
@@ -278,7 +279,7 @@ export function AccountPage() {
                 <Trash2 size={14} aria-hidden="true" /> Rimuovi foto
               </button>
             )}
-            {profileError && <p className="error">{profileError}</p>}
+            {profileError && <InlineMessage tone="error">{profileError}</InlineMessage>}
             <div className="actions">
               <button type="submit" disabled={busy}>
                 {busy ? "Salvataggio…" : "Salva"}
@@ -308,7 +309,7 @@ export function AccountPage() {
                 <dd>{user.last_name || "—"}</dd>
               </div>
             </dl>
-            {profileMessage && <p className="notice success">{profileMessage}</p>}
+            {profileMessage && <InlineMessage tone="success">{profileMessage}</InlineMessage>}
           </>
         )}
       </section>
@@ -342,8 +343,8 @@ export function AccountPage() {
               </label>
             )}
           </div>
-          {accessMessage && <p className="notice success">{accessMessage}</p>}
-          {accessError && <p className="error">{accessError}</p>}
+          {accessMessage && <InlineMessage tone="success">{accessMessage}</InlineMessage>}
+          {accessError && <InlineMessage tone="error">{accessError}</InlineMessage>}
           <div className="actions">
             <button type="submit" disabled={busy}>
               {busy ? "Salvataggio…" : "Salva accesso"}
@@ -406,8 +407,8 @@ export function AccountPage() {
               />
             </label>
           </div>
-          {passwordMessage && <p className="notice success">{passwordMessage}</p>}
-          {passwordError && <p className="error">{passwordError}</p>}
+          {passwordMessage && <InlineMessage tone="success">{passwordMessage}</InlineMessage>}
+          {passwordError && <InlineMessage tone="error">{passwordError}</InlineMessage>}
           <div className="actions">
             <button type="submit" disabled={busy}>
               {busy ? "Aggiornamento…" : "Cambia password"}

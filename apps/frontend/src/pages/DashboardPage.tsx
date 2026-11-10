@@ -313,9 +313,6 @@ export function DashboardPage() {
                 <div className="dash-charts-row">
                   <div>
                     <h3 className="stat-label">Entrate vs uscite</h3>
-                    <p className="muted small">
-                      Flussi di cassa sui conti · esclusi trasferimenti interni e apertura.
-                    </p>
                     <InOutBars
                       income={data.income_total}
                       expense={data.expense_total}

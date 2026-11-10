@@ -15,6 +15,7 @@ import {
   type DeviceToken,
   type PairingCreated,
 } from "../api";
+import { QR_INK, QR_SURFACE } from "../theme";
 import { ConfirmModal } from "./ConfirmModal";
 import { SkeletonLines } from "./SkeletonLines";
 
@@ -307,8 +308,8 @@ export function DevicesSection({ query }: { query: string }) {
             <QRCodeSVG
               value={created.qr_payload}
               size={190}
-              bgColor="#ffffff"
-              fgColor="#0B0F0D"
+              bgColor={QR_SURFACE}
+              fgColor={QR_INK}
               level="M"
               marginSize={2}
               title="QR di associazione Spendy"

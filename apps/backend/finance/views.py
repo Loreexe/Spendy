@@ -214,33 +214,32 @@ class DashboardView(FinanceView):
 
         total_balance = sum((account.balance for account in accounts), ZERO)
         total_savings = sum((savings_account.balance for savings_account in savings), ZERO)
-        # Entrate/Uscite = flussi di cassa **sui conti**, calcolati sul saldo
-        # netto delle righe di ogni transazione: i trasferimenti interni e le
-        # aperture di conto sono voci di capitale (escluse), i movimenti pagati
-        # dal salvadanaio si annullano sui conti (ponte tecnico) e quindi non
-        # alterano i flussi. Acquisti, vendite e dividendi restano flussi reali.
-        capital_kinds = (Transaction.Kind.OPENING, Transaction.Kind.TRANSFER)
-        cash_flows = (
-            Line.objects.filter(
-                account__profile=profile,
-                transaction__date__gte=start,
-                transaction__date__lte=end,
-                transaction__is_deleted=False,
-            )
-            .exclude(transaction__kind__in=capital_kinds)
-            .values("transaction_id")
-            .annotate(net=Sum("amount"))
+        # Entrate/Uscite = **movimenti dei conti**, non dei salvadanai o degli
+        # investimenti: ogni riga di conto nel periodo conta col suo segno.
+        # Quindi entrano anche aperture di conto e trasferimenti (compresi
+        # quelli tra conti, che generano sia un'uscita sia un'entrata), i
+        # versamenti/prelievi dai salvadanai e le operazioni sugli investimenti,
+        # comprese le righe tecniche di ponte. Il Saldo del periodo è per
+        # definizione Entrate − Uscite e coincide con la variazione dei saldi
+        # dei conti nel periodo.
+        account_lines = Line.objects.filter(
+            account__profile=profile,
+            transaction__date__gte=start,
+            transaction__date__lte=end,
+            transaction__is_deleted=False,
         )
-        income_total = sum(
-            (row["net"] for row in cash_flows if row["net"] > ZERO), ZERO
+        income_total = (
+            account_lines.filter(amount__gt=ZERO).aggregate(total=Sum("amount"))[
+                "total"
+            ]
+            or ZERO
         )
-        expense_total = -sum(
-            (row["net"] for row in cash_flows if row["net"] < ZERO), ZERO
+        expense_total = -(
+            account_lines.filter(amount__lt=ZERO).aggregate(total=Sum("amount"))[
+                "total"
+            ]
+            or ZERO
         )
-        # Il Saldo del periodo è per definizione Entrate − Uscite: stessa base
-        # di flussi di cassa dei conti, così i numeri delle card quadrano
-        # sempre. Le variazioni di capitale (aperture, trasferimenti) restano
-        # fuori dai flussi e si vedono nella variazione dei saldi dei conti.
         period_balance = income_total - expense_total
         recent = (
             Transaction.objects.filter(profile=profile)

@@ -74,8 +74,9 @@ class MovementTrashTests(TrashTestBase):
             self.client.get(reverse("finance-transactions")).data["count"], 1
         )
         dashboard = self.client.get(reverse("finance-dashboard")).data
-        # Spesa eliminata: nessun flusso; l'apertura del conto non è un flusso.
-        self.assertEqual(dashboard["period_balance"], "0.00")
+        # Spesa eliminata: non conta. L'apertura del conto invece è un
+        # movimento del conto e rientra nel saldo del periodo.
+        self.assertEqual(dashboard["period_balance"], "1000.00")
         self.assertEqual(Account.objects.get(pk=self.account["id"]).balance, 1000)
         trashed = self.trash()
         self.assertEqual(trashed.data["count"], 1)

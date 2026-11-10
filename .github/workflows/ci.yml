@@ -19,6 +19,18 @@ jobs:
       - name: Update script tests
         run: bash scripts/test_update.sh
 
+  design-system:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Controlli del design system
+        run: |
+          python3 design/checks/check_design.py
+          python3 docs/design/build/check_contrast.py
+
   backend:
     runs-on: ubuntu-latest
     services:
