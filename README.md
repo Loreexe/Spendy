@@ -8,15 +8,19 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.4`. Livello
+> **Stato:** release `v0.8.5`. Livello
 > operativo del **design system** in `design/` (catalogo componenti, token, layout,
 > matrice piattaforme, verifiche) e controlli automatici in CI. La **Dashboard**
-> diventa **Home**: portafoglio nella card saldo, azioni rapide, ultimi 3 movimenti
-> e tre grafici separati; il menu dell'avatar mostra foto, nome ed email. I
+> diventa **Home**: portafoglio nella card saldo, grafici, elenchi di conti e salvadanai
+> e ultimi movimenti; il menu dell'avatar mostra foto, nome ed email. I
 > **movimenti hanno l'orario** (`HH:MM`) e le **categorie hanno un'icona** scelta da
 > un catalogo Lucide. Su Android la barra ha **Home, Movimenti, Salvadanai,
 > Investimenti, Automazioni**, l'avatar è in alto a destra e i Conti si aprono dal
 > portafoglio; l'archivio personale passa allo **schema 5** con ora e icone.
+> La **0.8.5** rifinisce la Home web (niente azioni rapide, ultimi **4 movimenti
+> compatti** con icona categoria a sinistra e icona del tipo) e la pagina **Conti**
+> (saldo tra parentesi accanto al nome, nome e tipo modificabili). L'app Android
+> resta la **0.8.4**: nessuna modifica al client nativo.
 > Restano fuori gruppi, MCP e notifiche push/email.
 
 ## Screenshot
@@ -38,8 +42,8 @@ Immagini catturate dall'ambiente demo (dati finti):
 
 ## Funzionalità
 
-- **Home** con saldo totale, patrimonio, saldo del periodo, portafoglio, azioni rapide, ultimi movimenti, entrate e uscite e grafici per categoria.
-- **Conti personali** con nome, tipo, saldo iniziale e archiviazione.
+- **Home** con saldo totale, patrimonio, saldo del periodo, portafoglio, grafici, elenchi di conti e salvadanai e ultimi movimenti.
+- **Conti personali** con nome e tipo modificabili, saldo iniziale e archiviazione; il saldo è mostrato tra parentesi accanto al nome.
 - **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento, con **data e ora**, categorie con icona e tag.
 - **Salvadanai** con conto di appoggio, versamenti e prelievi.
 - **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura parziale dal conto di appoggio.
@@ -327,8 +331,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.4
-./scripts/update.sh v0.8.4
+./scripts/update.sh --dry-run v0.8.5
+./scripts/update.sh v0.8.5
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

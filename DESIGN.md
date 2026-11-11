@@ -1,11 +1,11 @@
 # Spendy — Design
 
 Identità visiva e sistema di design di **prodotto**: interfaccia web (React/TypeScript) e app
-Android (Kotlin/Compose). Documento pubblico, versione **0.9.2** (11 novembre 2026), allineato alla release di prodotto **0.8.4**.
+Android (Kotlin/Compose). Documento pubblico, versione **0.9.3** (11 novembre 2026), allineato alla release di prodotto **0.8.5**.
 Le decisioni e la progettazione vivono in `.spendy-wiki/` (privata); questo file ne è la
 proiezione pubblica e la fonte normativa per l'implementazione.
 
-> **Versione 0.9.2 — release di prodotto 0.8.4 (2026-11-11, DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
+> **Versione 0.9.3 — release di prodotto 0.8.5 (2026-11-11):** rifiniture web della Home (niente azioni rapide, 4 movimenti compatti, icone a sinistra) e pagina Conti (saldo tra parentesi, nome/tipo modificabili); Android invariato alla 0.8.4. In precedenza, **0.9.2 — release di prodotto 0.8.4 (DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
 > movimenti, icone delle categorie. Le parti contrassegnate «0.8.4» sono **implementate e
 > verificate sul web e sul backend**; Android è **compilato e testato** (`assembleDebug`, 31 test
 > unitari, `lintDebug`) ma **non provato su device/emulatore** in questa sessione. La release è
@@ -185,12 +185,13 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
   corrente, Mese precedente, Anno corrente, Tutto); card **Saldo del periodo = Entrate − Uscite**
   con intervallo, eventuali dividendi e quattro metriche (Saldo conti, Salvadanai, Investimenti con
   valore, Patrimonio), con **icona wallet in alto a destra** che apre il popover dei conti (saldi e
-  «Tutti i conti»); azioni **+ Movimento** e **Trasferimento** che aprono il registro con il tipo preselezionato;
-  **ultimi 3 movimenti** con data, ora e icona categoria; sotto, **tre card separate** nell'ordine
-  **Entrate vs uscite** (due card con frecce, importo e percentuale del totale, barra segmentata
-  verde/corallo), **Andamento saldo e patrimonio** (linea piena = saldo, tratteggio = patrimonio) e
-  **Spese per categoria** (barre orizzontali); per la semantica di Entrate/Uscite vale §08. Le
-  card-elenco di Conti e Salvadanai non sono più mostrate in Home. Su mobile la stessa sequenza in colonna.
+  «Tutti i conti»); sotto, la card **«Grafici del periodo»** con **Andamento saldo e patrimonio**
+  (linea piena = saldo, tratteggio = patrimonio), poi **Entrate vs uscite** (due card con frecce,
+  importo e percentuale del totale, barra segmentata verde/corallo) e **Spese per categoria**
+  (barre orizzontali) affiancate; per la semantica di Entrate/Uscite vale §08. Seguono gli
+  **elenchi Conti e Salvadanai** e gli **ultimi 4 movimenti compatti** (icona categoria a sinistra, icona del tipo accanto all'importo, senza righe contabili). Modifica successiva alla `0.8.4`
+  (non rilasciata): rimossi i tasti `+ Movimento`/`Trasferimento`; la prima card resta invariata.
+  Su mobile la stessa sequenza in colonna.
 - Il periodo **Tutto** parte dalla prima attività reale del profilo, non da una data convenzionale:
   il grafico copre i dati con bucket uniformi (massimo 95 punti, l'ultimo sulla data finale).
 - Desktop, tablet e mobile usano lo stesso codice: griglie fluide, nessuna larghezza fissa.
@@ -239,7 +240,7 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 | --- | --- | --- |
 | `/setup` | Primo avvio (admin) | pagina guidata |
 | `/login`, `/register`, `/pending` | Accesso, registrazione, attesa approvazione | pagina + hero con glow |
-| `/` | Home (ex Dashboard) | pagina, pill periodo, azioni rapide, grafici |
+| `/` | Home (ex Dashboard) | pagina, pill periodo, card saldo con portafoglio, grafici, elenchi conti/salvadanai, ultimi movimenti |
 | `/movements` | Movimenti | pagina, form inline, modale tassonomia, filtri |
 | `/accounts` | Conti | pagina, form inline |
 | `/savings` | Salvadanai | pagina, form inline |
@@ -375,6 +376,7 @@ Due canali distinti, non sovrapposti:
 
 ## Cronologia
 
+- **0.9.3 — 2026-11-11** — Release di prodotto 0.8.5, **pubblicata** (tag `v0.8.5`): Home web ripristinata senza azioni rapide, ultimi 4 movimenti compatti con icone categoria/tipo e pagina Conti con saldo tra parentesi e nome/tipo modificabili; Android invariato alla 0.8.4.
 - **0.9.2 — 2026-11-11** — Release di prodotto 0.8.4, **pubblicata** (tag `v0.8.4`): Home al posto di
   Dashboard (icona `house`) e navigazione web/Android senza «Altro» con Conti dal portafoglio; menu
   avatar con testata foto/nome/cognome/email e avatar con foto (fallback iniziali); orario dei

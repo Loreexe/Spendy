@@ -15,9 +15,9 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { AccountsMenu } from "../components/AccountsMenu";
-import { CategoryIcon } from "../components/CategoryIcon";
 import { CategoryBars, InOutBars, TrendChart } from "../components/Charts";
 import { LoadingScreen } from "../components/Guards";
+import { MovementKindIcon, TransactionIcon } from "../components/TransactionIcon";
 import {
   amountClass,
   firstOfMonthISO,
@@ -42,16 +42,30 @@ function lineLabel(line: Line): string {
   return `${target}${role}`;
 }
 
-function TransactionRows({ transaction }: { transaction: Transaction }) {
+function TransactionRows({
+  transaction,
+  compact = false,
+}: {
+  transaction: Transaction;
+  compact?: boolean;
+}) {
   const time = normalizeTime(transaction.time);
   return (
-    <li className="movement-row">
+    <li className={`movement-row${compact ? " movement-row-compact" : ""}`}>
+      <span className="movement-leading">
+        <TransactionIcon transaction={transaction} size={compact ? 24 : 20} />
+      </span>
       <div className="movement-main">
         <div className="movement-title">
           <strong>{transaction.description || transaction.kind_label}</strong>
           <span className={`money ${amountClass(transaction.amount)}`}>
             {money(transaction.amount)}
           </span>
+          {compact && (
+            <span className="movement-kind" title={transaction.kind_label}>
+              <MovementKindIcon kind={transaction.kind} />
+            </span>
+          )}
         </div>
         <span className="muted small">
           {formatDate(transaction.date)}
@@ -60,22 +74,23 @@ function TransactionRows({ transaction }: { transaction: Transaction }) {
             <>
               {" · "}
               <span className="movement-category">
-                <CategoryIcon name={transaction.category.icon} size={14} />
                 {transaction.category.name}
               </span>
             </>
           ) : null}
         </span>
-        <ul className="lines">
-          {transaction.lines.map((line) => (
-            <li key={line.id}>
-              <span>{lineLabel(line)}</span>
-              <span className={amountClass(line.amount)}>
-                {signedMoney(line.amount)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {!compact && (
+          <ul className="lines">
+            {transaction.lines.map((line) => (
+              <li key={line.id}>
+                <span>{lineLabel(line)}</span>
+                <span className={amountClass(line.amount)}>
+                  {signedMoney(line.amount)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </li>
   );
@@ -315,13 +330,93 @@ export function DashboardPage() {
               </div>
             </section>
 
-            <section className="actions home-actions" aria-label="Azioni rapide">
-              <Link className="button" to="/movements?new=expense">
-                + Movimento
-              </Link>
-              <Link className="button secondary" to="/movements?new=transfer">
-                Trasferimento
-              </Link>
+            <section className="card dash-charts">
+              <div className="card-heading">
+                <h2>Grafici del periodo</h2>
+              </div>
+              {series && (
+                <div className="stack">
+                  <div>
+                    <h3 className="stat-label">Andamento saldo e patrimonio</h3>
+                    <TrendChart points={series.buckets} />
+                  </div>
+                  <div className="dash-charts-row">
+                    <div>
+                      <h3 className="stat-label">Entrate vs uscite</h3>
+                      <InOutBars
+                        income={data.income_total}
+                        expense={data.expense_total}
+                      />
+                    </div>
+                    <div>
+                      <h3 className="stat-label">Spese per categoria</h3>
+                      <CategoryBars rows={series.by_category} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <section className="two-columns equal">
+              <div className="card">
+                <div className="card-heading">
+                  <h2>Conti</h2>
+                  <Link to="/accounts">Gestisci</Link>
+                </div>
+                {data.accounts.length === 0 ? (
+                  <p className="muted">Nessun conto. Creane uno per iniziare.</p>
+                ) : (
+                  <ul className="balance-list">
+                    {data.accounts.map((account) => (
+                      <li key={account.id}>
+                        <div>
+                          <strong>{account.name}</strong>
+                          <span className="muted small">
+                            {" "}
+                            · {account.type_label}
+                            {account.archived ? " · archiviato" : ""}
+                          </span>
+                        </div>
+                        <span className="account-amounts">
+                          <span className={amountClass(account.period_balance ?? "0")}>
+                            {money(account.period_balance ?? "0.00")}
+                          </span>
+                          <span className="muted small">
+                            ({money(account.total_with_savings ?? account.balance)})
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="card">
+                <div className="card-heading">
+                  <h2>Salvadanai</h2>
+                  <Link to="/savings">Gestisci</Link>
+                </div>
+                {data.savings.length === 0 ? (
+                  <p className="muted">Nessun salvadanaio.</p>
+                ) : (
+                  <ul className="balance-list">
+                    {data.savings.map((savings) => (
+                      <li key={savings.id}>
+                        <div>
+                          <strong>{savings.name}</strong>
+                          <span className="muted small">
+                            {" "}
+                            · appoggio {savings.backing_account_name}
+                          </span>
+                        </div>
+                        <span className={amountClass(savings.balance)}>
+                          {money(savings.balance)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </section>
 
             <section className="card">
@@ -334,44 +429,17 @@ export function DashboardPage() {
               ) : (
                 <ul className="movement-list">
                   {data.recent_transactions
-                    .slice(0, 3)
+                    .slice(0, 4)
                     .map((transaction) => (
                       <TransactionRows
                         key={transaction.id}
                         transaction={transaction}
+                        compact
                       />
                     ))}
                 </ul>
               )}
             </section>
-
-            {series && (
-              <>
-                <section className="card">
-                  <div className="card-heading">
-                    <h2>Entrate vs uscite</h2>
-                  </div>
-                  <InOutBars
-                    income={data.income_total}
-                    expense={data.expense_total}
-                  />
-                </section>
-
-                <section className="card">
-                  <div className="card-heading">
-                    <h2>Andamento saldo e patrimonio</h2>
-                  </div>
-                  <TrendChart points={series.buckets} />
-                </section>
-
-                <section className="card">
-                  <div className="card-heading">
-                    <h2>Spese per categoria</h2>
-                  </div>
-                  <CategoryBars rows={series.by_category} />
-                </section>
-              </>
-            )}
           </>
         )}
       </div>

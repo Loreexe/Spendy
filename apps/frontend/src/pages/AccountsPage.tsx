@@ -30,6 +30,9 @@ export function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [editingType, setEditingType] = useState<AccountType>("cash");
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -62,6 +65,41 @@ export function AccountsPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Creazione non riuscita.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEdit(account: Account) {
+    setEditingId(account.id);
+    setEditingName(account.name);
+    setEditingType(account.type);
+    setError(null);
+    setMessage(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditingName("");
+    setEditingType("cash");
+  }
+
+  async function handleUpdate(event: FormEvent) {
+    event.preventDefault();
+    if (editingId === null) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.updateAccount(editingId, {
+        name: editingName.trim(),
+        type: editingType,
+      });
+      setMessage("Conto aggiornato.");
+      cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Aggiornamento non riuscito.");
     } finally {
       setBusy(false);
     }
@@ -178,36 +216,89 @@ export function AccountsPage() {
             <ul className="entity-list">
               {accounts.map((account) => (
                 <li key={account.id} className={account.archived ? "archived account-row" : "account-row"}>
-                  <div className="account-line">
-                    <strong>{account.name}</strong>
-                    <span className={`money tnum ${amountClass(account.balance)}`}>
-                      {money(account.balance)}
-                    </span>
-                  </div>
-                  <div className="account-line">
-                    <span className="muted small">
-                      {account.type_label}
-                      {account.archived ? " · archiviato" : ""}
-                    </span>
-                    <div className="actions">
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => void toggleArchive(account)}
-                        disabled={busy}
-                      >
-                        {account.archived ? "Riattiva" : "Archivia"}
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => setConfirmDelete(account)}
-                        disabled={busy}
-                      >
-                        Elimina
-                      </button>
-                    </div>
-                  </div>
+                  {editingId === account.id ? (
+                    <form className="account-edit stack" onSubmit={handleUpdate}>
+                      <div className="form-grid">
+                        <label>
+                          Nome
+                          <input
+                            value={editingName}
+                            onChange={(event) => setEditingName(event.target.value)}
+                            maxLength={80}
+                            required
+                            autoFocus
+                          />
+                        </label>
+                        <label>
+                          Tipo
+                          <select
+                            value={editingType}
+                            onChange={(event) => setEditingType(event.target.value as AccountType)}
+                          >
+                            {TYPES.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="actions">
+                        <button type="submit" disabled={busy}>
+                          {busy ? "Salvataggio…" : "Salva"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={cancelEdit}
+                          disabled={busy}
+                        >
+                          Annulla
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="account-line">
+                        <span className="account-name">
+                          <strong>{account.name}</strong>
+                          <span className={`money tnum ${amountClass(account.balance)}`}>
+                            ({money(account.balance)})
+                          </span>
+                        </span>
+                        {account.archived && <span className="badge">Archiviato</span>}
+                      </div>
+                      <div className="account-line">
+                        <span className="muted small">{account.type_label}</span>
+                        <div className="actions">
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => startEdit(account)}
+                            disabled={busy}
+                          >
+                            Modifica
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => void toggleArchive(account)}
+                            disabled={busy}
+                          >
+                            {account.archived ? "Riattiva" : "Archivia"}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => setConfirmDelete(account)}
+                            disabled={busy}
+                          >
+                            Elimina
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

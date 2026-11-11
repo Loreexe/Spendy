@@ -20,8 +20,9 @@ import {
   type TransactionPayload,
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
-import { EmptyState } from "../components/EmptyState";
 import { CategoryIcon } from "../components/CategoryIcon";
+import { TransactionIcon } from "../components/TransactionIcon";
+import { EmptyState } from "../components/EmptyState";
 import { CategoryIconPicker } from "../components/CategoryIconPicker";
 import { CategorySelect } from "../components/CategorySelect";
 import { useToast } from "../components/Toast";
@@ -76,6 +77,9 @@ function MovementItem({
   const time = normalizeTime(transaction.time);
   return (
     <li className="movement-row">
+      <span className="movement-leading">
+        <TransactionIcon transaction={transaction} />
+      </span>
       <div className="movement-main">
         <div className="movement-title">
           <strong>{transaction.description || transaction.kind_label}</strong>
@@ -90,7 +94,6 @@ function MovementItem({
             <>
               {" · "}
               <span className="movement-category">
-                <CategoryIcon name={transaction.category.icon} size={14} />
                 {transaction.category.name}
               </span>
             </>

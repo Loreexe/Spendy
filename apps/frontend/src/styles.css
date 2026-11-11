@@ -3059,3 +3059,67 @@ button.danger:hover {
 .import-table input[aria-invalid="true"] {
   border-color: var(--danger);
 }
+
+/* Icona che apre la riga di un movimento: categoria (o tipo) a sinistra. */
+.movement-leading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.movement-main {
+  flex: 1 1 auto;
+}
+
+/* Conti: saldo tra parentesi accanto al nome, modifica inline. */
+.account-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.account-edit {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .movement-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .movement-row > .actions {
+    flex-basis: 100%;
+    margin-left: calc(3rem + 1rem);
+  }
+}
+
+/* Home: ultimi movimenti compatti, icona tipo e riga a tutta larghezza. */
+.movement-row-compact {
+  width: 100%;
+  align-items: center;
+}
+
+.movement-row-compact .movement-title {
+  width: 100%;
+}
+
+.movement-kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.movement-row-compact .movement-leading {
+  width: 3rem;
+  height: 3rem;
+}

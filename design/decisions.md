@@ -89,7 +89,7 @@ Nessun elemento è stato approvato come deprecato. Candidati da valutare (richie
 
 ## Nota sul versionamento
 
-`DESIGN.md` **0.9.2** (2026-11-11), release di prodotto 0.8.4 (DC-114…117), descrive: Home e navigazione,
+`DESIGN.md` **0.9.3** (2026-11-11), release di prodotto 0.8.5 (DC-114…117), descrive: Home e navigazione,
 foto/avatar e menu, orario dei movimenti, icone delle categorie. Backend e web sono verificati;
 Android è compilato e testato ma non provato su device. Le modifiche del
 livello operativo (catalogo, regole, controlli, consolidamenti di token senza cambio visivo) **non**

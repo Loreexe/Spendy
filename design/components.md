@@ -32,6 +32,7 @@ Legenda adozione: **condiviso** = usato da più schermate · **locale** = in una
 | `TrendChart` | `Charts.tsx` | `points: SeriesPoint[]` | linea piena saldo, tratteggio patrimonio, legenda | Home web |
 | `InOutBars` | `Charts.tsx` | `income`, `expense` (totali) | percentuali, barra segmentata `up`/`down`, totali a zero | Home web |
 | `CategoryBars` | `Charts.tsx` | `rows: CategoryTotal[]` con icona della categoria (0.8.4) | barre orizzontali, icone, etichette | Home web |
+| `TransactionIcon` | `TransactionIcon.tsx` | `transaction`, `size`; esporta `MovementKindIcon` | icona categoria (fallback icona del tipo) a sinistra della riga movimento; icona del tipo nelle righe compatte della Home | dashboard, Movimenti |
 | `ImportExportSection` | `ImportExportSection.tsx` | import/export nelle Impostazioni; CSV a 6 colonne e archivio schema 5 (0.8.4) | analisi, anteprima, esito, errore | Impostazioni |
 | `DevicesSection` | `DevicesSection.tsx` | dispositivi, pairing QR/codice | caricamento, rinomina, revoca, QR creato/scaduto, errore | Impostazioni |
 

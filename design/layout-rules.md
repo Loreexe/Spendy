@@ -41,24 +41,27 @@ Regole:
 
 - **Pagina** per flussi lunghi e liste principali; **modale** per conferme e dettagli brevi;
   **CRUD inline** nella pagina per conti, salvadanai, automazioni, movimenti.
-- **Home**: pill periodo → riepilogo con 4 metriche e portafoglio → azioni rapide → ultimi 3 movimenti → grafici (entrate vs uscite, andamento, categorie). Su mobile la stessa sequenza in colonna. Fino alla `0.8.3` la pagina si chiamava Dashboard, non aveva azioni rapide e mostrava gli elenchi di conti e salvadanai.
+- **Home (web)**: pill periodo → riepilogo con 4 metriche e portafoglio → card «Grafici del periodo» (andamento, entrate vs uscite e categorie) → elenchi Conti/Salvadanai → ultimi 4 movimenti compatti (icona categoria a sinistra, icona del tipo accanto all'importo, senza righe contabili). Su mobile la stessa sequenza in colonna. Modifica successiva alla `0.8.4` (non rilasciata): rimossi i tasti `+ Movimento`/`Trasferimento` e ripristinato il resto della Home precedente, mantenendo la prima card con il portafoglio.
 - **Impostazioni/Profilo**: blocchi `.settings-block` / sezioni `.profile-section` con
   `.section-heading` e form `.stack`; nessuna didascalia esplicativa.
 - **Auth/setup**: `.card.narrow` (max 420 px) centrata con `AuthHero` e glow.
 
 ## Home e portafoglio (0.8.4, implementato)
 
-Ordine dei contenuti della Home, uguale su web e Android:
+Ordine dei contenuti della Home (web e Android hanno contenitori diversi):
 
+**Web** (modifica successiva alla `0.8.4`, non rilasciata):
 1. **Eyebrow «Home»** e selettore periodo a pillole.
 2. **Card saldo del periodo** con quattro metriche e **icona wallet in alto a destra**.
-3. **Azioni rapide**: `+ Movimento` e `Trasferimento`; sul web aprono
-   `/movements?new=expense|transfer` con preselezione e focus sull'importo; su Android aprono il
-   dialogo Movimenti col tipo già scelto (nessun form duplicato).
-4. **Ultimi 3 movimenti** con data, ora e icona categoria.
-5. **Tre card separate** nell'ordine: Entrate vs uscite, Andamento saldo e patrimonio, Spese per
-   categoria.
-6. Niente card-elenco di Conti e Salvadanai (gli elenchi completi vivono nelle rispettive pagine).
+3. **Card «Grafici del periodo»** con Andamento saldo/patrimonio, poi Entrate vs uscite e Spese
+   per categoria affiancate.
+4. **Elenchi Conti e Salvadanai** in due colonne, con «Gestisci».
+5. **Ultimi 4 movimenti compatti**: data, ora, categoria e icona del tipo; nessuna riga contabile, icona categoria più grande a sinistra.
+6. Niente azioni rapide in Home.
+
+**Android** (0.8.4, invariata): card saldo → azioni rapide `+ Movimento`/`Trasferimento` (dialogo
+Movimenti col tipo già scelto) → ultimi 3 movimenti → tre card separate (Entrate vs uscite,
+Andamento, Spese per categoria).
 
 **Popover del portafoglio** (`AccountsMenu`, solo web): ancorato all'icona wallet della card saldo,
 elenca i conti con il saldo e la voce «Tutti i conti»; si chiude con `Esc`, click esterno o scelta;
