@@ -1,6 +1,7 @@
 package com.loreexe.spendy.data
 
 import com.loreexe.spendy.data.model.NewAutomation
+import com.loreexe.spendy.data.model.NewCategory
 import com.loreexe.spendy.data.model.NewInvestmentOperation
 import com.loreexe.spendy.data.model.NewInvestmentPosition
 import com.loreexe.spendy.data.model.NewTransaction
@@ -60,7 +61,7 @@ class MigrationManager @Inject constructor(
             .toMutableMap()
         localCategories.forEach { category ->
             if (category.name.lowercase() !in serverCategoryUuidByName) {
-                remote.createCategory(category.name).getOrThrow()
+                remote.createCategory(NewCategory(category.name, category.icon)).getOrThrow()
             }
         }
         remote.categories().getOrThrow().forEach {
@@ -110,6 +111,7 @@ class MigrationManager @Inject constructor(
                     toSavingsUuid = mapSavings(transaction.toSavingsUuid),
                     categoryUuid = categoryUuid,
                     tags = transaction.tags,
+                    time = transaction.time,
                 ),
             ).getOrThrow()
             movedTransactions += 1
@@ -214,7 +216,9 @@ class MigrationManager @Inject constructor(
                 ?: error("Conto ${account.name} non creato.")
             localAccountUuidByName[account.name.lowercase()] = created.uuid
         }
-        serverCategories.forEach { local.createCategory(it.name).getOrThrow() }
+        serverCategories.forEach {
+            local.createCategory(NewCategory(it.name, it.icon)).getOrThrow()
+        }
         val localCategories = local.categories().getOrThrow()
             .associate { it.name.lowercase() to it.uuid }
         serverTags.forEach { local.createTag(it.name).getOrThrow() }
@@ -254,6 +258,7 @@ class MigrationManager @Inject constructor(
                     toSavingsUuid = localSavings(transaction.toSavingsUuid),
                     categoryUuid = transaction.categoryName?.lowercase()?.let { localCategories[it] },
                     tags = transaction.tags,
+                    time = transaction.time,
                 ),
             ).getOrThrow()
             movedTransactions += 1

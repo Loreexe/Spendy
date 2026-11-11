@@ -21,7 +21,7 @@ import json
 import uuid
 import zipfile
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.conf import settings
@@ -33,6 +33,8 @@ from rest_framework.exceptions import ValidationError
 from .csv_safety import restore_csv_text, sanitize_csv_text
 from .models import (
     ZERO,
+    CATEGORY_ICONS,
+    DEFAULT_CATEGORY_ICON,
     DEFAULT_CATEGORY_NAME,
     Account,
     Automation,
@@ -45,11 +47,13 @@ from .models import (
     SavingsAccount,
     Tag,
     Transaction,
+    default_category_icon,
     ensure_default_categories,
 )
 
-SCHEMA = 4
-SUPPORTED_SCHEMAS = {1, 2, 3, 4}
+SCHEMA = 5
+SUPPORTED_SCHEMAS = {1, 2, 3, 4, 5}
+DEFAULT_MOVEMENT_TIME = time(12, 0)
 PROFILE_NAME = "profilo.json"
 UUID_NAMESPACE = uuid.UUID("6b6e4c7e-2f1a-4f3e-9d6f-7c3f0a2b9d11")
 SCOPE = "backup-profilo"
@@ -96,12 +100,16 @@ SCHEMA3_TRANSACTION_HEADER = TRANSACTION_HEADER + (
     "categoria_id",
     "categoria_nome",
 )
+SCHEMA4_TRANSACTION_HEADER = SCHEMA3_TRANSACTION_HEADER + ("uuid",)
+SCHEMA5_TRANSACTION_HEADER = SCHEMA4_TRANSACTION_HEADER + ("ora",)
 CATEGORY_HEADER = (
     "id",
     "nome",
     "predefinita",
     "iniziale",
 )
+SCHEMA4_CATEGORY_HEADER = CATEGORY_HEADER + ("uuid",)
+SCHEMA5_CATEGORY_HEADER = SCHEMA4_CATEGORY_HEADER + ("icona",)
 TAG_HEADER = (
     "id",
     "nome",
@@ -218,15 +226,21 @@ CSV_HEADERS = {
 SCHEMA4_CSV_HEADERS = {
     "conti.csv": ACCOUNT_HEADER + ("uuid",),
     "salvadanai.csv": SAVINGS_HEADER + ("uuid",),
-    "movimenti.csv": SCHEMA3_TRANSACTION_HEADER + ("uuid",),
+    "movimenti.csv": SCHEMA4_TRANSACTION_HEADER,
     "righe.csv": LINE_HEADER,
     "posizioni.csv": POSITION_HEADER + ("uuid",),
     "operazioni_investimenti.csv": INVESTMENT_OPERATION_HEADER + ("uuid",),
-    "categorie.csv": CATEGORY_HEADER + ("uuid",),
+    "categorie.csv": SCHEMA4_CATEGORY_HEADER,
     "tag.csv": TAG_HEADER + ("uuid",),
     "movimento_tag.csv": MOVTAG_HEADER,
     "automazioni.csv": AUTOMATION_HEADER,
     "esecuzioni_automazioni.csv": EXECUTION_HEADER,
+}
+# Schema 5 (DC-116/DC-117): ora dei movimenti e icona delle categorie.
+SCHEMA5_CSV_HEADERS = {
+    **SCHEMA4_CSV_HEADERS,
+    "movimenti.csv": SCHEMA5_TRANSACTION_HEADER,
+    "categorie.csv": SCHEMA5_CATEGORY_HEADER,
 }
 SCHEMA1_CSV = frozenset(
     {"conti.csv", "salvadanai.csv", "movimenti.csv", "righe.csv"}
@@ -243,12 +257,14 @@ SCHEMA2_CSV = frozenset(
 )
 SCHEMA3_CSV = frozenset(CSV_HEADERS)
 SCHEMA4_CSV = frozenset(SCHEMA4_CSV_HEADERS)
+SCHEMA5_CSV = frozenset(SCHEMA5_CSV_HEADERS)
 INVESTMENT_CSV = ("posizioni.csv", "operazioni_investimenti.csv")
 ARCHIVE_NAMES_BY_SCHEMA = {
     1: SCHEMA1_CSV | {MANIFEST_NAME},
     2: SCHEMA2_CSV | {MANIFEST_NAME},
     3: SCHEMA3_CSV | {MANIFEST_NAME},
     4: SCHEMA4_CSV | {PROFILE_NAME, MANIFEST_NAME},
+    5: SCHEMA5_CSV | {PROFILE_NAME, MANIFEST_NAME},
 }
 
 
@@ -617,6 +633,7 @@ def build_archive(profile: Profile) -> bytes:
                 operation.category.name if operation.category_id else ""
             ),
             str(operation.uuid),
+            operation.time.strftime("%H:%M"),
         ]
         for operation in transactions
     ]
@@ -627,6 +644,7 @@ def build_archive(profile: Profile) -> bytes:
             "1" if entry.is_preset else "0",
             "1" if entry.is_default else "0",
             str(entry.uuid),
+            entry.icon,
         ]
         for entry in categories
     ]
@@ -653,18 +671,18 @@ def build_archive(profile: Profile) -> bytes:
     automation_rows = _automation_rows(automations)
     execution_rows = _execution_rows(executions)
     files = {
-        "conti.csv": _csv_bytes(SCHEMA4_CSV_HEADERS["conti.csv"], account_rows),
+        "conti.csv": _csv_bytes(SCHEMA5_CSV_HEADERS["conti.csv"], account_rows),
         "salvadanai.csv": _csv_bytes(
-            SCHEMA4_CSV_HEADERS["salvadanai.csv"], savings_rows
+            SCHEMA5_CSV_HEADERS["salvadanai.csv"], savings_rows
         ),
         "movimenti.csv": _csv_bytes(
-            SCHEMA4_CSV_HEADERS["movimenti.csv"], transaction_rows
+            SCHEMA5_CSV_HEADERS["movimenti.csv"], transaction_rows
         ),
         "righe.csv": _csv_bytes(LINE_HEADER, line_rows),
         "categorie.csv": _csv_bytes(
-            SCHEMA4_CSV_HEADERS["categorie.csv"], category_rows
+            SCHEMA5_CSV_HEADERS["categorie.csv"], category_rows
         ),
-        "tag.csv": _csv_bytes(SCHEMA4_CSV_HEADERS["tag.csv"], tag_rows),
+        "tag.csv": _csv_bytes(SCHEMA5_CSV_HEADERS["tag.csv"], tag_rows),
         "movimento_tag.csv": _csv_bytes(MOVTAG_HEADER, movtag_rows),
         "automazioni.csv": _csv_bytes(AUTOMATION_HEADER, automation_rows),
         "esecuzioni_automazioni.csv": _csv_bytes(
@@ -690,7 +708,7 @@ def build_archive(profile: Profile) -> bytes:
             "righe": counts[name.removesuffix(".csv")],
             "sha256": hashlib.sha256(files[name]).hexdigest(),
         }
-        for name in SCHEMA4_CSV_HEADERS
+        for name in SCHEMA5_CSV_HEADERS
     }
     profile_bytes = json.dumps(
         _profile_payload(profile), ensure_ascii=False, indent=2
@@ -731,12 +749,13 @@ def build_archive(profile: Profile) -> bytes:
             "ripristino ricrea i record con date correnti.",
             "Schema 4: UUID stabili, automazioni con storico ed esecuzioni, "
             "profilo (senza tema) e cestino escluso.",
+            "Schema 5: ora dei movimenti (HH:MM) e icona delle categorie.",
         ],
     }
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name in SCHEMA4_CSV_HEADERS:
+        for name in SCHEMA5_CSV_HEADERS:
             archive.writestr(name, files[name])
         archive.writestr(PROFILE_NAME, profile_bytes)
         archive.writestr(
@@ -806,6 +825,16 @@ def _parse_date(value: str, where: str) -> date:
         _fail(f"{where}: data non valida.")
 
 
+def _parse_movement_time(value: str, where: str) -> time:
+    text = str(value).strip()
+    if not text:
+        return DEFAULT_MOVEMENT_TIME
+    try:
+        return datetime.strptime(text, "%H:%M").time()
+    except ValueError:
+        _fail(f"{where}: ora non valida (formato HH:MM).")
+
+
 def _parse_datetime(value: str, where: str) -> datetime | None:
     text = str(value).strip()
     if not text:
@@ -828,6 +857,8 @@ def _parse_bool(value: str, where: str) -> bool:
 def _csv_rows(contents: dict[str, bytes], name: str, schema: int) -> list[list[str]]:
     if name == "movimenti.csv" and schema < 3:
         header = TRANSACTION_HEADER
+    elif schema >= 5:
+        header = SCHEMA5_CSV_HEADERS[name]
     elif schema >= 4:
         header = SCHEMA4_CSV_HEADERS[name]
     else:
@@ -866,7 +897,7 @@ def _read_zip(raw: bytes) -> dict[str, bytes]:
             or len(names) != len(set(names))
         ):
             _fail(
-                "L'archivio deve contenere i CSV del formato 1, 2, 3 o 4, "
+                "L'archivio deve contenere i CSV del formato 1, 2, 3, 4 o 5, "
                 "con manifest.json."
             )
         if any(
@@ -993,9 +1024,14 @@ def _parse_transactions(
     result = []
     seen: set[int] = set()
     kinds = set(Transaction.Kind.values)
-    expected = len(TRANSACTION_HEADER) if schema < 3 else len(
-        SCHEMA3_TRANSACTION_HEADER
-    ) + (1 if schema >= 4 else 0)
+    if schema >= 5:
+        expected = len(SCHEMA5_TRANSACTION_HEADER)
+    elif schema >= 4:
+        expected = len(SCHEMA4_TRANSACTION_HEADER)
+    elif schema >= 3:
+        expected = len(SCHEMA3_TRANSACTION_HEADER)
+    else:
+        expected = len(TRANSACTION_HEADER)
     for number, row in enumerate(rows, start=2):
         where = f"movimenti.csv, riga {number}"
         if len(row) != expected:
@@ -1019,6 +1055,7 @@ def _parse_transactions(
             "date": _parse_date(row[3], where),
             "description": description,
             "amount": amount,
+            "time": None,
         }
         if schema >= 3:
             raw_category_id = row[8].strip()
@@ -1031,7 +1068,9 @@ def _parse_transactions(
             entry["category_id"] = category_id
             entry["category_name"] = category_name
         if schema >= 4:
-            entry["uuid"] = _parse_uuid(row[-1], where)
+            entry["uuid"] = _parse_uuid(row[10], where)
+        if schema >= 5:
+            entry["time"] = _parse_movement_time(row[11], where)
         result.append(entry)
     return result
 
@@ -1040,7 +1079,12 @@ def _parse_categories(rows: list[list[str]], schema: int = 3) -> list[dict]:
     result = []
     seen: set[int] = set()
     names: set[str] = set()
-    expected = len(CATEGORY_HEADER) + (1 if schema >= 4 else 0)
+    if schema >= 5:
+        expected = len(SCHEMA5_CATEGORY_HEADER)
+    elif schema >= 4:
+        expected = len(SCHEMA4_CATEGORY_HEADER)
+    else:
+        expected = len(CATEGORY_HEADER)
     for number, row in enumerate(rows, start=2):
         where = f"categorie.csv, riga {number}"
         if len(row) != expected:
@@ -1055,13 +1099,19 @@ def _parse_categories(rows: list[list[str]], schema: int = 3) -> list[dict]:
         if name.casefold() in names:
             _fail(f"{where}: nome della categoria duplicato.")
         names.add(name.casefold())
+        icon = None
+        if schema >= 5:
+            icon = row[5].strip() or DEFAULT_CATEGORY_ICON
+            if icon not in CATEGORY_ICONS:
+                _fail(f"{where}: icona della categoria non valida.")
         result.append(
             {
                 "id": category_id,
                 "name": name,
+                "icon": icon,
                 "is_preset": _parse_bool(row[2].strip(), where),
                 "is_default": _parse_bool(row[3].strip(), where),
-                "uuid": _parse_uuid(row[-1], where) if schema >= 4 else None,
+                "uuid": _parse_uuid(row[4], where) if schema >= 4 else None,
             }
         )
     defaults = [entry for entry in result if entry["is_default"]]
@@ -1722,6 +1772,7 @@ def _parse_archive(raw: bytes):
         2: SCHEMA2_CSV,
         3: SCHEMA3_CSV,
         4: SCHEMA4_CSV,
+        5: SCHEMA5_CSV,
     }[schema]
     expected_names = ARCHIVE_NAMES_BY_SCHEMA[schema]
     if set(contents) != expected_names:
@@ -1755,7 +1806,7 @@ def _parse_archive(raw: bytes):
             {entry["id"] for entry in transactions},
             {entry["id"] for entry in tags},
         )
-    elif schema == 4:
+    elif schema >= 4:
         positions = _parse_positions(parsed_rows["posizioni.csv"], schema)
         operations = _parse_investment_operations(
             parsed_rows["operazioni_investimenti.csv"], schema
@@ -2148,6 +2199,10 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
                     profile=profile,
                     uuid=_entity_uuid(profile, "category", entry["id"], entry.get("uuid"), Category),
                     name=entry["name"],
+                    icon=(
+                        entry.get("icon")
+                        or default_category_icon(entry["name"])
+                    ),
                     is_preset=entry["is_preset"],
                     is_default=entry["is_default"],
                 )
@@ -2183,6 +2238,11 @@ def restore_archive(raw: bytes, profile: Profile) -> dict:
                 uuid=_entity_uuid(profile, "transaction", entry["id"], entry.get("uuid"), Transaction),
                 kind=entry["kind"],
                 date=entry["date"],
+                time=(
+                    entry["time"]
+                    if entry.get("time") is not None
+                    else DEFAULT_MOVEMENT_TIME
+                ),
                 description=entry["description"],
                 amount=entry["amount"],
                 category=(

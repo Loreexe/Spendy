@@ -1,7 +1,9 @@
 # Matrice delle piattaforme
 
-Client effettivamente presenti al 2026-11-10 (release `0.8.2`). Nessun client è inventato: quello
-che non esiste è elencato come non previsto.
+Client effettivamente presenti al 2026-11-11 (release `0.8.4`, **pubblicata**).
+Backend e web sono **verificati**; Android è **compilato e testato** (`assembleDebug`, 31 test
+unitari, `lintDebug`) ma **non provato su device/emulatore**. Nessun client è inventato: quello che
+non esiste è elencato come non previsto.
 
 ## Client
 
@@ -10,7 +12,7 @@ che non esiste è elencato come non previsto.
 | Web desktop | implementato, distribuito | React 19 + TypeScript, CSS puro, Vite | `apps/frontend` |
 | Web mobile | implementato | **stessa SPA responsive**, nessun client separato | ≤760 px: bottom bar |
 | PWA installabile | manifest presente, **solo online** | `manifest.webmanifest`, icone, theme-color | nessun service worker (DC-096); non funziona offline |
-| Android nativo | implementato con limiti (Fase Q) | Kotlin + Jetpack Compose, Material 3 + token Spendy | `apps/android`, minSdk 31, APK firmato |
+| Android nativo | implementato con limiti (Fase Q + `0.8.4`) | Kotlin + Jetpack Compose, Material 3 + token Spendy | `apps/android`, minSdk 31, versione 0.8.4/versionCode 5; nessuna prova su device in questa sessione |
 | iOS / desktop nativo | **non previsto** | — | nessun codice, nessun piano approvato |
 
 Un APK non implica una seconda UI «disegnata a mano»: l'app Android è un client nativo con la stessa
@@ -25,16 +27,20 @@ identità, non una copia pixel-per-pixel del web.
 | Icone | set Lucide (web: `lucide-react`; Android: vector drawable) |
 | Illustrazioni | 6 soggetti line-art mint (React ↔ vector drawable) |
 | Forma | raggi 18/20, pillole 999, ombra singola, motion 150/200 |
-| Formati | `it-IT`, EUR, date `gg/mm/aaaa`, `Europe/Rome` |
+| Formati | `it-IT`, EUR, date `gg/mm/aaaa`, ore `HH:MM`, `Europe/Rome` |
+| Icone delle categorie | catalogo di 29 icone Lucide condiviso: whitelist backend ↔ `CategoryIcon`/`CategorySelect` web ↔ `CategoryIcons.kt`/drawable Android (0.8.4, DC-117) |
 | Feedback | toast/notice/modale con la stessa semantica, skeleton, empty state |
 
 ## Differenze intenzionali (approvate o esistenti dichiarate)
 
 | Ambito | Web | Android | Stato |
 | --- | --- | --- | --- |
-| Navigazione | topbar 6 voci + menu avatar; bottom bar ≤760 | bottom bar 5 voci + «Altro», barra «Minimal» piena con sfumatura (60 dp), FAB, swipe, ⋮ | approvato (DC-085/098/102/109) |
+| Navigazione | topbar **6 voci** (Home, Movimenti, Conti, Salvadanai, Automazioni, Investimenti) + menu avatar; bottom bar ≤760 | bottom bar **5 voci** (Home, Movimenti, Salvadanai, Investimenti, Automazioni) + **menu avatar in alto**, barra «Minimal» piena con sfumatura (60 dp), FAB, swipe, ⋮ | implementato 0.8.4 (DC-114): web verificato, Android build/test/lint senza prova device; base 0.8.3 approvata (DC-085/098/102/109) |
+| Conti | voce dedicata nella topbar e pagina `/accounts` | **nessuna voce** nella bottom bar: si aprono dal **portafoglio in Home** | implementato 0.8.4 (DC-114): web verificato, Android build/test/lint senza prova device |
+| Portafoglio in Home | icona wallet → **popover** con conti, saldi e «Tutti i conti» | icona wallet → **pagina Conti** | implementato 0.8.4 (DC-114): web verificato, Android build/test/lint senza prova device |
+| Foto del profilo | foto dal server con fallback iniziali; menu con testata | foto dal server **solo in modalità server**; in archivio locale solo iniziali, nessun upload | implementato 0.8.4 (DC-115): web verificato, Android build/test/lint senza prova device |
 | Tema predefinito | Scuro | **Sistema**, impostazione locale | approvato (DC-091/102) |
-| Ricerca | solo interna alle Impostazioni | globale (server e archivio locale) | esistente documentato (DESIGN.md §06); non è una regola approvata come vincolo |
+| Ricerca | solo interna alle Impostazioni | globale (server e archivio locale), voce nel menu avatar | esistente documentato (DESIGN.md §06); non è una regola approvata come vincolo |
 | Modalità dati | solo server, online | server **o** archivio locale standalone | approvato (DC-102/104) |
 | Blocco screenshot | non previsto | opzionale in modalità locale | approvato (DC-102) |
 | Ambito schermate | anche admin/setup | niente admin, setup, gruppi | approvato (DC-102) |
@@ -55,6 +61,12 @@ un'eccezione da approvare** (procedura in [`decisions.md`](./decisions.md)).
   componente Android usa un colore nuovo.
 - **PWA**: senza service worker l'installazione è solo una scorciatoia, non un'app offline. Non
   dichiarare funzionamento offline.
+- **Archivi personali**: il backend è allo **schema 5** (ora e icone) dalla `0.8.4`,
+  mentre l'archivio locale Android ha un formato proprio (schema 2, con import dello schema 1): non
+  esiste parità formale tra i due archivi. Va dichiarato quando si parla di migrazione.
+- **Orario e Room**: sul web l'ora arriva dall'API; su Android la migrazione **Room 6→7** aggiunge
+  `time` (default 12:00) e `icon` (default `tag`) e il DTO usa il fallback 12:00 con server `0.8.3`.
+  La migrazione è compilata e coperta dai test unitari, ma **non è verificata a runtime su device**.
 
 ## Verifiche per piattaforma
 

@@ -27,7 +27,11 @@ from .models import (
     match_category,
     resolve_tags,
 )
-from .services import assert_accounts_non_negative, savings_balance
+from .services import (
+    assert_accounts_non_negative,
+    current_local_time,
+    savings_balance,
+)
 
 
 def money(value: Decimal) -> str:
@@ -43,7 +47,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ("id", "uuid", "name", "is_preset", "is_default")
+        fields = ("id", "uuid", "name", "icon", "is_preset", "is_default")
         read_only_fields = fields
 
 
@@ -427,6 +431,7 @@ class LineSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     lines = LineSerializer(many=True, read_only=True)
     kind_label = serializers.CharField(source="get_kind_display", read_only=True)
+    time = serializers.TimeField(format="%H:%M")
     amount = serializers.SerializerMethodField()
     automation_name = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
@@ -440,6 +445,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             "kind",
             "kind_label",
             "date",
+            "time",
             "description",
             "amount",
             "automation",
@@ -458,6 +464,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             "id": obj.category_id,
             "uuid": str(obj.category.uuid),
             "name": obj.category.name,
+            "icon": obj.category.icon,
             "is_default": obj.category.is_default,
         }
 
@@ -494,6 +501,7 @@ class TransactionWriteSerializer(serializers.Serializer):
         ]
     )
     date = serializers.DateField()
+    time = serializers.TimeField(format="%H:%M", required=False)
     description = serializers.CharField(
         required=False, allow_blank=True, max_length=255
     )
@@ -786,10 +794,14 @@ class TransactionWriteSerializer(serializers.Serializer):
             profile, ""
         )
         tag_names = validated_data.get("tags", [])
+        movement_time = validated_data.get("time")
+        if movement_time is None:
+            movement_time = current_local_time()
         transaction_obj = Transaction.objects.create(
             profile=profile,
             kind=validated_data["kind"],
             date=validated_data["date"],
+            time=movement_time,
             description=validated_data.get("description", ""),
             amount=validated_data["amount"],
             category=category,
@@ -804,6 +816,9 @@ class TransactionWriteSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         instance.kind = validated_data["kind"]
         instance.date = validated_data["date"]
+        # PATCH senza ``time``: l'ora esistente resta invariata (DC-116).
+        if "time" in validated_data:
+            instance.time = validated_data["time"]
         instance.description = validated_data.get("description", "")
         instance.amount = validated_data["amount"]
         if "category_id" in validated_data:

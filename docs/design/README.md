@@ -1,9 +1,14 @@
 # Spendy — visualizzazione del design
 
-Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) 0.9, allineata a **Spendy 0.8.3**
-(10 novembre 2026) e al sistema di design di prodotto **web + Android**. I valori vengono dai
+Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) **0.9.2**, riferita a **Spendy 0.8.4**
+(11 novembre 2026) e al sistema di design di prodotto **web + Android**. I valori vengono dai
 sorgenti reali: token CSS, costanti Compose, pacchetto logo, font self-hosted e illustrazioni
 dell'app. Non è un asset di prodotto e non introduce decisioni nuove.
+
+> **Tavola non rigenerata (2026-11-11):** i file `design-system*.html/png` e i dettagli non sono
+> stati rigenerati in questa sessione e rappresentano ancora la release **0.8.3**: non includono
+> Home al posto di Dashboard, il menu avatar con testata, le icone delle categorie e l'orario dei
+> movimenti. Vanno rigenerati con i comandi sotto prima di essere considerati allineati alla 0.8.4.
 
 ## File
 
@@ -26,7 +31,7 @@ dell'app. Non è un asset di prodotto e non introduce decisioni nuove.
 | Tema · Token e forma | 02 | Scuro/chiaro/Sistema, superfici, semantica, fondi soft AA, proiezione Android, raggi/motion/glow |
 | Tipografia, cifre e formati | 03 | Inter 400–700, scala web e Compose, `.tnum`, format `1.234,56 €`, date |
 | Icone e illustrazioni | 04 | Lucide web/Android, line art mint, empty state e regole |
-| Struttura · Pagine · Componenti · Feedback | 05 | Topbar web a 6 voci + menu avatar, bottom bar mobile, Android (tab, ⋮, FAB, swipe), mappa pagine, **Profilo/Impostazioni Android**, componenti e stati, **dashboard completa** con Entrate vs uscite, toast/notice/modale, tabelle, grafici |
+| Struttura · Pagine · Componenti · Feedback | 05 | Topbar web a 6 voci + menu avatar (tavola non rigenerata: descrive la 0.8.3), bottom bar mobile, Android (tab, ⋮, FAB, swipe), mappa pagine, **Profilo/Impostazioni Android**, componenti e stati, **dashboard completa** con Entrate vs uscite, toast/notice/modale, tabelle, grafici |
 | Accessibilità · i18n | 06 | AA su superfici e fondi soft, focus, tastiera, touch 44 px, motion, lingua/formati |
 
 ## Rigenerare

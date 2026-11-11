@@ -235,7 +235,7 @@ fun DataScreen(
         Text(
             "Import/export, cestino e archivio funzionano sia in modalità server sia " +
                 "nell'archivio locale. L'archivio locale usa un formato proprio; il " +
-                "formato ZIP schema 4 del server resta valido per il server.",
+                "formato ZIP del server resta valido per il server.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -4,7 +4,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 
-from .models import Account, Profile, Transaction
+from .models import Account, Category, Profile, Transaction
 
 
 class ApiV1Tests(APITestCase):
@@ -132,5 +132,45 @@ class ApiV1Tests(APITestCase):
     def test_openapi_schema_is_available(self):
         response = self.client.get(reverse("v1-schema"))
         self.assertEqual(response.status_code, 200)
-        self.assertIn("/api/v1/finance/transactions/", response.content.decode())
-        self.assertIn("/api/v1/auth/login/", response.content.decode())
+        body = response.content.decode()
+        self.assertIn("/api/v1/finance/transactions/", body)
+        self.assertIn("/api/v1/auth/login/", body)
+        # Il contratto 0.8.4 espone ora e icona.
+        self.assertIn("time", body)
+        self.assertIn("icon", body)
+
+    def test_movement_time_and_category_icon_are_exposed(self):
+        category = Category.objects.get(
+            profile__user=self.user, name="Alimentari"
+        )
+        response = self.client.post(
+            reverse("v1-finance:finance-transactions"),
+            {
+                **self.transaction_payload("Cena al ristorante"),
+                "time": "20:15",
+                "category_id": category.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["time"], "20:15")
+        self.assertEqual(response.data["category"]["icon"], "shopping-cart")
+
+        listing = self.client.get(reverse("v1-finance:finance-transactions"))
+        movement = next(
+            item
+            for item in listing.data["transactions"]
+            if item["description"] == "Cena al ristorante"
+        )
+        self.assertIn("time", movement)
+        self.assertIn("icon", movement["category"])
+
+    def test_global_search_exposes_category_icon(self):
+        Category.objects.get(profile__user=self.user, name="Alimentari")
+        response = self.client.get(
+            reverse("v1-finance:finance-search"), {"q": "alim"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["categories"][0]["icon"], "shopping-cart"
+        )

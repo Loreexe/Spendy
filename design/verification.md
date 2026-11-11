@@ -3,17 +3,21 @@
 Controlli **esistenti** e realmente eseguibili. Non tutti sono automatici: quelli manuali vanno
 dichiarati come tali. Lo stato riportato è l'ultima esecuzione conosciuta, non una promessa.
 
+> **Release 0.8.4 (2026-11-11, pubblicata):** backend e web sono **verificati**;
+> Android è **compilato e testato** ma **non provato su device/emulatore**. Gli esiti sono nella
+> sezione dedicata; i limiti sono dichiarati e non vanno nascosti.
+
 ## Comandi
 
-| Controllo | Comando | Verifica | Stato 2026-11-10 |
+| Controllo | Comando | Verifica | Stato 2026-11-11 |
 | --- | --- | --- | --- |
-| Typecheck + build web | `cd apps/frontend && npm run lint && npm run build` | TypeScript e bundle di produzione | **verde** (2.115 moduli, build ~2 s) |
+| Typecheck + build web | `cd apps/frontend && npm run lint && npm run build` | TypeScript e bundle di produzione | **verde** (`0.8.4`, lint e build) |
 | Contrasti AA token | `python3 docs/design/build/check_contrast.py` | 12 coppie testo/sfondo x 2 temi ≥ 4.5:1 | **verde** (tutte AA) |
 | Controlli design system | `python3 design/checks/check_design.py` | token obbligatori, colori grezzi nei CSS, mirror JS/HTML, parità web↔Android, raggi, durate | **verde** (0 violazioni, 2 divergenze note documentate) |
-| Versione allineata | `python3 scripts/check_version.py` (+ test dello script) | `VERSION` = package/Android | non rieseguito qui (nessuna modifica di versione) |
-| Backend | `cd apps/backend && python manage.py test` | suite Django (richiede PostgreSQL) | non eseguito qui (nessuna modifica backend) |
-| Android build/test/lint | `cd apps/android && ./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug` | compilazione Compose, test unitari, lint, APK release firmato | **verde** (2026-11-10, DC-109: assembleDebug/Release, 18 test, lint 0 errori; APK firmato installato sul telefono) |
-| Tavola grafica | `python3 docs/design/build/build_html.py` + cattura CDP (`docs/design/README.md`) | rigenerazione della rappresentazione | non necessario: nessun valore visivo cambiato |
+| Versione allineata | `python3 scripts/check_version.py` (+ test dello script) | `VERSION` = package/Android | **verde**: 0.8.4 allineato |
+| Backend | `cd apps/backend && python manage.py test` | suite Django (richiede PostgreSQL) | **verde**: 383 test (2026-11-11) |
+| Android build/test/lint | `cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` | compilazione Compose, test unitari, lint, APK debug | **verde** (2026-11-11, 0.8.4: assembleDebug, **31 test**, lint 0 errori, APK debug); **prova su device/emulatore non eseguita** |
+| Tavola grafica | `python3 docs/design/build/build_html.py` + cattura CDP (`docs/design/README.md`) | rigenerazione della rappresentazione | **non rigenerata** in questa sessione: la tavola statica descrive ancora la 0.8.3 |
 | CI | `.github/workflows/ci.yml` (job `version`, `design-system`, `backend`, `frontend`), `android.yml` | gli stessi controlli in CI | il job `design-system` è nuovo: vale dal prossimo push, non eseguito qui |
 
 ## Verifica visiva eseguita (2026-11-10, percorso Profilo)
@@ -55,6 +59,33 @@ raggio `999px` e durata `120ms`, lo script ha rilevato 3 violazioni ed è uscito
 - **Verifiche eseguite**: `assembleDebug` e `assembleRelease` verdi; 18 test unitari; `lintDebug` 0 errori; APK release firmato e **installato in place** sul telefono (`install -r`, `versionName 0.8.2`, dati conservati).
 - **Verifica a schermo**: barra ancorata senza linea e senza blur, sfumatura in alto, tab Dashboard e Movimenti funzionanti, FAB sollevato sopra la barra, scorrimento del contenuto. **Non verificati**: TalkBack, scala del testo, tema chiaro e tablet/foldable.
 - La preview locale della variante è `docs/design/navbar-lab-preview.html` (non tracciata), non è una verifica del client nativo.
+
+## Release 0.8.4 — verifiche eseguite (2026-11-11)
+
+Decisioni: DC-114…117. Esiti reali; dove non si è verificato qualcosa è dichiarato come limite.
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Backend — suite | `cd apps/backend && ../../.venv/bin/python manage.py test` | **verde: 383 test**, inclusi ora, ordinamento, icone, CSV e archivio schema 5 |
+| Backend — migrazioni | `python manage.py makemigrations --check` | **verde**: nessuna migrazione mancante |
+| Backend — API dal vivo | ambiente demo (`scripts/demo_server.sh`) | `time` in `HH:MM`; `POST` senza ora = ora corrente `Europe/Rome`; `PATCH` senza ora invariata; `icon` in categorie, movimenti e serie; migrazione demo con movimenti a 12:00 e icone predefinite |
+| CSV / archivio | export e import dal vivo | export 6 colonne, import 5 e 6 colonne, template a 6 colonne; archivio schema 5 con `movimenti.csv` + `ora` e `categorie.csv` + `icona`; ripristino schemi 1–4 |
+| Web — typecheck + build | `npm run lint && npm run build` | **verde** |
+| Web — controlli design | `check_design.py`, `check_contrast.py` | **verdi** (0 violazioni; 2 divergenze note già documentate) |
+| Web — visiva 390×844 | ispezione reale, temi scuro e chiaro | Home in colonna (hero → wallet/popover → azioni rapide → ultimi 3 movimenti → Entrate/Uscite → Andamento → Categorie), menu avatar con testata, campo Ora, profilo con foto; nessun overflow |
+| Web — visiva 1440×900 | ispezione reale, temi scuro e chiaro | topbar a 6 voci con Home, popover conti, azione `+ Movimento` che apre `/movements` con Spesa preselezionata, tre card separate nell'ordine previsto |
+| Android — build/test/lint | `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` | **verde**: assembleDebug, **31 test**, lint 0 errori; versione 0.8.4/versionCode 5, APK debug prodotto |
+| Versione | `python3 scripts/check_version.py` | **verde**: 0.8.4 allineato |
+| Tastiera web — `CategorySelect`/`CategoryIconPicker` | prova completa da browser | **non eseguita**: solo build/API e ispezione visiva → limite dichiarato |
+| Wizard di import da browser | prova completa del flusso | **non eseguito**: verificato via API/build → limite dichiarato |
+| Android — runtime | device/emulatore | **non eseguito** (assente in sessione, no KVM): migrazione Room 6→7, upload/rimozione foto e flussi UI **non provati a runtime** → limite dichiarato |
+
+Note obbligatorie:
+
+- I test browser **non** dimostrano il client Android e viceversa.
+- Nessuna baseline visiva è approvata: gli screenshot non sono riferimenti di regressione.
+- La tavola `docs/design/` **non è stata rigenerata** in questa sessione: rappresenta ancora la 0.8.3.
+- La `0.8.4` è pubblicata con tag `v0.8.4`; l'aggiornamento dell'LXC resta in carico all'utente.
 
 ## Scenari manuali per ogni modifica UI
 

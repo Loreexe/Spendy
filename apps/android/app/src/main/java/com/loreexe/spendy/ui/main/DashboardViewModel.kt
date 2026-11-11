@@ -1,9 +1,13 @@
 package com.loreexe.spendy.ui.main
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.loreexe.spendy.data.AccountRepository
 import com.loreexe.spendy.data.AppMode
+import com.loreexe.spendy.data.AvatarRepository
 import com.loreexe.spendy.data.FinanceRepository
+import com.loreexe.spendy.data.LocalFinanceRepository
 import com.loreexe.spendy.data.SessionStore
 import com.loreexe.spendy.data.model.DashboardData
 import com.loreexe.spendy.data.model.SeriesData
@@ -50,12 +54,23 @@ data class DashboardUiState(
     val mode: AppMode = AppMode.SERVER,
     val serverName: String? = null,
     val period: DashboardPeriod = DashboardPeriod.CURRENT_MONTH,
+    // Identità del profilo per la top bar: foto (server) o iniziali (locale).
+    val firstName: String = "",
+    val lastName: String = "",
+    val displayName: String = "",
+    val email: String = "",
+    val initials: String = "?",
+    val avatar: Bitmap? = null,
+    val hasAvatar: Boolean = false,
 )
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val repository: FinanceRepository,
     private val sessionStore: SessionStore,
+    private val accounts: AccountRepository,
+    private val avatarRepository: AvatarRepository,
+    private val local: LocalFinanceRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         DashboardUiState(
@@ -69,6 +84,7 @@ class DashboardViewModel @Inject constructor(
 
     init {
         load()
+        refreshUser()
     }
 
     /** Ricarica dashboard e grafici per il periodo attualmente selezionato. */
@@ -78,6 +94,72 @@ class DashboardViewModel @Inject constructor(
     fun setPeriod(period: DashboardPeriod) {
         if (period == _state.value.period) return
         refresh(period, resetPeriod = true)
+    }
+
+    /**
+     * Rilegge identità e avatar del profilo attivo: serve al ritorno dalla
+     * schermata Profilo (foto cambiata) e alla top bar dell'app.
+     */
+    fun refreshUser() {
+        viewModelScope.launch {
+            if (_state.value.mode == AppMode.LOCAL) {
+                val profile = local.readProfile()
+                val first = profile?.firstName.orEmpty()
+                val last = profile?.lastName.orEmpty()
+                _state.update {
+                    it.copy(
+                        firstName = first,
+                        lastName = last,
+                        displayName = listOfNotNull(first, last)
+                            .filter(String::isNotBlank)
+                            .joinToString(" "),
+                        email = profile?.email.orEmpty(),
+                        initials = initialsOf("$first $last", profile?.email, profile?.username),
+                        avatar = null,
+                        hasAvatar = false,
+                    )
+                }
+            } else {
+                accounts.me().onSuccess { user ->
+                    if (user == null) return@onSuccess
+                    val avatar = if (user.hasAvatar) {
+                        avatarRepository.load(user.avatarUpdatedAt)
+                    } else {
+                        null
+                    }
+                    _state.update {
+                        it.copy(
+                            firstName = user.firstName,
+                            lastName = user.lastName,
+                            displayName = user.displayName.ifBlank {
+                                "${user.firstName} ${user.lastName}".trim()
+                            },
+                            email = user.email.orEmpty(),
+                            initials = initialsOf(
+                                "${user.firstName} ${user.lastName}".trim(),
+                                user.displayName,
+                                user.email,
+                                user.username,
+                            ),
+                            avatar = avatar,
+                            hasAvatar = user.hasAvatar || avatar != null,
+                        )
+                    }
+                }.onFailure {
+                    // Offline: la top bar usa almeno il nome salvato in sessione.
+                    val name = sessionStore.userName.orEmpty()
+                    if (name.isNotBlank()) {
+                        _state.update {
+                            it.copy(
+                                displayName = name,
+                                initials = initialsOf(name),
+                                email = it.email,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun refresh(period: DashboardPeriod, resetPeriod: Boolean = false) {
@@ -108,5 +190,14 @@ class DashboardViewModel @Inject constructor(
                 _state.update { it.copy(loading = false) }
             }
         }
+    }
+
+    private fun initialsOf(vararg sources: String?): String {
+        val text = sources.firstOrNull { !it.isNullOrBlank() } ?: return "?"
+        val tokens = text.split(' ', '.', '_', '@', '-', ',')
+            .filter { it.isNotBlank() }
+            .take(2)
+        val letters = tokens.mapNotNull { token -> token.firstOrNull()?.uppercaseChar() }
+        return if (letters.isEmpty()) "?" else letters.joinToString("")
     }
 }

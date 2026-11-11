@@ -1,5 +1,8 @@
 package com.loreexe.spendy.data.local
 
+import com.loreexe.spendy.util.DEFAULT_MOVEMENT_TIME
+import com.loreexe.spendy.util.isTimeValid
+import com.loreexe.spendy.util.normalizeTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -44,10 +47,16 @@ data class ArchiveTransaction(
     val savingsUuid: String? = null,
     val fromSavingsUuid: String? = null,
     val toSavingsUuid: String? = null,
+    val time: String = DEFAULT_MOVEMENT_TIME,
 )
 
 @Serializable
-data class ArchiveCategory(val uuid: String, val name: String, val isDefault: Boolean = false)
+data class ArchiveCategory(
+    val uuid: String,
+    val name: String,
+    val isDefault: Boolean = false,
+    val icon: String = "tag",
+)
 
 @Serializable
 data class ArchiveTag(val uuid: String, val name: String)
@@ -97,7 +106,8 @@ data class ArchiveAutomation(
 
 @Serializable
 data class LocalArchiveData(
-    val schema: Int = 1,
+    /** Schema corrente dell'archivio locale; 1 è importabile con i default. */
+    val schema: Int = CURRENT_SCHEMA,
     val tipo: String = "spendy-archivio-locale",
     val generatoIl: String = "",
     val profile: ArchiveProfile = ArchiveProfile(),
@@ -109,7 +119,11 @@ data class LocalArchiveData(
     val positions: List<ArchivePosition> = emptyList(),
     val operations: List<ArchiveOperation> = emptyList(),
     val automations: List<ArchiveAutomation> = emptyList(),
-)
+) {
+    companion object {
+        const val CURRENT_SCHEMA: Int = 2
+    }
+}
 
 data class CsvRow(
     val date: String,
@@ -118,6 +132,7 @@ data class CsvRow(
     val account: String,
     val amountCents: Long,
     val kind: String,
+    val time: String = DEFAULT_MOVEMENT_TIME,
 )
 
 object LocalArchive {
@@ -148,10 +163,11 @@ object LocalArchive {
             )
             buffer.append("\r\n")
         }
-        appendRow(listOf("data", "descrizione", "categoria", "conto", "importo"))
+        appendRow(listOf("data", "descrizione", "categoria", "conto", "importo", "ora"))
         fun money(cents: Long): String = String.format(java.util.Locale.US, "%.2f", cents / 100.0).replace('.', ',')
         fun day(iso: String): String =
             runCatching { LocalDate.parse(iso).format(italianDate) }.getOrDefault(iso)
+        fun ora(transaction: LocalTransactionEntity): String = normalizeTime(transaction.time)
         fun label(kind: String): String = when (kind) {
             "income" -> "Entrata"
             "transfer" -> "Trasferimento"
@@ -175,6 +191,7 @@ object LocalArchive {
                                         category,
                                         it,
                                         money(-operation.amountCents),
+                                        ora(operation),
                                     ),
                                 )
                             }
@@ -188,6 +205,7 @@ object LocalArchive {
                                         category,
                                         it,
                                         money(operation.amountCents),
+                                        ora(operation),
                                     ),
                                 )
                             }
@@ -202,6 +220,7 @@ object LocalArchive {
                                     category,
                                     it,
                                     money(operation.amountCents),
+                                    ora(operation),
                                 ),
                             )
                         }
@@ -215,6 +234,7 @@ object LocalArchive {
                                     category,
                                     it,
                                     money(-operation.amountCents),
+                                    ora(operation),
                                 ),
                             )
                         }
@@ -242,6 +262,14 @@ object LocalArchive {
             val date = value("data")
             val amount = parseAmount(value("importo")) ?: return@forEach
             if (date.isBlank() || amount == 0L) return@forEach
+            // Ora opzionale (formato a 6 colonne): riga scartata se non valida,
+            // default 12:00 per i file a 5 colonne dei client precedenti.
+            val rawTime = value("ora")
+            val time = when {
+                rawTime.isBlank() -> DEFAULT_MOVEMENT_TIME
+                isTimeValid(rawTime) -> normalizeTime(rawTime)
+                else -> return@forEach
+            }
             rows += CsvRow(
                 date = normalizeDate(date),
                 description = value("descrizione"),
@@ -249,6 +277,7 @@ object LocalArchive {
                 account = value("conto"),
                 amountCents = amount,
                 kind = if (amount < 0) "expense" else "income",
+                time = time,
             )
         }
         return rows
@@ -323,7 +352,7 @@ object LocalArchive {
     fun buildArchive(data: LocalArchiveData): ByteArray {
         val payload = json.encodeToString(data).toByteArray(Charsets.UTF_8)
         val manifest = kotlinx.serialization.json.buildJsonObject {
-            put("schema", kotlinx.serialization.json.JsonPrimitive("1"))
+            put("schema", kotlinx.serialization.json.JsonPrimitive(data.schema.toString()))
             put("tipo", kotlinx.serialization.json.JsonPrimitive("spendy-archivio-locale"))
             put("generato_il", kotlinx.serialization.json.JsonPrimitive(data.generatoIl))
             put(
@@ -369,6 +398,9 @@ object LocalArchive {
         val data = json.decodeFromString<LocalArchiveData>(payload.toString(Charsets.UTF_8))
         require(data.tipo == "spendy-archivio-locale") {
             "L'archivio non è un archivio locale di Spendy."
+        }
+        require(data.schema in 1..LocalArchiveData.CURRENT_SCHEMA) {
+            "L'archivio usa uno schema più recente (${data.schema}) di questa versione dell'app."
         }
         return data
     }

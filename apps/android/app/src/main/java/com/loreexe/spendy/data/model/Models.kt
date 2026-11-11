@@ -46,6 +46,8 @@ data class UserDto(
     @SerialName("display_name") val displayName: String = "",
     val status: String = "",
     @SerialName("is_global_admin") val isGlobalAdmin: Boolean = false,
+    @SerialName("has_avatar") val hasAvatar: Boolean = false,
+    @SerialName("avatar_updated_at") val avatarUpdatedAt: String? = null,
 )
 
 @Serializable
@@ -71,6 +73,7 @@ data class DashboardDto(
     @SerialName("total_investments_value") val totalInvestmentsValue: String = "0.00",
     @SerialName("positions_without_price") val positionsWithoutPrice: Int = 0,
     val period: PeriodDto = PeriodDto(),
+    @SerialName("recent_transactions") val recentTransactions: List<TransactionDto> = emptyList(),
 )
 
 @Serializable
@@ -95,6 +98,7 @@ data class CategorySummaryDto(
     val uuid: String = "",
     val name: String,
     @SerialName("is_default") val isDefault: Boolean = false,
+    val icon: String = "tag",
 )
 
 @Serializable
@@ -111,6 +115,7 @@ data class TransactionDto(
     val uuid: String,
     val kind: String,
     val date: String,
+    val time: String = "",
     val description: String = "",
     val amount: String = "0.00",
     val category: CategorySummaryDto? = null,
@@ -131,6 +136,7 @@ data class CategoryDto(
     val name: String,
     @SerialName("is_preset") val isPreset: Boolean = false,
     @SerialName("is_default") val isDefault: Boolean = false,
+    val icon: String = "tag",
 )
 
 @Serializable
@@ -157,6 +163,7 @@ data class AccountCreateRequest(
 @Serializable
 data class CategoryWriteRequest(
     val name: String,
+    val icon: String? = null,
 )
 
 @Serializable
@@ -178,6 +185,7 @@ data class TransactionWriteRequest(
     @SerialName("to_savings") val toSavings: Int? = null,
     @SerialName("category_id") val categoryId: Int? = null,
     val tags: List<String> = emptyList(),
+    val time: String? = null,
 )
 
 @Serializable
@@ -192,6 +200,7 @@ data class CategoryTotalDto(
     val id: Int,
     val name: String,
     val total: String,
+    val icon: String = "tag",
 )
 
 @Serializable
@@ -221,6 +230,7 @@ data class DashboardData(
     val positionsWithoutPrice: Int = 0,
     val periodStart: String = "",
     val periodEnd: String = "",
+    val recentTransactions: List<TransactionData> = emptyList(),
 )
 
 data class AccountData(
@@ -248,6 +258,8 @@ data class TransactionData(
     val savingsUuid: String? = null,
     val fromSavingsUuid: String? = null,
     val toSavingsUuid: String? = null,
+    val time: String = "12:00",
+    val categoryIcon: String = "tag",
 )
 
 data class NewTransaction(
@@ -263,6 +275,7 @@ data class NewTransaction(
     val toSavingsUuid: String? = null,
     val categoryUuid: String? = null,
     val tags: List<String> = emptyList(),
+    val time: String = "12:00",
 )
 
 data class TransactionFilters(
@@ -290,6 +303,13 @@ data class CategoryData(
     val name: String,
     val isPreset: Boolean,
     val isDefault: Boolean,
+    val icon: String = "tag",
+)
+
+/** Dati per creare o aggiornare una categoria (nome + icona del catalogo). */
+data class NewCategory(
+    val name: String,
+    val icon: String = "tag",
 )
 
 data class TagData(
@@ -307,6 +327,7 @@ data class SeriesPoint(
 data class CategoryTotal(
     val name: String,
     val totalCents: Long,
+    val icon: String = "tag",
 )
 
 data class SeriesData(

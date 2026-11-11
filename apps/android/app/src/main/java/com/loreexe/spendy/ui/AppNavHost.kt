@@ -16,9 +16,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.loreexe.spendy.data.AppMode
 import com.loreexe.spendy.data.LocalFinanceRepository
+import com.loreexe.spendy.data.ServerRepository
 import com.loreexe.spendy.data.SessionStore
 import com.loreexe.spendy.ui.accounts.AccountsScreen
-import com.loreexe.spendy.ui.automations.AutomationsScreen
 import com.loreexe.spendy.ui.data.DataScreen
 import com.loreexe.spendy.ui.devices.DevicesScreen
 import com.loreexe.spendy.ui.categories.CategoriesScreen
@@ -50,7 +50,6 @@ object Routes {
     const val ACCOUNTS = "accounts"
     const val CATEGORIES = "categories"
     const val SEARCH = "search"
-    const val AUTOMATIONS = "automations"
     const val TRASH = "trash"
     const val DATA = "data"
     const val PROFILE = "profile"
@@ -64,6 +63,7 @@ object Routes {
 class StartViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val localFinanceRepository: LocalFinanceRepository,
+    private val serverRepository: ServerRepository,
 ) : ViewModel() {
     private val _start = MutableStateFlow<String?>(null)
     val start: StateFlow<String?> = _start.asStateFlow()
@@ -73,6 +73,14 @@ class StartViewModel @Inject constructor(
 
     /** true se esiste un account attivo (dopo login, cambio utente o uscita). */
     fun hasSession(): Boolean = sessionStore.token != null
+
+    /** Uscita dall'account attivo dal menu della top bar (DC-114). */
+    fun logout(onDone: () -> Unit) {
+        viewModelScope.launch {
+            serverRepository.logout()
+            onDone()
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -166,11 +174,11 @@ fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
                 onAccounts = { navController.navigate(Routes.ACCOUNTS) },
                 onCategories = { navController.navigate(Routes.CATEGORIES) },
                 onSearch = { navController.navigate(Routes.SEARCH) },
-                onAutomations = { navController.navigate(Routes.AUTOMATIONS) },
                 onTrash = { navController.navigate(Routes.TRASH) },
                 onData = { navController.navigate(Routes.DATA) },
                 onProfile = { navController.navigate(Routes.PROFILE) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
+                onLogout = { viewModel.logout { goHome() } },
             )
         }
         composable(Routes.ACCOUNTS) {
@@ -181,9 +189,6 @@ fun AppNavHost(viewModel: StartViewModel = hiltViewModel()) {
         }
         composable(Routes.SEARCH) {
             SearchScreen(onBack = { navController.popBackStack() })
-        }
-        composable(Routes.AUTOMATIONS) {
-            AutomationsScreen()
         }
         composable(Routes.TRASH) {
             TrashScreen(onBack = { navController.popBackStack() })

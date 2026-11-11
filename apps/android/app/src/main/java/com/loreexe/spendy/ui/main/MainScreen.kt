@@ -1,16 +1,15 @@
 package com.loreexe.spendy.ui.main
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -28,20 +28,26 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,45 +72,66 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
 import com.loreexe.spendy.R
-import com.loreexe.spendy.data.model.CategoryTotal
 import com.loreexe.spendy.data.model.DashboardData
 import com.loreexe.spendy.data.model.SeriesData
-import com.loreexe.spendy.ui.investments.InvestmentsScreen
-import com.loreexe.spendy.ui.movements.MovementsScreen
+import com.loreexe.spendy.ui.automations.AutomationsScreen
 import com.loreexe.spendy.ui.components.LocalBottomBarInset
+import com.loreexe.spendy.ui.components.ProfileAvatar
 import com.loreexe.spendy.ui.components.SpendyBottomBar
 import com.loreexe.spendy.ui.components.SpendyBottomBarItem
+import com.loreexe.spendy.ui.investments.InvestmentsScreen
+import com.loreexe.spendy.ui.movements.MovementsScreen
 import com.loreexe.spendy.ui.savings.SavingsScreen
 import com.loreexe.spendy.ui.theme.LocalSpendySemanticColors
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.formatIsoDateItalian
-import androidx.annotation.DrawableRes
+import kotlinx.coroutines.launch
 
+/**
+ * Shell principale dell'app (DC-114).
+ *
+ * Bottom bar a cinque voci — Home, Movimenti, Salvadanai, Investimenti,
+ * Automazioni — con top bar unica: brand a sinistra e avatar a destra con il
+ * menu rapido (Profilo, Impostazioni, Import/Export, Cestino, Ricerca, Esci).
+ * La tab «Altro» non esiste più: Conti si raggiunge dal portafoglio in Home e
+ * le automazioni sono una destinazione di primo livello.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     onAccounts: () -> Unit = {},
     onCategories: () -> Unit = {},
     onSearch: () -> Unit = {},
-    onAutomations: () -> Unit = {},
     onTrash: () -> Unit = {},
     onData: () -> Unit = {},
     onProfile: () -> Unit = {},
     onSettings: () -> Unit = {},
+    onLogout: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val tabs = listOf(
-        SpendyBottomBarItem(R.string.nav_dashboard, R.drawable.ic_lucide_layout_dashboard),
+        SpendyBottomBarItem(R.string.nav_home, R.drawable.ic_lucide_house),
         SpendyBottomBarItem(R.string.nav_movements, R.drawable.ic_lucide_receipt_text),
         SpendyBottomBarItem(R.string.nav_savings, R.drawable.ic_lucide_piggy_bank),
         SpendyBottomBarItem(R.string.nav_investments, R.drawable.ic_lucide_trending_up),
-        SpendyBottomBarItem(R.string.nav_more, R.drawable.ic_lucide_user),
+        SpendyBottomBarItem(R.string.automations_title, R.drawable.ic_lucide_clock),
     )
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
+    // Tipo richiesto dalle azioni rapide della Home: la tab Movimenti apre il
+    // dialogo già impostato (nessun form duplicato).
+    var pendingMovementKind by remember { mutableStateOf<String?>(null) }
+
+    // Al ritorno da Profilo la composizione viene ricreata: rilegge foto e
+    // identità senza duplicare il caricamento della dashboard.
+    LaunchedEffect(Unit) { viewModel.refreshUser() }
+
+    val openNewMovement: (String) -> Unit = { kind ->
+        pendingMovementKind = kind
+        scope.launch { pagerState.animateScrollToPage(1) }
+    }
 
     CompositionLocalProvider(LocalBottomBarInset provides 72.dp) {
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -113,20 +140,29 @@ fun MainScreen(
                     title = {
                         val darkTheme =
                             MaterialTheme.colorScheme.background.luminance() < 0.5f
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(
-                                    if (darkTheme) {
-                                        R.drawable.spendy_lockup_dark
-                                    } else {
-                                        R.drawable.spendy_lockup_light
-                                    },
-                                ),
-                                contentDescription = "Spendy",
-                                modifier = Modifier.height(26.dp),
-                                contentScale = ContentScale.Fit,
-                            )
-                        }
+                        Image(
+                            painter = painterResource(
+                                if (darkTheme) {
+                                    R.drawable.spendy_lockup_dark
+                                } else {
+                                    R.drawable.spendy_lockup_light
+                                },
+                            ),
+                            contentDescription = "Spendy",
+                            modifier = Modifier.height(26.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    },
+                    actions = {
+                        MainProfileMenu(
+                            state = state,
+                            onProfile = onProfile,
+                            onSettings = onSettings,
+                            onData = onData,
+                            onTrash = onTrash,
+                            onSearch = onSearch,
+                            onLogout = onLogout,
+                        )
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
@@ -149,6 +185,7 @@ fun MainScreen(
                                 onRetry = viewModel::load,
                                 onSelectPeriod = viewModel::setPeriod,
                                 onOpenAccounts = onAccounts,
+                                onOpenMovement = openNewMovement,
                                 onOpenMovements = {
                                     scope.launch { pagerState.animateScrollToPage(1) }
                                 },
@@ -158,6 +195,8 @@ fun MainScreen(
                                 onBack = null,
                                 showTopBar = false,
                                 onCategories = onCategories,
+                                pendingKind = pendingMovementKind,
+                                onPendingKindConsumed = { pendingMovementKind = null },
                                 modifier = Modifier.fillMaxSize(),
                             )
                             2 -> SavingsScreen(
@@ -168,14 +207,8 @@ fun MainScreen(
                                 showTopBar = false,
                                 modifier = Modifier.fillMaxSize(),
                             )
-                            4 -> MoreContent(
-                                onAccounts = onAccounts,
-                                onSearch = onSearch,
-                                onAutomations = onAutomations,
-                                onTrash = onTrash,
-                                onData = onData,
-                                onProfile = onProfile,
-                                onSettings = onSettings,
+                            4 -> AutomationsScreen(
+                                showTopBar = false,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -195,12 +228,130 @@ fun MainScreen(
     }
 }
 
+/**
+ * Avatar in alto a destra con il menu rapido: testata con foto, nome, cognome
+ * ed email, poi le voci che prima vivevano nella tab «Altro».
+ */
+@Composable
+private fun MainProfileMenu(
+    state: DashboardUiState,
+    onProfile: () -> Unit,
+    onSettings: () -> Unit,
+    onData: () -> Unit,
+    onTrash: () -> Unit,
+    onSearch: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val fullName = listOf(state.firstName, state.lastName)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { state.displayName.ifBlank { state.email } }
+    Box {
+        IconButton(onClick = { open = true }) {
+            ProfileAvatar(
+                bitmap = state.avatar,
+                initials = state.initials,
+                size = 34.dp,
+                contentDescription = stringResource(R.string.profile_avatar_description),
+            )
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.widthIn(min = 264.dp, max = 320.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ProfileAvatar(
+                    bitmap = state.avatar,
+                    initials = state.initials,
+                    size = 44.dp,
+                    contentDescription = null,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = fullName.ifBlank { stringResource(R.string.app_name) },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = state.email.ifBlank {
+                            stringResource(R.string.profile_no_email)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+            ProfileMenuEntry(R.drawable.ic_lucide_user, stringResource(R.string.profile_title)) {
+                open = false
+                onProfile()
+            }
+            ProfileMenuEntry(R.drawable.ic_lucide_settings, stringResource(R.string.settings_title)) {
+                open = false
+                onSettings()
+            }
+            ProfileMenuEntry(R.drawable.ic_lucide_arrow_left_right, stringResource(R.string.data_title)) {
+                open = false
+                onData()
+            }
+            ProfileMenuEntry(R.drawable.ic_lucide_trash_2, stringResource(R.string.trash_title)) {
+                open = false
+                onTrash()
+            }
+            ProfileMenuEntry(R.drawable.ic_lucide_search, stringResource(R.string.more_search)) {
+                open = false
+                onSearch()
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+            ProfileMenuEntry(
+                iconRes = R.drawable.ic_lucide_log_out,
+                label = stringResource(R.string.profile_logout),
+                tint = MaterialTheme.colorScheme.error,
+            ) {
+                open = false
+                onLogout()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileMenuEntry(
+    @DrawableRes iconRes: Int,
+    label: String,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(label, color = tint) },
+        leadingIcon = {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = tint,
+            )
+        },
+        onClick = onClick,
+    )
+}
+
 @Composable
 private fun DashboardContent(
     state: DashboardUiState,
     onRetry: () -> Unit,
     onSelectPeriod: (DashboardPeriod) -> Unit,
     onOpenAccounts: () -> Unit,
+    onOpenMovement: (String) -> Unit,
     onOpenMovements: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -239,6 +390,7 @@ private fun DashboardContent(
                     series = null,
                     period = state.period,
                     onOpenAccounts = onOpenAccounts,
+                    onOpenMovement = onOpenMovement,
                     onOpenMovements = onOpenMovements,
                 )
                 else -> DashboardDataContent(
@@ -246,6 +398,7 @@ private fun DashboardContent(
                     series = state.series,
                     period = state.period,
                     onOpenAccounts = onOpenAccounts,
+                    onOpenMovement = onOpenMovement,
                     onOpenMovements = onOpenMovements,
                 )
             }
@@ -299,7 +452,8 @@ private fun DashboardData.isEffectivelyEmpty(): Boolean =
         savingsCents == 0L &&
         investmentsCostCents == 0L &&
         incomeCents == 0L &&
-        expenseCents == 0L
+        expenseCents == 0L &&
+        recentTransactions.isEmpty()
 
 @Composable
 private fun DashboardDataContent(
@@ -307,6 +461,7 @@ private fun DashboardDataContent(
     series: SeriesData?,
     period: DashboardPeriod,
     onOpenAccounts: () -> Unit,
+    onOpenMovement: (String) -> Unit,
     onOpenMovements: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -319,10 +474,95 @@ private fun DashboardDataContent(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (empty) {
-            EmptyDashboard(onOpenAccounts = onOpenAccounts, onOpenMovements = onOpenMovements)
+            EmptyDashboard(
+                onOpenAccounts = onOpenAccounts,
+                onAddMovement = { onOpenMovement("expense") },
+            )
         } else {
-            HeroBalanceCard(data = data, period = period)
-            DashboardChartsCard(data = data, series = series)
+            HeroBalanceCard(data = data, period = period, onOpenAccounts = onOpenAccounts)
+            QuickActionsRow(
+                onMovement = { onOpenMovement("expense") },
+                onTransfer = { onOpenMovement("transfer") },
+            )
+            if (data.recentTransactions.isNotEmpty()) {
+                RecentMovementsCard(
+                    transactions = data.recentTransactions,
+                    onOpenAll = onOpenMovements,
+                )
+            }
+            DashboardSectionCard(title = stringResource(R.string.dashboard_charts_cashflow)) {
+                InOutBars(incomeCents = data.incomeCents, expenseCents = data.expenseCents)
+            }
+            DashboardSectionCard(title = stringResource(R.string.dashboard_charts_balance)) {
+                BalanceChart(series?.points.orEmpty().map { it.saldoCents to it.patrimonioCents })
+            }
+            DashboardSectionCard(title = stringResource(R.string.dashboard_charts_categories)) {
+                CategoryBars(series?.byCategory.orEmpty())
+            }
+        }
+    }
+}
+
+/** Card di sezione della Home: una card separata per ogni grafico (0.8.4). */
+@Composable
+private fun DashboardSectionCard(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            content()
+        }
+    }
+}
+
+/** Azioni rapide della Home: aprono il dialogo Movimenti col tipo già scelto. */
+@Composable
+private fun QuickActionsRow(
+    onMovement: () -> Unit,
+    onTransfer: () -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(onClick = onMovement, modifier = Modifier.weight(1f)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_lucide_plus),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.size(6.dp))
+            Text(stringResource(R.string.dashboard_action_movement))
+        }
+        OutlinedButton(onClick = onTransfer, modifier = Modifier.weight(1f)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_lucide_arrow_left_right),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.size(6.dp))
+            Text(
+                text = stringResource(R.string.movement_transfer),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -330,7 +570,7 @@ private fun DashboardDataContent(
 @Composable
 private fun EmptyDashboard(
     onOpenAccounts: () -> Unit,
-    onOpenMovements: () -> Unit,
+    onAddMovement: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -376,7 +616,7 @@ private fun EmptyDashboard(
                 Button(onClick = onOpenAccounts) {
                     Text(stringResource(R.string.dashboard_open_accounts))
                 }
-                TextButton(onClick = onOpenMovements) {
+                TextButton(onClick = onAddMovement) {
                     Text(stringResource(R.string.dashboard_add_movement))
                 }
             }
@@ -391,7 +631,11 @@ private fun EmptyDashboard(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("Come funziona", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Come funziona",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
             StepRow("1", "Crea un conto", "Contanti, banca, carta: quello che usi ogni giorno.")
             StepRow("2", "Registra un movimento", "Spese, entrate e trasferimenti tra conti.")
             StepRow("3", "Guarda l'andamento", "Saldi, patrimonio e categorie si aggiornano da soli.")
@@ -428,14 +672,19 @@ private fun StepRow(number: String, title: String, body: String) {
 }
 
 @Composable
-private fun HeroBalanceCard(data: DashboardData, period: DashboardPeriod) {
+private fun HeroBalanceCard(
+    data: DashboardData,
+    period: DashboardPeriod,
+    onOpenAccounts: () -> Unit,
+) {
     val semantic = LocalSpendySemanticColors.current
     // Il server può restringere l'inizio (es. "Tutto" parte dalla prima
     // attività reale): si mostra l'intervallo effettivo, non quello richiesto.
     val (presetStart, presetEnd) = period.range()
     val startIso = data.periodStart.ifBlank { presetStart }
     val endIso = data.periodEnd.ifBlank { presetEnd }
-    val periodNote = "${formatIsoDateItalian(startIso)} – ${formatIsoDateItalian(endIso)}" + stringResource(R.string.dashboard_period_flow_note)
+    val periodNote = "${formatIsoDateItalian(startIso)} – ${formatIsoDateItalian(endIso)}" +
+        stringResource(R.string.dashboard_period_flow_note)
     val investmentsNote = buildString {
         append(
             stringResource(
@@ -486,12 +735,22 @@ private fun HeroBalanceCard(data: DashboardData, period: DashboardPeriod) {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 val wide = maxWidth >= 560.dp
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = stringResource(R.string.dashboard_period),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.dashboard_period),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Portafoglio: i conti sono raggiungibili solo da qui (DC-114).
+                        IconButton(onClick = onOpenAccounts) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_lucide_wallet),
+                                contentDescription = stringResource(R.string.dashboard_open_accounts),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     Text(
                         text = formatCents(data.periodBalanceCents),
                         style = MaterialTheme.typography.headlineLarge,
@@ -564,93 +823,6 @@ private fun HeroBalanceCard(data: DashboardData, period: DashboardPeriod) {
             }
         }
     }
-}
-
-/**
- * Unica card "Grafici del periodo", come la sezione `.dash-charts` del web:
- * andamento saldo/patrimonio, poi Entrate vs uscite e Spese per categoria
- * affiancati quando lo spazio lo consente, impilati sul telefono.
- */
-@Composable
-private fun DashboardChartsCard(data: DashboardData, series: SeriesData?) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.dashboard_trend),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChartSubtitle(stringResource(R.string.dashboard_charts_balance))
-                BalanceChart(series?.points.orEmpty().map { it.saldoCents to it.patrimonioCents })
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val wide = maxWidth >= 620.dp
-                if (wide) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ChartSubtitle(stringResource(R.string.dashboard_charts_cashflow))
-                            InOutBars(
-                                incomeCents = data.incomeCents,
-                                expenseCents = data.expenseCents,
-                            )
-                        }
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ChartSubtitle(stringResource(R.string.dashboard_charts_categories))
-                            CategoryBars(series?.byCategory.orEmpty())
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ChartSubtitle(stringResource(R.string.dashboard_charts_cashflow))
-                            InOutBars(
-                                incomeCents = data.incomeCents,
-                                expenseCents = data.expenseCents,
-                            )
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ChartSubtitle(stringResource(R.string.dashboard_charts_categories))
-                            CategoryBars(series?.byCategory.orEmpty())
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChartSubtitle(text: String) {
-    Text(
-        text = text.uppercase(),
-        style = MaterialTheme.typography.labelSmall.copy(
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
-        ),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 @Composable
@@ -775,199 +947,10 @@ private fun LegendDot(color: Color, label: String) {
                 .background(color),
         )
         Spacer(Modifier.size(6.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun CategoryBars(categories: List<CategoryTotal>) {
-    if (categories.isEmpty()) {
-        EmptyChart(stringResource(R.string.chart_empty_categories))
-        return
-    }
-    val max = categories.maxOf { it.totalCents }.coerceAtLeast(1L)
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        categories.take(6).forEach { category ->
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row {
-                    Text(
-                        category.name,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        formatCents(category.totalCents),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                LinearProgressIndicator(
-                    progress = { category.totalCents.toFloat() / max.toFloat() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(7.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.background,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MoreContent(
-    onAccounts: () -> Unit,
-    onSearch: () -> Unit,
-    onAutomations: () -> Unit,
-    onTrash: () -> Unit,
-    onData: () -> Unit,
-    onProfile: () -> Unit,
-    onSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 28.dp + LocalBottomBarInset.current),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
         Text(
-            text = stringResource(R.string.more_title),
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        MenuGroup(title = stringResource(R.string.more_group_manage)) {
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_wallet,
-                title = stringResource(R.string.more_accounts),
-                subtitle = stringResource(R.string.more_accounts_hint),
-                onClick = onAccounts,
-            )
-            MenuDivider()
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_clock,
-                title = stringResource(R.string.automations_title),
-                subtitle = "Spese e versamenti ricorrenti",
-                onClick = onAutomations,
-            )
-            MenuDivider()
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_search,
-                title = stringResource(R.string.more_search),
-                subtitle = stringResource(R.string.more_search_hint),
-                onClick = onSearch,
-            )
-        }
-        MenuGroup(title = stringResource(R.string.more_group_data)) {
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_trash_2,
-                title = stringResource(R.string.trash_title),
-                subtitle = stringResource(R.string.more_trash_hint),
-                onClick = onTrash,
-            )
-            MenuDivider()
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_arrow_left_right,
-                title = stringResource(R.string.data_title),
-                subtitle = stringResource(R.string.more_data_hint),
-                onClick = onData,
-            )
-        }
-        MenuGroup(title = stringResource(R.string.more_group_app)) {
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_user,
-                title = stringResource(R.string.profile_title),
-                subtitle = stringResource(R.string.more_profile_hint),
-                onClick = onProfile,
-            )
-            MenuDivider()
-            MenuRow(
-                iconRes = R.drawable.ic_lucide_settings,
-                title = stringResource(R.string.settings_title),
-                subtitle = stringResource(R.string.more_settings_hint),
-                onClick = onSettings,
-            )
-        }
-    }
-}
-
-@Composable
-private fun MenuGroup(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
+            label,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp),
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-            ),
-        ) {
-            Column { content() }
-        }
-    }
-}
-
-@Composable
-private fun MenuRow(
-    @DrawableRes iconRes: Int,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(11.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            painter = painterResource(R.drawable.ic_lucide_chevron_right),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
         )
     }
-}
-
-@Composable
-private fun MenuDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 64.dp, end = 16.dp),
-        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-    )
 }

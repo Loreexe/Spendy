@@ -48,6 +48,7 @@ import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.data.model.NewTransaction
 import com.loreexe.spendy.data.model.SavingsData
 import com.loreexe.spendy.util.formatCents
+import com.loreexe.spendy.util.currentTimeHhMm
 import com.loreexe.spendy.util.parseMoneyToCents
 import com.loreexe.spendy.ui.components.EmptyState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -142,6 +143,7 @@ class SavingsViewModel @Inject constructor(
                 NewTransaction(
                     kind = "transfer",
                     date = LocalDate.now().toString(),
+                    time = currentTimeHhMm(),
                     description = "Versamento ${savings.name}",
                     amountCents = cents,
                     fromAccountUuid = savings.backingAccountUuid,
@@ -151,6 +153,7 @@ class SavingsViewModel @Inject constructor(
                 NewTransaction(
                     kind = "transfer",
                     date = LocalDate.now().toString(),
+                    time = currentTimeHhMm(),
                     description = "Prelievo ${savings.name}",
                     amountCents = cents,
                     fromSavingsUuid = savings.uuid,

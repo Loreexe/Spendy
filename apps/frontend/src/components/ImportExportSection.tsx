@@ -150,7 +150,7 @@ export function ImportExportSection({ query = "" }: { query?: string }) {
   }
 
   return (
-    <section className="profile-section">
+    <section className="profile-section" id="import-export">
       <div className="section-heading">
         <h2>Import ed export</h2>
       </div>
@@ -204,6 +204,10 @@ export function ImportExportSection({ query = "" }: { query?: string }) {
           </PanelIcon>
           <h3>Importa ed esporta CSV</h3>
         </div>
+        <p className="muted small">
+          Il CSV del registro contiene 6 colonne: data, descrizione, categoria,
+          conto, importo, ora. In importazione l&apos;ora è facoltativa.
+        </p>
         <div className="actions">
           <Link className="button secondary" to="/import">
             Importa movimenti CSV

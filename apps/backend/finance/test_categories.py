@@ -22,6 +22,107 @@ class CategoryTests(FinanceTestBase):
         self.assertEqual(names[0], "Altro")
         self.assertTrue(response.data[0]["is_default"])
 
+    def test_default_categories_expose_the_mapped_icons(self):
+        icons = {
+            item["name"]: item["icon"] for item in self.list_categories().data
+        }
+        self.assertEqual(icons["Altro"], "tag")
+        self.assertEqual(icons["Alimentari"], "shopping-cart")
+        self.assertEqual(icons["Casa e bollette"], "house")
+        self.assertEqual(icons["Trasporti"], "car")
+        self.assertEqual(icons["Salute"], "heart-pulse")
+        self.assertEqual(icons["Svago e tempo libero"], "gamepad-2")
+        self.assertEqual(icons["Shopping"], "shopping-bag")
+        self.assertEqual(icons["Lavoro e studio"], "briefcase")
+        self.assertEqual(icons["Risparmio"], "piggy-bank")
+
+    def test_create_category_with_icon(self):
+        created = self.client.post(
+            reverse("finance-categories"),
+            {"name": "Viaggi", "icon": "plane"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["icon"], "plane")
+        self.assertIn(
+            "plane",
+            [item["icon"] for item in self.list_categories().data],
+        )
+
+    def test_create_category_without_icon_uses_tag(self):
+        created = self.client.post(
+            reverse("finance-categories"), {"name": "Viaggi"}, format="json"
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["icon"], "tag")
+
+    def test_icon_outside_the_whitelist_is_rejected(self):
+        invalid = self.client.post(
+            reverse("finance-categories"),
+            {"name": "Viaggi", "icon": "rocket"},
+            format="json",
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("icon", invalid.data)
+        special = self.client.post(
+            reverse("finance-categories"),
+            {"name": "Viaggi", "icon": "<script>"},
+            format="json",
+        )
+        self.assertEqual(special.status_code, 400)
+        self.assertFalse(Category.objects.filter(name="Viaggi").exists())
+
+    def test_icon_can_be_changed_also_on_the_default_category(self):
+        default_id = self.list_categories().data[0]["id"]
+        changed = self.client.patch(
+            reverse("finance-category-detail", args=[default_id]),
+            {"icon": "sparkles"},
+            format="json",
+        )
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(changed.data["icon"], "sparkles")
+        self.assertEqual(changed.data["name"], "Altro")
+        renamed = self.client.patch(
+            reverse("finance-category-detail", args=[default_id]),
+            {"name": "Varie"},
+            format="json",
+        )
+        self.assertEqual(renamed.status_code, 400)
+
+    def test_patch_can_change_name_and_icon_together(self):
+        created = self.client.post(
+            reverse("finance-categories"),
+            {"name": "Viaggi", "icon": "plane"},
+            format="json",
+        ).data
+        updated = self.client.patch(
+            reverse("finance-category-detail", args=[created["id"]]),
+            {"name": "Vacanze", "icon": "leaf"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data["name"], "Vacanze")
+        self.assertEqual(updated.data["icon"], "leaf")
+
+    def test_icon_is_exposed_in_the_nested_movement_category(self):
+        created = self.client.post(
+            reverse("finance-categories"),
+            {"name": "Viaggi", "icon": "plane"},
+            format="json",
+        ).data
+        movement = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Treno",
+                "amount": "40.00",
+                "account": self.account["id"],
+                "category_id": created["id"],
+            }
+        )
+        self.assertEqual(movement.status_code, 201)
+        self.assertEqual(movement.data["category"]["icon"], "plane")
+
     def test_create_category_and_duplicate_rejected(self):
         created = self.client.post(
             reverse("finance-categories"), {"name": "Viaggi"}, format="json"
@@ -395,13 +496,17 @@ class ExportCategoryTests(FinanceTestBase):
                 "amount": "1.20",
                 "account": self.account["id"],
                 "category_id": food.id,
+                "time": "12:00",
             }
         )
         response = self.client.get(reverse("finance-export"))
         self.assertEqual(response.status_code, 200)
         text = response.content.decode("utf-8-sig")
         today = self.today.strftime("%d-%m-%Y")
-        self.assertIn(f"{today};Caffè;Alimentari;Contanti;1,20", text.splitlines())
+        self.assertIn(
+            f"{today};Caffè;Alimentari;Contanti;1,20;12:00",
+            text.splitlines(),
+        )
 
 
 class ArchiveCategoryTests(FinanceTestBase):
@@ -489,7 +594,7 @@ class ArchiveCategoryTests(FinanceTestBase):
         manifest_names = json.loads(
             self.unpack(self.export_bytes())["manifest.json"].decode("utf-8")
         )
-        self.assertEqual(manifest_names["schema"], 4)
+        self.assertEqual(manifest_names["schema"], 5)
 
     def test_schema2_restore_assigns_default_category(self):
         import csv as csv_module
@@ -579,4 +684,7 @@ class ArchiveCategoryTests(FinanceTestBase):
             profile=target.finance_profile, description="Supermercato"
         )
         self.assertEqual(restored.category.name, "Altro")
+        # Schemi 1-4: icona da mappatura (Altro => tag) e ora 12:00.
+        self.assertEqual(restored.category.icon, "tag")
+        self.assertEqual(restored.time.isoformat(), "12:00:00")
         self.assertEqual(list(restored.tags.all()), [])

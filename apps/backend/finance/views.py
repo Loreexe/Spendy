@@ -26,6 +26,8 @@ from .investments import (
 )
 from .models import (
     ZERO,
+    CATEGORY_ICONS,
+    DEFAULT_CATEGORY_ICON,
     DEFAULT_CATEGORY_NAME,
     Account,
     AutomationExecution,
@@ -245,7 +247,7 @@ class DashboardView(FinanceView):
             Transaction.objects.filter(profile=profile)
             .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
             .prefetch_related("lines__account", "lines__savings")
-            .order_by("-date", "-id")[:10]
+            .order_by("-date", "-time", "-id")[:10]
         )
         period_realized, period_dividends = self._period_investments(
             profile, start, end
@@ -471,7 +473,7 @@ class DashboardSeriesView(FinanceView):
                 date__lte=end,
             )
             .exclude(category__isnull=True)
-            .values("category__id", "category__name")
+            .values("category__id", "category__name", "category__icon")
             .annotate(total=Sum("amount"))
             .order_by("-total")
         )
@@ -482,6 +484,7 @@ class DashboardSeriesView(FinanceView):
                     {
                         "id": entry["category__id"],
                         "name": entry["category__name"],
+                        "icon": entry["category__icon"],
                         "total": f"{entry['total']:.2f}",
                     }
                     for entry in by_category
@@ -653,7 +656,7 @@ class TransactionListCreateView(FinanceView):
             .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
             .select_related("category")
             .prefetch_related("tags", "lines__account", "lines__savings")
-            .order_by("-date", "-id")
+            .order_by("-date", "-time", "-id")
         )
         account_id = request.query_params.get("account")
         savings_id = request.query_params.get("savings")
@@ -813,9 +816,26 @@ def _category_payload(category: Category) -> dict:
         "id": category.id,
         "uuid": str(category.uuid),
         "name": category.name,
+        "icon": category.icon,
         "is_preset": category.is_preset,
         "is_default": category.is_default,
     }
+
+
+def _clean_category_icon(value) -> str:
+    """Icona validata sulla whitelist server (DC-117)."""
+    icon = str(value if value is not None else "").strip()
+    if not icon:
+        return DEFAULT_CATEGORY_ICON
+    if icon not in CATEGORY_ICONS:
+        raise ValidationError(
+            {
+                "icon": (
+                    "Icona non valida: scegli una delle icone supportate."
+                )
+            }
+        )
+    return icon
 
 
 class CategoryListCreateView(FinanceView):
@@ -834,12 +854,17 @@ class CategoryListCreateView(FinanceView):
             raise ValidationError(
                 {"name": "Indica un nome da 1 a 60 caratteri."}
             )
+        icon = _clean_category_icon(
+            request.data.get("icon", DEFAULT_CATEGORY_ICON)
+        )
         if Category.objects.filter(
             profile=profile, name__iexact=name
         ).exists():
             raise ValidationError({"name": "Esiste già questa categoria."})
         ensure_default_categories(profile)
-        category = Category.objects.create(profile=profile, name=name)
+        category = Category.objects.create(
+            profile=profile, name=name, icon=icon
+        )
         return Response(
             _category_payload(category), status=status.HTTP_201_CREATED
         )
@@ -855,23 +880,41 @@ class CategoryDetailView(FinanceView):
 
     def patch(self, request, pk: int):
         category = self._get_object(request, pk)
-        if category.is_default:
+        has_name = "name" in request.data
+        has_icon = "icon" in request.data
+        if not has_name and not has_icon:
             raise ValidationError(
-                {"detail": 'La categoria "Altro" non si può rinominare.'}
+                {"detail": "Indica almeno il nome o l'icona della categoria."}
             )
-        name = str(request.data.get("name", "")).strip()
-        if not name or len(name) > 60:
-            raise ValidationError(
-                {"name": "Indica un nome da 1 a 60 caratteri."}
-            )
-        if (
-            Category.objects.filter(profile=category.profile, name__iexact=name)
-            .exclude(pk=category.pk)
-            .exists()
-        ):
-            raise ValidationError({"name": "Esiste già questa categoria."})
+
+        name = category.name
+        if has_name:
+            name = str(request.data.get("name", "")).strip()
+            if not name or len(name) > 60:
+                raise ValidationError(
+                    {"name": "Indica un nome da 1 a 60 caratteri."}
+                )
+            if category.is_default and name != category.name:
+                raise ValidationError(
+                    {"detail": 'La categoria "Altro" non si può rinominare.'}
+                )
+            if (
+                name != category.name
+                and Category.objects.filter(
+                    profile=category.profile, name__iexact=name
+                )
+                .exclude(pk=category.pk)
+                .exists()
+            ):
+                raise ValidationError({"name": "Esiste già questa categoria."})
+
+        icon = category.icon
+        if has_icon:
+            icon = _clean_category_icon(request.data.get("icon"))
+
         category.name = name
-        category.save(update_fields=("name", "updated_at"))
+        category.icon = icon
+        category.save(update_fields=("name", "icon", "updated_at"))
         return Response(_category_payload(category))
 
     def delete(self, request, pk: int):
@@ -1629,7 +1672,7 @@ class SearchView(FinanceView):
             .select_related("category")
             .prefetch_related("tags", "lines__account", "lines__savings")
             .distinct()
-            .order_by("-date", "-id")[:limit]
+            .order_by("-date", "-time", "-id")[:limit]
         )
         accounts = Account.objects.filter(
             profile=profile, name__icontains=query

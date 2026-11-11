@@ -244,6 +244,8 @@ export interface Transaction {
   kind: TransactionKind;
   kind_label: string;
   date: string;
+  /** Ora del movimento `HH:MM`; assente nei payload dei server 0.8.3. */
+  time?: string;
   description: string;
   amount: string;
   automation: number | null;
@@ -258,12 +260,16 @@ export interface Transaction {
 export interface TransactionCategory {
   id: number;
   name: string;
+  /** Nome Lucide dell'icona; fallback `tag` se assente. */
+  icon?: string;
   is_default: boolean;
 }
 
 export interface Category {
   id: number;
   name: string;
+  /** Nome Lucide dell'icona; fallback `tag` se assente. */
+  icon: string;
   is_preset: boolean;
   is_default: boolean;
 }
@@ -325,6 +331,8 @@ export interface CategoryTotal {
   id: number;
   name: string;
   total: string;
+  /** Nome Lucide dell'icona; fallback `tag` se assente. */
+  icon?: string;
 }
 
 export interface DashboardSeries {
@@ -456,6 +464,8 @@ export interface InvestmentOperationPayload {
 export interface TransactionPayload {
   kind: "income" | "expense" | "transfer";
   date: string;
+  /** Ora `HH:MM`; se assente il server usa l'ora corrente (compatibilità). */
+  time?: string;
   description?: string;
   amount: string;
   account?: number;
@@ -479,6 +489,8 @@ export interface ImportRow {
   index: number;
   row_number: number;
   date: string;
+  /** Ora `HH:MM`; vuota o assente nei file/analisi senza colonna ora. */
+  time?: string;
   description: string;
   category: string;
   account: string;
@@ -540,6 +552,7 @@ export interface ImportAnalysis {
 
 export interface ImportRowInput {
   date: string;
+  time?: string;
   description: string;
   category: string;
   account: string;
@@ -1112,16 +1125,16 @@ export const api = {
 
   categories: () => request<Category[]>("/api/finance/categories/"),
 
-  createCategory: (name: string) =>
+  createCategory: (name: string, icon?: string) =>
     request<Category>("/api/finance/categories/", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...(icon ? { icon } : {}) }),
     }),
 
-  updateCategory: (id: number, name: string) =>
+  updateCategory: (id: number, data: { name?: string; icon?: string }) =>
     request<Category>(`/api/finance/categories/${id}/`, {
       method: "PATCH",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(data),
     }),
 
   deleteCategory: (id: number) =>

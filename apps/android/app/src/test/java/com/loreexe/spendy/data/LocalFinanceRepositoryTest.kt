@@ -30,7 +30,7 @@ class LocalFinanceRepositoryTest {
         override fun observeAccounts(): Flow<List<LocalAccountEntity>> = flowOf(accounts.filter { !it.archived })
         override fun observeTransactions(): Flow<List<LocalTransactionEntity>> = flowOf(transactions)
         override fun observeCategories(): Flow<List<LocalCategoryEntity>> =
-            flowOf(listOf(LocalCategoryEntity("cat", "Alimentari")))
+            flowOf(listOf(LocalCategoryEntity("cat", "Alimentari", icon = "shopping-cart")))
         override fun observeTags(): Flow<List<LocalTagEntity>> = flowOf(listOf(LocalTagEntity("tag", "casa")))
         override fun observeSavings(): Flow<List<com.loreexe.spendy.data.local.LocalSavingsEntity>> = flowOf(savings)
         override fun observeInvestmentPositions(): Flow<List<com.loreexe.spendy.data.local.LocalInvestmentPositionEntity>> = flowOf(positions)
@@ -149,6 +149,12 @@ class LocalFinanceRepositoryTest {
         assertEquals(1, expenses.size)
         assertEquals("Alimentari", expenses.first().categoryName)
         assertEquals(listOf("casa"), expenses.first().tags)
+        assertEquals("12:00", expenses.first().time)
+        assertEquals("shopping-cart", expenses.first().categoryIcon)
+
+        // La Home mostra gli ultimi movimenti con ora e icona categoria.
+        assertEquals(3, dashboard.recentTransactions.size)
+        assertEquals("shopping-cart", dashboard.recentTransactions[1].categoryIcon)
     }
 
     @Test

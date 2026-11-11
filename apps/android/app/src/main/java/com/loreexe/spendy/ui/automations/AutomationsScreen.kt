@@ -1,6 +1,8 @@
 package com.loreexe.spendy.ui.automations
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -50,6 +53,7 @@ import com.loreexe.spendy.ui.movements.Selector
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
 import com.loreexe.spendy.ui.components.EmptyState
+import com.loreexe.spendy.ui.components.LocalBottomBarInset
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -171,34 +175,70 @@ class AutomationsViewModel @Inject constructor(
 @Composable
 fun AutomationsScreen(
     modifier: Modifier = Modifier,
+    showTopBar: Boolean = true,
     viewModel: AutomationsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val bottomInset = LocalBottomBarInset.current
     Scaffold(
         modifier = modifier,
+        contentWindowInsets = if (showTopBar) {
+            ScaffoldDefaults.contentWindowInsets
+        } else {
+            WindowInsets(0, 0, 0, 0)
+        },
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.automations_title)) },
-                actions = {
-                    TextButton(onClick = viewModel::runAll) { Text("Esegui tutte") }
-                },
-            )
+            if (showTopBar) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.automations_title)) },
+                    actions = {
+                        TextButton(onClick = viewModel::runAll) { Text("Esegui tutte") }
+                    },
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = viewModel::openCreate) {
-                Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.automations_add))
+            Box(modifier = Modifier.padding(bottom = bottomInset)) {
+                FloatingActionButton(onClick = viewModel::openCreate) {
+                    Icon(
+                        painterResource(R.drawable.ic_lucide_plus),
+                        contentDescription = stringResource(R.string.automations_add),
+                    )
+                }
             }
         },
     ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (!showTopBar) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 8.dp, top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.automations_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = viewModel::runAll) { Text("Esegui tutte") }
+                }
+            }
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
         when {
-            state.loading -> CircularProgressIndicator(Modifier.padding(padding))
-            state.error != null -> Column(Modifier.padding(padding).padding(24.dp)) {
+            state.loading -> CircularProgressIndicator(Modifier.padding(24.dp))
+            state.error != null -> Column(Modifier.padding(24.dp)) {
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }
             }
             else -> LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 16.dp,
+                    top = 16.dp,
+                    end = 16.dp,
+                    bottom = 16.dp + bottomInset,
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (state.automations.isEmpty()) {
@@ -270,6 +310,9 @@ fun AutomationsScreen(
                         }
                     }
                 }
+            }
+        }
+
             }
         }
 

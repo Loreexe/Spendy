@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.urls import reverse
 from django.utils import timezone
@@ -104,6 +105,7 @@ class AccountTests(FinanceTestBase):
         opening = Transaction.objects.get(profile=account.profile, kind="opening")
         self.assertEqual(opening.amount, 100)
         self.assertEqual(opening.lines.get().account, account)
+        self.assertEqual(opening.time.isoformat(), "12:00:00")
 
     def test_zero_initial_balance_does_not_create_movement(self):
         response = self.create_account(initial="0.00")
@@ -290,6 +292,123 @@ class TransactionTests(FinanceTestBase):
         )
         self.assertEqual(deleted.status_code, 400)
         self.assertEqual(Account.objects.get(pk=self.account["id"]).balance, 1000)
+
+    def test_transaction_time_is_optional_and_written_as_hh_mm(self):
+        created = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Caffè",
+                "amount": "1.20",
+                "account": self.account["id"],
+                "time": "09:05",
+            }
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["time"], "09:05")
+        stored = Transaction.objects.get(pk=created.data["id"])
+        self.assertEqual(stored.time.isoformat(), "09:05:00")
+
+    def test_midnight_time_is_not_replaced_by_the_current_time(self):
+        created = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Mezzanotte",
+                "amount": "1.00",
+                "account": self.account["id"],
+                "time": "00:00",
+            }
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["time"], "00:00")
+        self.assertEqual(
+            Transaction.objects.get(pk=created.data["id"]).time.isoformat(),
+            "00:00:00",
+        )
+
+    def test_transaction_without_time_uses_current_local_time(self):
+        from datetime import time as dt_time
+
+        with mock.patch(
+            "finance.serializers.current_local_time",
+            return_value=dt_time(8, 5),
+        ):
+            created = self.create_transaction(
+                {
+                    "kind": "expense",
+                    "date": self.today.isoformat(),
+                    "description": "Spesa",
+                    "amount": "2.00",
+                    "account": self.account["id"],
+                }
+            )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["time"], "08:05")
+        self.assertEqual(
+            Transaction.objects.get(pk=created.data["id"]).time, dt_time(8, 5)
+        )
+
+    def test_transaction_patch_without_time_keeps_the_existing_one(self):
+        created = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Caffè",
+                "amount": "1.20",
+                "account": self.account["id"],
+                "time": "18:45",
+            }
+        ).data
+        updated = self.client.patch(
+            reverse("finance-transaction-detail", args=[created["id"]]),
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Caffè",
+                "amount": "1.50",
+                "account": self.account["id"],
+            },
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data["time"], "18:45")
+
+        changed = self.client.patch(
+            reverse("finance-transaction-detail", args=[created["id"]]),
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Caffè",
+                "amount": "1.50",
+                "account": self.account["id"],
+                "time": "06:30",
+            },
+            format="json",
+        )
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(changed.data["time"], "06:30")
+
+    def test_transactions_are_ordered_by_date_time_and_id_descending(self):
+        for moment in ("09:00", "18:00"):
+            self.create_transaction(
+                {
+                    "kind": "expense",
+                    "date": self.today.isoformat(),
+                    "description": moment,
+                    "amount": "1.00",
+                    "account": self.account["id"],
+                    "time": moment,
+                }
+            )
+        listing = self.client.get(reverse("finance-transactions")).data[
+            "transactions"
+        ]
+        movements = [
+            item for item in listing if item["kind"] == Transaction.Kind.EXPENSE
+        ]
+        self.assertEqual([item["time"] for item in movements], ["18:00", "09:00"])
+        self.assertEqual(movements[0]["description"], "18:00")
 
 
 class SavingsPaymentTests(FinanceTestBase):

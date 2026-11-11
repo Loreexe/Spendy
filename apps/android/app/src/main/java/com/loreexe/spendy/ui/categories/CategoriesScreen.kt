@@ -1,16 +1,30 @@
 package com.loreexe.spendy.ui.categories
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,7 +42,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,9 +56,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
-import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.data.model.CategoryData
+import com.loreexe.spendy.data.model.CategoryIcons
+import com.loreexe.spendy.data.model.NewCategory
 import com.loreexe.spendy.data.model.TagData
+import com.loreexe.spendy.ui.components.CategoryIconBadge
+import com.loreexe.spendy.ui.components.OverflowMenu
+import com.loreexe.spendy.ui.components.categoryIconLabelRes
+import com.loreexe.spendy.ui.components.categoryIconRes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,7 +71,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import androidx.compose.ui.res.painterResource
 
 data class CategoriesUiState(
     val loading: Boolean = true,
@@ -84,19 +107,26 @@ class CategoriesViewModel @Inject constructor(
 
     fun openDialog(kind: String) =
         _state.update { it.copy(dialog = kind, editingCategory = null, editingTag = null) }
+
     fun editCategory(category: CategoryData) =
         _state.update { it.copy(dialog = "category", editingCategory = category) }
+
     fun editTag(tag: TagData) =
         _state.update { it.copy(dialog = "tag", editingTag = tag) }
+
     fun closeDialog() =
         _state.update { it.copy(dialog = null, editingCategory = null, editingTag = null) }
 
-    fun saveCategory(name: String) {
+    /** Crea o rinomina una categoria, icona compresa (DC-117). */
+    fun saveCategory(name: String, icon: String) {
         if (name.isBlank()) return
         val editing = _state.value.editingCategory
         viewModelScope.launch {
-            (if (editing == null) repository.createCategory(name)
-            else repository.renameCategory(editing, name)).onSuccess {
+            (if (editing == null) {
+                repository.createCategory(NewCategory(name, icon))
+            } else {
+                repository.renameCategory(editing, NewCategory(name, icon))
+            }).onSuccess {
                 closeDialog()
                 load()
             }.onFailure { error -> _state.update { it.copy(error = error.message) } }
@@ -161,11 +191,16 @@ fun CategoriesScreen(
                     )
                 }
                 items(state.categories, key = { "c-${it.uuid}" }) { category ->
+                    // «Altro» non è rinominabile né eliminabile, ma l'icona si
+                    // può cambiare come per le altre categorie (DC-117).
                     RowItem(
                         title = category.name,
+                        icon = category.icon,
                         subtitle = if (category.isDefault) "Predefinita" else null,
-                        onEdit = if (category.isDefault) null else ({ viewModel.editCategory(category) }),
-                        onDelete = if (category.isDefault) null else ({ viewModel.deleteCategory(category) }),
+                        onEdit = { viewModel.editCategory(category) },
+                        onDelete = if (category.isDefault) null else {
+                            { viewModel.deleteCategory(category) }
+                        },
                     )
                 }
                 item {
@@ -178,6 +213,7 @@ fun CategoriesScreen(
                 items(state.tags, key = { "t-${it.uuid}" }) { tag ->
                     RowItem(
                         title = tag.name,
+                        icon = null,
                         onEdit = { viewModel.editTag(tag) },
                         onDelete = { viewModel.deleteTag(tag) },
                     )
@@ -194,38 +230,160 @@ fun CategoriesScreen(
     }
 
     state.dialog?.let { kind ->
-        var name by remember(state.dialog, state.editingCategory, state.editingTag) {
-            mutableStateOf(state.editingCategory?.name ?: state.editingTag?.name ?: "")
+        if (kind == "category") {
+            val editing = state.editingCategory
+            CategoryDialog(
+                editing = editing,
+                onDismiss = viewModel::closeDialog,
+                onSave = viewModel::saveCategory,
+            )
+        } else {
+            var name by remember(state.dialog, state.editingTag) {
+                mutableStateOf(state.editingTag?.name ?: "")
+            }
+            AlertDialog(
+                onDismissRequest = viewModel::closeDialog,
+                title = { Text(stringResource(R.string.tag_add)) },
+                text = {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(stringResource(R.string.name_label)) },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.saveTag(name) },
+                        enabled = name.isNotBlank(),
+                    ) { Text(stringResource(R.string.save)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::closeDialog) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
         }
-        AlertDialog(
-            onDismissRequest = viewModel::closeDialog,
-            title = {
-                Text(
-                    if (kind == "category") stringResource(R.string.category_add)
-                    else stringResource(R.string.tag_add),
-                )
-            },
-            text = {
+    }
+}
+
+/**
+ * Dialogo categoria con nome (bloccato per le predefinite) e selettore a
+ * griglia del catalogo icone: stessa icona poi visibile in movimenti,
+ * grafico, ricerca e dashboard.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryDialog(
+    editing: CategoryData?,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var name by remember(editing) { mutableStateOf(editing?.name ?: "") }
+    var icon by remember(editing) { mutableStateOf(editing?.icon ?: CategoryIcons.DEFAULT) }
+    val isDefault = editing?.isDefault == true
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (editing == null) stringResource(R.string.category_add)
+                else stringResource(R.string.save),
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.name_label)) },
                     singleLine = true,
+                    enabled = !isDefault,
+                    keyboardOptions = KeyboardOptions.Default,
+                    keyboardActions = KeyboardActions.Default,
                 )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (kind == "category") viewModel.saveCategory(name)
-                        else viewModel.saveTag(name)
+                Text(
+                    text = stringResource(R.string.category_icon),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CategoryIconPicker(selected = icon, onSelect = { icon = it })
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(name, icon) },
+                enabled = name.isNotBlank(),
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+/**
+ * Griglia accessibile del catalogo icone (29 voci): ogni cella è un'opzione
+ * selezionabile con etichetta per TalkBack e bordo d'accento sulla scelta.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryIconPicker(
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CategoryIcons.catalog.forEach { option ->
+            val isSelected = CategoryIcons.normalize(selected) == option
+            val label = stringResource(categoryIconLabelRes(option))
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(shape)
+                    .background(
+                        if (isSelected) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                    )
+                    .border(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                        },
+                        shape = shape,
+                    )
+                    .selectable(
+                        selected = isSelected,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(option) },
+                    )
+                    .semantics { contentDescription = label },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(categoryIconRes(option)),
+                    contentDescription = null,
+                    tint = if (isSelected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    enabled = name.isNotBlank(),
-                ) { Text(stringResource(R.string.save)) }
-            },
-            dismissButton = {
-                TextButton(onClick = viewModel::closeDialog) { Text(stringResource(R.string.cancel)) }
-            },
-        )
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
     }
 }
 
@@ -250,18 +408,19 @@ private fun SectionHeader(title: String, action: String, onClick: () -> Unit) {
 @Composable
 private fun RowItem(
     title: String,
-    subtitle: String? = null,
-    onEdit: (() -> Unit)? = null,
+    icon: String?,
+    onEdit: (() -> Unit)?,
     onDelete: (() -> Unit)?,
+    subtitle: String? = null,
 ) {
     Card(
         onClick = onEdit ?: {},
         modifier = Modifier.fillMaxWidth(),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
+        colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        border = androidx.compose.foundation.BorderStroke(
+        border = BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
         ),
@@ -269,7 +428,26 @@ private fun RowItem(
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (icon != null) {
+                CategoryIconBadge(icon = icon, size = 36.dp, iconSize = 18.dp)
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.background),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_lucide_tag),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+            }
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.Medium)
                 subtitle?.let {

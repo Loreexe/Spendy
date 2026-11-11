@@ -376,6 +376,18 @@ class AutomationExecutionTests(AutomationTestBase):
 
 
 class AutomationEffectsTests(AutomationTestBase):
+    def test_generated_movement_uses_the_real_execution_time(self):
+        from datetime import time
+
+        automation = self.create_automation().data
+        with mock.patch(
+            "finance.automations.current_local_time",
+            return_value=time(7, 25),
+        ):
+            self.run_automation(automation["id"])
+        operation = self.automation_transactions().get()
+        self.assertEqual(operation.time, time(7, 25))
+
     def test_editing_the_generated_movement_marks_the_occurrence_corrected(self):
         automation = self.create_automation().data
         self.run_automation(automation["id"])

@@ -23,7 +23,10 @@ interface SpendyDao {
     @Query("SELECT * FROM local_accounts WHERE archived = 0 AND deletedAt IS NULL ORDER BY name")
     fun observeAccounts(): Flow<List<LocalAccountEntity>>
 
-    @Query("SELECT * FROM local_transactions WHERE deletedAt IS NULL ORDER BY date DESC")
+    @Query(
+        "SELECT * FROM local_transactions WHERE deletedAt IS NULL " +
+            "ORDER BY date DESC, time DESC, rowid DESC",
+    )
     fun observeTransactions(): Flow<List<LocalTransactionEntity>>
 
     @Query("SELECT * FROM local_categories WHERE deletedAt IS NULL ORDER BY isDefault DESC, name")

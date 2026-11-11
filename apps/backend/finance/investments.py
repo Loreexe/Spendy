@@ -20,7 +20,11 @@ from .models import (
     SavingsAccount,
     Transaction,
 )
-from .services import assert_accounts_non_negative, savings_balance
+from .services import (
+    assert_accounts_non_negative,
+    current_local_time,
+    savings_balance,
+)
 
 MONEY = Decimal("0.01")
 QUANTITY = Decimal("0.00000001")
@@ -473,6 +477,7 @@ def _create_transaction(position, kind, day, amount, description):
         profile=position.profile,
         kind=KIND_TRANSACTION[kind],
         date=day,
+        time=current_local_time(),
         description=_description(position, kind, description),
         amount=amount,
     )

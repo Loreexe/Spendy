@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   Clock,
-  LayoutDashboard,
+  Download,
+  House,
   LogOut,
   PiggyBank,
   ReceiptText,
@@ -13,7 +14,8 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { NavLink, Link, useNavigate } from "react-router-dom";
+import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
+import type { User as UserProfile } from "../api";
 import { useAuth } from "../auth";
 
 function NavItem({
@@ -43,11 +45,53 @@ function NavItem({
   );
 }
 
+/** Iniziali dell'avatar: nome e cognome, altrimenti display name, email o username. */
+function avatarInitials(user: UserProfile): string {
+  const name =
+    `${user.first_name} ${user.last_name}`.trim() ||
+    user.display_name ||
+    user.email ||
+    user.username ||
+    "";
+  const parts = name.split(/[\s._@-]+/).filter(Boolean);
+  const letters = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "");
+  return letters.join("") || "?";
+}
+
+/** Nome e cognome nella testata del menu, con fallback sui dati disponibili. */
+function menuDisplayName(user: UserProfile): string {
+  return (
+    `${user.first_name} ${user.last_name}`.trim() ||
+    user.display_name ||
+    user.email ||
+    user.username ||
+    "Profilo"
+  );
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [brokenAvatarVersion, setBrokenAvatarVersion] = useState<string | null>(
+    null,
+  );
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const focusFirstOnOpen = useRef(false);
+
+  const avatarVersion = user?.avatar_updated_at ?? "";
+  const avatarSrc =
+    user?.has_avatar && brokenAvatarVersion !== avatarVersion
+      ? `/api/auth/avatar/?v=${encodeURIComponent(avatarVersion)}`
+      : null;
+  const initials = user ? avatarInitials(user) : "?";
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -56,8 +100,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         setMenuOpen(false);
       }
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("touchstart", onPointer);
@@ -69,13 +116,43 @@ export function Layout({ children }: { children: React.ReactNode }) {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!menuOpen || !focusFirstOnOpen.current) return;
+    focusFirstOnOpen.current = false;
+    dropdownRef.current
+      ?.querySelector<HTMLElement>('[role="menuitem"]')
+      ?.focus();
+  }, [menuOpen]);
+
+  function handleMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(
+      dropdownRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ??
+        [],
+    );
+    if (items.length === 0) return;
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      items[current < 0 ? 0 : (current + 1) % items.length]?.focus();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      items[current <= 0 ? items.length - 1 : current - 1]?.focus();
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      items[items.length - 1]?.focus();
+    } else if (event.key === "Tab") {
+      setMenuOpen(false);
+    }
+  }
+
   async function handleLogout() {
     setMenuOpen(false);
     await logout();
     navigate("/login", { replace: true });
   }
-
-  const initial = (user?.email ?? user?.username ?? "?").charAt(0).toUpperCase();
 
   return (
     <div className="app-shell">
@@ -98,7 +175,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <>
               {!user.is_global_admin && (
                 <>
-                  <NavItem to="/" end icon={LayoutDashboard} label="Dashboard" />
+                  <NavItem to="/" end icon={House} label="Home" />
                   <NavItem
                     to="/movements"
                     icon={ReceiptText}
@@ -131,17 +208,62 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {user && (
           <div className="profile-menu" ref={menuRef}>
             <button
+              ref={triggerRef}
               type="button"
               className="profile-button"
-              aria-label="Profilo e impostazioni"
+              aria-label="Apri il menu del profilo"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
+              aria-controls="profile-menu"
               onClick={() => setMenuOpen((value) => !value)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  focusFirstOnOpen.current = true;
+                  setMenuOpen(true);
+                }
+              }}
             >
-              <span className="profile-avatar">{initial}</span>
+              <span className="profile-avatar">
+                {avatarSrc ? (
+                  <img
+                    src={avatarSrc}
+                    alt=""
+                    onError={() => setBrokenAvatarVersion(avatarVersion)}
+                  />
+                ) : (
+                  initials
+                )}
+              </span>
             </button>
             {menuOpen && (
-              <div className="profile-dropdown" role="menu">
+              <div
+                id="profile-menu"
+                className="profile-dropdown"
+                role="menu"
+                aria-label="Menu del profilo"
+                ref={dropdownRef}
+                onKeyDown={handleMenuKeyDown}
+              >
+                <div className="profile-menu-head" role="presentation">
+                  <span className="profile-menu-avatar">
+                    {avatarSrc ? (
+                      <img
+                        src={avatarSrc}
+                        alt=""
+                        onError={() => setBrokenAvatarVersion(avatarVersion)}
+                      />
+                    ) : (
+                      initials
+                    )}
+                  </span>
+                  <span className="profile-menu-identity">
+                    <strong>{menuDisplayName(user)}</strong>
+                    {user.email && (
+                      <span className="muted small">{user.email}</span>
+                    )}
+                  </span>
+                </div>
                 <NavLink
                   to="/account"
                   className="profile-entry"
@@ -161,15 +283,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <span>Impostazioni</span>
                 </NavLink>
                 {!user.is_global_admin && (
-                  <NavLink
-                    to="/trash"
-                    className="profile-entry"
-                    role="menuitem"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <Trash2 size={18} aria-hidden="true" />
-                    <span>Cestino</span>
-                  </NavLink>
+                  <>
+                    <Link
+                      to="/settings#import-export"
+                      className="profile-entry"
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <Download size={18} aria-hidden="true" />
+                      <span>Import/Export</span>
+                    </Link>
+                    <NavLink
+                      to="/trash"
+                      className="profile-entry"
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <Trash2 size={18} aria-hidden="true" />
+                      <span>Cestino</span>
+                    </NavLink>
+                  </>
                 )}
                 {user.is_global_admin && (
                   <NavLink

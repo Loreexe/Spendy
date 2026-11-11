@@ -25,14 +25,24 @@ function errorMessage(err: unknown): string {
 }
 
 function toInput(row: ImportRow): ImportRowInput {
+  const time = row.time?.trim();
   return {
     date: row.date,
+    time: time || undefined,
     description: row.description,
     category: row.category,
     account: row.account,
     amount: row.amount,
     not_duplicate: row.not_duplicate,
   };
+}
+
+/** L'ora vuota non viene inviata: il server applica il valore predefinito. */
+function sanitizeRows(rows: ImportRowInput[]): ImportRowInput[] {
+  return rows.map((row) => {
+    const time = row.time?.trim();
+    return time ? { ...row, time } : { ...row, time: undefined };
+  });
 }
 
 function kindLabel(row: ImportRow): string {
@@ -68,7 +78,7 @@ export function ImportPage() {
     setBusy(true);
     setError(null);
     try {
-      const data = await api.analyzeImportRows(nextRows, formatRef.current);
+      const data = await api.analyzeImportRows(sanitizeRows(nextRows), formatRef.current);
       setAnalysis(data);
     } catch (err) {
       setError(errorMessage(err));
@@ -180,7 +190,7 @@ export function ImportPage() {
     setBusy(true);
     setError(null);
     try {
-      const data = await api.confirmImport(rows, format);
+      const data = await api.confirmImport(sanitizeRows(rows), format);
       setResult(data);
       setStep("done");
     } catch (err) {
@@ -227,6 +237,10 @@ export function ImportPage() {
         <>
           <section className="card">
             <h2 className="card-heading">1. Scarica il modello</h2>
+            <p className="muted small">
+              Colonne del modello: data, descrizione, categoria, conto, importo,
+              ora (facoltativa, HH:MM; se manca vale 12:00).
+            </p>
             <button type="button" onClick={downloadTemplate}>
               Scarica modello CSV
             </button>
@@ -339,6 +353,7 @@ export function ImportPage() {
                     <th>Categoria</th>
                     <th>Conto</th>
                     <th>Importo</th>
+                    <th>Ora</th>
                     <th>Tipo</th>
                     <th>Esito</th>
                     <th />
@@ -393,6 +408,23 @@ export function ImportPage() {
                             updateRow(index, { amount: event.target.value })
                           }
                           aria-label={`Importo riga ${row.row_number}`}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="HH:MM"
+                          maxLength={5}
+                          value={rows[index]?.time ?? ""}
+                          onChange={(event) =>
+                            updateRow(index, { time: event.target.value })
+                          }
+                          aria-label={`Ora riga ${row.row_number}`}
+                          aria-invalid={
+                            row.errors.some((issue) => issue.field === "time") ||
+                            undefined
+                          }
                         />
                       </td>
                       <td className="small">{kindLabel(row)}</td>

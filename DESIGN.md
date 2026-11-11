@@ -1,9 +1,15 @@
 # Spendy — Design
 
 Identità visiva e sistema di design di **prodotto**: interfaccia web (React/TypeScript) e app
-Android (Kotlin/Compose). Documento pubblico, allineato alla release **0.8.3** (10 novembre 2026).
+Android (Kotlin/Compose). Documento pubblico, versione **0.9.2** (11 novembre 2026), allineato alla release di prodotto **0.8.4**.
 Le decisioni e la progettazione vivono in `.spendy-wiki/` (privata); questo file ne è la
 proiezione pubblica e la fonte normativa per l'implementazione.
+
+> **Versione 0.9.2 — release di prodotto 0.8.4 (2026-11-11, DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
+> movimenti, icone delle categorie. Le parti contrassegnate «0.8.4» sono **implementate e
+> verificate sul web e sul backend**; Android è **compilato e testato** (`assembleDebug`, 31 test
+> unitari, `lintDebug`) ma **non provato su device/emulatore** in questa sessione. La release è
+> **pubblicata**.
 
 ## Ambito e principi
 
@@ -135,11 +141,23 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 - **Icone: Lucide**, sia sul web (`lucide-react`) sia su Android (vector drawable derivati da
   Lucide). Tratto 2, terminazioni tonde, 24×24 di base; dimensione 14–24 px secondo il contesto,
   colore `currentColor` (accento per lo stato attivo, `muted` per il resto).
-- **Icone canoniche** (fonte: app Android; il web usa le stesse): Dashboard `layout-dashboard`,
-  Movimenti `receipt-text`, Conti `wallet`, Salvadanai `piggy-bank`, Automazioni `clock`,
-  Investimenti `trending-up`, Categorie e tag `tag`, Cestino `trash-2`, Profilo `user`,
-  Impostazioni `settings`, Altro `more-horizontal`; Entrate `arrow-down-left`, Uscite
+- **Icone canoniche** (fonte: app Android; il web usa le stesse): **Home** `house` (0.8.4;
+  sostituisce `layout-dashboard` per Dashboard), Movimenti `receipt-text`, Conti `wallet`,
+  Salvadanai `piggy-bank`, Automazioni `clock`, Investimenti `trending-up`, Categorie e tag `tag`,
+  Cestino `trash-2`, Profilo `user`, Impostazioni `settings`, Entrate `arrow-down-left`, Uscite
   `arrow-up-right`. Una destinazione ha una sola icona su entrambe le piattaforme.
+- **Icone delle categorie** (0.8.4, DC-117): ogni categoria ha un'icona Lucide, modificabile
+  da un catalogo condiviso di **29 icone** e salvata nel campo `Category.icon` (default `tag`). Le
+  nove predefinite nascono con: Altro `tag`, Alimentari `shopping-cart`, Casa e bollette `house`,
+  Trasporti `car`, Salute `heart-pulse`, Svago e tempo libero `gamepad-2`, Shopping `shopping-bag`,
+  Lavoro e studio `briefcase`, Risparmio `piggy-bank`. Catalogo extra: `utensils`, `coffee`,
+  `plane`, `train-front`, `fuel`, `gift`, `music`, `film`, `dumbbell`, `paw-print`,
+  `graduation-cap`, `stethoscope`, `wrench`, `smartphone`, `shirt`, `sparkles`, `receipt`,
+  `credit-card`, `book-open`, `leaf`. «Altro» non è rinominabile né eliminabile ma la sua icona è
+  modificabile; un'icona fuori whitelist è rifiutata con `400`; in lettura il fallback è `tag`.
+  Le icone compaiono in liste, selettore categoria, gestione categorie, filtri e grafico delle spese.
+- **«Altro»**: nella release 0.8.3 usava l'icona profilo (`user`, DC-111); la 0.8.4 lo ha
+  **rimosso** dalla navigazione Android (DC-114).
 - **Illustrazioni: line art mint.** Disegni essenziali a tratto singolo, `stroke-width 2`,
   terminazioni tonde, `viewBox 160×150`, colore accento, dimensioni 96–120 px. Sei soggetti:
   conti, movimenti, salvadanai, investimenti, automazioni, cestino. Sono decorative
@@ -153,42 +171,53 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 ### Web
 
 - **Topbar** sticky e continua, senza linea di stacco: brand lockup theme-swapped a sinistra, sei
-  voci icona + etichetta (Dashboard, Movimenti, Conti, Salvadanai, Automazioni, Investimenti;
-  per l'admin una sola voce "Amministrazione"), avatar circolare a destra.
-- **Menu avatar**: Profilo, Impostazioni, Cestino, Esci (Amministrazione per l'admin). Il menu si
-  chiude con Esc, click esterno o quando si sceglie una voce.
-- **Footer** con brand testuale e versione (`Spendy · v0.8.1`).
+  voci icona + etichetta (**Home**, Movimenti, Conti, Salvadanai, Automazioni, Investimenti; per
+  l'admin una sola voce "Amministrazione"), avatar circolare a destra.
+- **Menu avatar** (0.8.4, DC-114/115): si apre con una **testata** con foto, nome, cognome ed
+  email; voci Profilo, Impostazioni, Import/Export (porta a `/settings#import-export`), Cestino,
+  Esci (per l'admin: Profilo, Impostazioni, Amministrazione, Esci). L'avatar mostra la **foto** del
+  profilo con fallback alle iniziali. Il menu si chiude con Esc, click esterno o quando si sceglie
+  una voce.
+- **Footer** con brand testuale e versione (`Spendy · v0.8.4`).
 - **Mobile (≤760 px)**: la stessa navigazione diventa **bottom bar fissa** con icone + etichette,
   sfondo con blur e rispetto della safe-area; il contenuto ha padding di compensazione.
-- **Dashboard**: selettore periodo a pillole (Mese corrente, Mese precedente, Anno corrente,
-  Tutto); card **Saldo del periodo = Entrate − Uscite** (movimenti dei conti: aperture e trasferimenti inclusi) con intervallo,
-  eventuali dividendi e quattro metriche (Saldo conti, Salvadanai, Investimenti con valore,
-  Patrimonio); card **Grafici del periodo**
-  con, nell'ordine, **Andamento saldo e patrimonio** (linea piena = saldo, tratteggio =
-  patrimonio), **Entrate vs uscite** (movimenti dei conti: due card con frecce,
-  importo e percentuale del totale, una barra segmentata verde/corallo) e **Spese per categoria** (barre orizzontali); sotto, elenchi
-  (conti, salvadanai, investimenti) e ultimi 6 movimenti. Su mobile la stessa sequenza in colonna.
+- **Home** (ex Dashboard, 0.8.4, DC-114): eyebrow "Home"; selettore periodo a pillole (Mese
+  corrente, Mese precedente, Anno corrente, Tutto); card **Saldo del periodo = Entrate − Uscite**
+  con intervallo, eventuali dividendi e quattro metriche (Saldo conti, Salvadanai, Investimenti con
+  valore, Patrimonio), con **icona wallet in alto a destra** che apre il popover dei conti (saldi e
+  «Tutti i conti»); azioni **+ Movimento** e **Trasferimento** che aprono il registro con il tipo preselezionato;
+  **ultimi 3 movimenti** con data, ora e icona categoria; sotto, **tre card separate** nell'ordine
+  **Entrate vs uscite** (due card con frecce, importo e percentuale del totale, barra segmentata
+  verde/corallo), **Andamento saldo e patrimonio** (linea piena = saldo, tratteggio = patrimonio) e
+  **Spese per categoria** (barre orizzontali); per la semantica di Entrate/Uscite vale §08. Le
+  card-elenco di Conti e Salvadanai non sono più mostrate in Home. Su mobile la stessa sequenza in colonna.
 - Il periodo **Tutto** parte dalla prima attività reale del profilo, non da una data convenzionale:
   il grafico copre i dati con bucket uniformi (massimo 95 punti, l'ultimo sulla data finale).
 - Desktop, tablet e mobile usano lo stesso codice: griglie fluide, nessuna larghezza fissa.
 
 ### Android
 
-- **Bottom bar** a cinque voci: Dashboard, Movimenti, Salvadanai, Investimenti, **Altro**;
-  "Altro" apre Conti, Automazioni, Cestino, Profilo, Impostazioni. Le **Categorie e tag** si
-  aprono dall'icona accanto al titolo della schermata Movimenti. La barra è
-  **ancorata al bordo** (60 px + safe area) con superficie piena e una sfumatura di 16 px in
-  alto, senza linea di stacco e senza blur. Nessun indicatore:
-  la voce attiva è d'accento (icone 20 px, etichette 9,5–10 sp sempre visibili).
-- **Dashboard**: stessa sequenza del web — saldo del periodo con quattro metriche, poi
-  **Grafici del periodo** (andamento saldo/patrimonio, entrate vs uscite, spese per categoria).
-- **Profilo**: avatar a iniziali, nome/email/username, badge stato e ruolo; card «Dati personali»,
-  «Accesso» (cambio password) e «Account» con **cambio utente senza reinserire la password**,
-  aggiunta di un altro account e uscita. In archivio locale restano solo i dati locali.
+- **Bottom bar** a cinque voci (0.8.4, DC-114): **Home**, Movimenti, Salvadanai,
+  Investimenti, **Automazioni**. **«Altro» è rimosso**: i **Conti** si raggiungono dal portafoglio
+  in Home e il resto (Profilo, Impostazioni, Import/Export, Cestino, Ricerca) dal **menu
+  dell'avatar**. Le **Categorie e tag** si aprono dall'icona accanto al titolo della schermata
+  Movimenti. La barra è **ancorata al bordo** (60 px + safe area) con superficie piena e una
+  sfumatura di 16 px in alto, senza linea di stacco e senza blur. Nessun indicatore: la voce
+  attiva è d'accento (icone 20 px, etichette 9,5–10 sp sempre visibili).
+- **Home** (ex Dashboard, 0.8.4): stessa sequenza del web — saldo del periodo con quattro
+  metriche, azioni rapide per movimento e trasferimento (aprono il dialogo Movimenti col tipo già
+  scelto), ultimi 3 movimenti con ora e icona, poi le tre card (Entrate vs uscite, Andamento
+  saldo/patrimonio, Spese per categoria). Il **portafoglio** apre la pagina Conti.
+- **Profilo**: avatar con **foto** in modalità server (in archivio locale solo iniziali),
+  nome/email/username, badge stato e ruolo; card «Dati personali», «Accesso» (cambio password) e
+  «Account» con **cambio utente senza reinserire la password**, aggiunta di un altro account e
+  uscita. In archivio locale restano solo i dati locali.
 - **Impostazioni**: sezioni Accesso, Aspetto (Scuro/Chiaro/Sistema), Blocco screenshot, Dati,
   Aggiornamenti, Informazioni, Dispositivi/QR (solo modalità server).
-- **Avatar in alto** con menu rapido, **FAB** globale per aggiungere spesa/entrata/trasferimento,
-  **swipe orizzontale** tra le tab, **menu ⋮** per le azioni di contesto (eliminazione in sicurezza).
+- **Avatar in alto** a destra, con menu la cui testata mostra foto, nome, cognome ed email e le voci
+  Profilo, Impostazioni, Import/Export, Cestino, Ricerca, Esci; **FAB** globale per aggiungere
+  spesa/entrata/trasferimento, **swipe orizzontale** tra le tab, **menu ⋮** per le azioni di
+  contesto (eliminazione in sicurezza).
 - **Ricerca globale** dall'alto (server e archivio locale), filtri compatti.
 - Layout **adattivo** per smartphone, tablet, foldable e orizzontale; tema Sistema di default;
   blocco screenshot opzionale; biometria/blocco app in modalità locale.
@@ -210,7 +239,7 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 | --- | --- | --- |
 | `/setup` | Primo avvio (admin) | pagina guidata |
 | `/login`, `/register`, `/pending` | Accesso, registrazione, attesa approvazione | pagina + hero con glow |
-| `/` | Dashboard | pagina, pill periodo, grafici |
+| `/` | Home (ex Dashboard) | pagina, pill periodo, azioni rapide, grafici |
 | `/movements` | Movimenti | pagina, form inline, modale tassonomia, filtri |
 | `/accounts` | Conti | pagina, form inline |
 | `/savings` | Salvadanai | pagina, form inline |
@@ -224,7 +253,7 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
 | `*` | 404 | pagina |
 
 Android: onboarding (server/archivio locale), configurazione server e QR, login/registrazione/attesa,
-dashboard, movimenti, conti, salvadanai, investimenti, automazioni, cestino, categorie e tag,
+Home, movimenti, conti, salvadanai, investimenti, automazioni, cestino, categorie e tag,
 notifiche, profilo, impostazioni (Accesso, Aspetto, Dati, Aggiornamenti, Informazioni), dispositivi
 e pairing, ricerca.
 
@@ -237,15 +266,26 @@ sempre un anello di 2 px con offset 2.
   ghost (testo accento, hover `accent-soft`), distruttivo (`danger`), link testuale. Altezza
   minima 44 px su touch; il caricamento mostra spinner e mantiene la larghezza.
 - **Bottom bar mobile (Android)**: barra ancorata al bordo con superficie piena, cinque voci con
-  etichette sempre visibili; la voce attiva è d'accento senza indicatore; una sfumatura di 16 px
-  in alto evita lo stacco con il contenuto, che scorre dietro la barra senza essere visibile
-  attraverso; i FAB e i contenuti riservano 72 px in fondo.
+  etichette sempre visibili (**Home**, Movimenti, Salvadanai, Investimenti, Automazioni; 0.8.4,
+  DC-114); la voce attiva è d'accento senza indicatore; una sfumatura di 16 px in alto evita
+  lo stacco con il contenuto, che scorre dietro la barra senza essere visibile attraverso; i FAB e i
+  contenuti riservano 72 px in fondo.
 - **Campi**: label maiuscola, input/select/textarea con `bg2` e bordo `line`, errore con bordo e
-  messaggio `danger` sotto il campo. Ricerca con icona e pulsante di pulizia.
+  messaggio `danger` sotto il campo. Ricerca con icona e pulsante di pulizia. Il modulo movimento ha
+  un campo **Ora** (`type="time"`, default ora corrente; 0.8.4, DC-116).
 - **Card, liste, righe**: sfondo `bg1`, bordo `line`, raggio 18; densità maggiore nelle tabelle.
 - **Badge e pillole**: `accent-soft` per gli stati attivi, `warn-soft` per pendenti/in attesa,
   `danger-soft` per rifiutati/disabilitati; raggio 999.
 - **Tab e selettori**: tab a pillola con stato attivo `accent-soft`; selettore periodo a pillole.
+- **Icone delle categorie** (0.8.4, DC-117): `CategoryIcon` (icona + nome),
+  `CategoryIconPicker` (griglia del catalogo con etichette) e `CategorySelect` (selettore
+  accessibile con icone) sul web; `CategoryIcons.kt` e selettore a griglia su Android. Le icone
+  compaiono in liste, filtri, grafico e ricerca; «Altro» ha l'icona modificabile ma resta protetta
+  nel nome.
+- **Portafoglio e menu avatar** (0.8.4, DC-114/115): `AccountsMenu` è un **popover** ancorato
+  all'icona wallet della card saldo (conti, saldi, «Tutti i conti»), con chiusura `Esc`/click
+  esterno, focus visibile e target ≥ 44 px; `ProfileMenu` ha la **testata** con foto, nome, cognome,
+  email e le voci di navigazione, con `aria` e chiusura alla scelta.
 - **Entrate vs uscite**: due card affiancate (Entrate con `arrow-down-left`, Uscite con
   `arrow-up-right`), importo e percentuale arrotondata del totale; sotto una barra unica
   segmentata con `up` (verde) e `down` (corallo). Identico su web e Android, con totali a zero
@@ -260,7 +300,8 @@ sempre un anello di 2 px con offset 2.
   «inclusi/esclusi»: i tre numeri devono semplicemente quadrare.
 - **Grafici**: andamento in SVG artigianale (web) / Canvas (Android), barre in CSS / Compose;
   niente librerie. Legenda ed etichette rendono il significato indipendente dal colore.
-- **Menu**: dropdown ancorato all'avatar; voce con icona Lucide, chiusura con Esc/esterno.
+- **Menu**: dropdown ancorato all'avatar; su web e Android la testata mostra foto, nome, cognome ed
+  email (0.8.4); voce con icona Lucide, chiusura con Esc/esterno.
 - **Modale**: riepilogo delle conseguenze, azione distruttiva a destra, Esc e focus trap, focus
   iniziale su "Annulla", ripristino del focus alla chiusura.
 - **Sovrimpressione**: dettaglio posizione e tassonomia in un pannello centrato, stessa semantica
@@ -327,13 +368,20 @@ Due canali distinti, non sovrapposti:
 - **Controlli**: `design/checks/check_design.py` verifica token obbligatori, assenza di colori grezzi
   nei CSS, allineamento dei valori JS/HTML ai token e parità web↔Android (le divergenze note sono
   elencate e non nascoste); il job CI `design-system` esegue questo controllo insieme ai contrasti.
-- **Versioning**: questo documento segue la release del prodotto. La sezione "Cronologia" elenca
-  ogni allineamento.
+- **Versioning**: questo documento ha una propria versione (`0.9.x`) e indica la release di
+  prodotto a cui è allineato; la sezione "Cronologia" elenca ogni allineamento.
 - **Cosa non è negoziabile qui**: stack (Django + DRF, React/TypeScript, PostgreSQL, Kotlin +
   Compose), retention del cestino, solo italiano, AA come soglia minima.
 
 ## Cronologia
 
+- **0.9.2 — 2026-11-11** — Release di prodotto 0.8.4, **pubblicata** (tag `v0.8.4`): Home al posto di
+  Dashboard (icona `house`) e navigazione web/Android senza «Altro» con Conti dal portafoglio; menu
+  avatar con testata foto/nome/cognome/email e avatar con foto (fallback iniziali); orario dei
+  movimenti `HH:MM` con campo Ora, CSV a 6 colonne e archivio schema 5; icone delle categorie con
+  catalogo di 29 icone Lucide e selettore. Backend e web **verificati** (383 test backend, lint/build
+  web, ispezione visiva 390/1440 px nei due temi); Android **compilato e testato** (31 test
+  unitari, `lintDebug`), **senza prova su device/emulatore**.
 - **0.9.1 — 2026-11-10** — Release 0.8.3: navbar Android «Minimal» ancorata al bordo
   (superficie piena con sfumatura, nessun indicatore), icona profilo per «Altro», Categorie e tag
   in Movimenti, patrimonio grigio nel grafico come sul web; livello operativo `design/` e

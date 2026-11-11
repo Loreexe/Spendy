@@ -31,7 +31,7 @@
     <string name="local_biometric_title">Sblocca Spendy</string>
     <string name="local_biometric_subtitle">Conferma la tua identità per aprire l\'archivio locale.</string>
     <string name="local_biometric_action">Sblocca</string>
-    <string name="dashboard_title">Dashboard</string>
+    <string name="dashboard_title">Home</string>
     <string name="dashboard_balance">Saldo totale</string>
     <string name="dashboard_patrimony">Patrimonio</string>
     <string name="dashboard_account_balance">Saldo conti</string>
@@ -46,11 +46,9 @@
     <string name="dashboard_income">Entrate</string>
     <string name="dashboard_expense">Uscite</string>
     <string name="dashboard_empty">Nessun dato ancora. Aggiungi un conto per iniziare.</string>
-    <string name="nav_dashboard">Dashboard</string>
     <string name="nav_movements">Movimenti</string>
     <string name="nav_savings">Salvadanai</string>
     <string name="nav_investments">Investimenti</string>
-    <string name="nav_more">Altro</string>
     <string name="placeholder_title">In arrivo</string>
     <string name="placeholder_body">Questa sezione arriva nelle prossime fasi della Q2.</string>
     <string name="error_generic">Si è verificato un errore.</string>
@@ -97,8 +95,6 @@
     <string name="delete">Elimina</string>
     <string name="cancel">Annulla</string>
     <string name="save">Salva</string>
-    <string name="more_title">Altro</string>
-    <string name="more_accounts">Conti</string>
     <string name="more_categories">Categorie e tag</string>
     <string name="more_search">Cerca</string>
     <string name="savings_title">Salvadanai</string>
@@ -133,7 +129,6 @@
     <string name="investments_identifier">Identificativo</string>
     <string name="investments_current_price">Prezzo corrente</string>
     <string name="investments_archive">Archivia</string>
-    <string name="dashboard_trend">Grafici del periodo</string>
     <string name="dashboard_empty_title">Inizia da qui</string>
     <string name="dashboard_empty_body">Crea un conto e registra il primo movimento: qui vedrai saldi, entrate, uscite e grafici.</string>
     <string name="dashboard_open_accounts">Apri i conti</string>
@@ -156,16 +151,6 @@
     <string name="empty_automations_body">Crea una spesa o un versamento ricorrente e lascia che l\'app li registri da sola.</string>
     <string name="empty_trash_title">Il cestino è vuoto</string>
     <string name="empty_trash_body">Gli elementi eliminati restano qui per un po\': puoi ripristinarli.</string>
-    <string name="more_group_manage">Gestione</string>
-    <string name="more_group_data">Dati</string>
-    <string name="more_group_app">App</string>
-    <string name="more_accounts_hint">Conti e saldi</string>
-    <string name="more_categories_hint">Categorie e tag</string>
-    <string name="more_search_hint">Cerca ovunque</string>
-    <string name="more_trash_hint">Elementi eliminati</string>
-    <string name="more_data_hint">Import, export e migrazione</string>
-    <string name="more_profile_hint">Dati personali</string>
-    <string name="more_settings_hint">Tema, sicurezza e dispositivi</string>
     <string name="dashboard_charts_balance">Andamento saldo e patrimonio</string>
     <string name="dashboard_charts_cashflow">Entrate vs uscite</string>
     <string name="dashboard_period_flow_note"> · Entrate − Uscite</string>
@@ -240,4 +225,49 @@
     <string name="settings_devices_hint">Dispositivi collegati, rinomina e revoca</string>
     <string name="settings_pairing_row">Associa un dispositivo (QR)</string>
     <string name="settings_pairing_hint">Genera un codice per un altro telefono</string>
+
+    <!-- 0.8.4: Home, avatar, ora dei movimenti e icone delle categorie. -->
+    <string name="nav_home">Home</string>
+    <string name="dashboard_recent_movements">Ultimi movimenti</string>
+    <string name="dashboard_recent_open">Vedi tutti</string>
+    <string name="dashboard_action_movement">Movimento</string>
+    <string name="movement_time">Ora</string>
+    <string name="movement_time_hint">HH:MM</string>
+    <string name="movement_time_invalid">Ora non valida: usa HH:MM.</string>
+    <string name="category_icon">Icona</string>
+    <string name="profile_avatar_description">Foto profilo</string>
+    <string name="profile_avatar_change">Cambia foto</string>
+    <string name="profile_avatar_remove">Rimuovi foto</string>
+    <string name="profile_avatar_hint">La foto è salvata sul server e visibile sui tuoi dispositivi.</string>
+    <string name="profile_avatar_local">In archivio locale l\'avatar usa le iniziali: la foto si imposta solo in modalità server.</string>
+
+    <string name="category_icon_tag">Etichetta</string>
+    <string name="category_icon_shopping_cart">Spesa</string>
+    <string name="category_icon_house">Casa</string>
+    <string name="category_icon_car">Auto</string>
+    <string name="category_icon_heart_pulse">Salute</string>
+    <string name="category_icon_gamepad_2">Giochi</string>
+    <string name="category_icon_shopping_bag">Acquisti</string>
+    <string name="category_icon_briefcase">Lavoro</string>
+    <string name="category_icon_piggy_bank">Risparmio</string>
+    <string name="category_icon_utensils">Ristorante</string>
+    <string name="category_icon_coffee">Caffè</string>
+    <string name="category_icon_plane">Aereo</string>
+    <string name="category_icon_train_front">Treno</string>
+    <string name="category_icon_fuel">Carburante</string>
+    <string name="category_icon_gift">Regalo</string>
+    <string name="category_icon_music">Musica</string>
+    <string name="category_icon_film">Cinema</string>
+    <string name="category_icon_dumbbell">Palestra</string>
+    <string name="category_icon_paw_print">Animali</string>
+    <string name="category_icon_graduation_cap">Studio</string>
+    <string name="category_icon_stethoscope">Medico</string>
+    <string name="category_icon_wrench">Riparazioni</string>
+    <string name="category_icon_smartphone">Telefono</string>
+    <string name="category_icon_shirt">Abbigliamento</string>
+    <string name="category_icon_sparkles">Extra</string>
+    <string name="category_icon_receipt">Ricevuta</string>
+    <string name="category_icon_credit_card">Carta</string>
+    <string name="category_icon_book_open">Libri</string>
+    <string name="category_icon_leaf">Natura</string>
 </resources>

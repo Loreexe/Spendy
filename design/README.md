@@ -43,7 +43,7 @@ verifiche.
 | Web desktop | implementato e distribuito | `apps/frontend` (React/TypeScript + CSS puro) |
 | Web mobile | implementato: **stessa SPA responsive**, non un client separato | `apps/frontend`, breakpoint ≤760 px |
 | PWA installabile | manifest presente, **nessun service worker**: solo online | `apps/frontend/public/manifest.webmanifest` |
-| Android nativo | implementato con limiti dichiarati (Fase Q) | `apps/android` (Kotlin + Jetpack Compose) |
+| Android nativo | implementato con limiti dichiarati (Fase Q, `0.8.4`) | `apps/android` (Kotlin + Jetpack Compose) |
 | Altri client (iOS, desktop nativo) | **non previsti** | — |
 
 ## Lessico obbligatorio
@@ -67,19 +67,19 @@ Le incoerenze attuali **non sono standard**: sono elencate come esistenti o prop
 5. Aggiorna nella stessa modifica i documenti di `design/` interessati.
 6. Esegui i controlli di [`verification.md`](./verification.md) e dichiara quelli non eseguiti.
 
-## Comandi verificati (stato: 2026-11-10)
+## Comandi verificati (stato: 2026-11-11, release `0.8.4`)
 
 ```bash
-# Web: typecheck + build (verdi in questa sessione)
+# Web: typecheck + build (verdi, 0.8.4)
 cd apps/frontend && npm run lint && npm run build
 
-# Contrasti AA dei token reali (verde in questa sessione)
+# Contrasti AA dei token reali (verde, 0.8.4)
 python3 docs/design/build/check_contrast.py
 
 # Controlli statici del design system (token, valori grezzi, parità web↔Android)
 python3 design/checks/check_design.py
 
-# Android (non eseguita in questa sessione: nessuna modifica Android)
+# Android (verde: assembleDebug, 31 test unitari, lint 0 errori; nessuna prova su device/emulatore)
 cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 

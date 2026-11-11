@@ -12,6 +12,7 @@ from .imports import (
     parse_amount,
     parse_csv,
     parse_date,
+    parse_time,
 )
 from .models import Account, Transaction
 from .tests import FinanceTestBase
@@ -71,8 +72,9 @@ class TemplateTests(ImportTestBase):
         content = response.content
         self.assertTrue(content.startswith(b"\xef\xbb\xbf"))
         text = content.decode("utf-8-sig")
-        self.assertIn("data;descrizione;categoria;conto;importo", text)
+        self.assertIn("data;descrizione;categoria;conto;importo;ora", text)
         self.assertIn("ESEMPIO", text)
+        self.assertIn(";12:30", text)
         self.assertIn("\r\n", text)
 
     def test_global_admin_cannot_download(self):
@@ -114,6 +116,32 @@ class ParserTests(FinanceTestBase):
         rows, errors, _ = parse_csv(data)
         self.assertEqual(errors, [])
         self.assertEqual(rows[0]["description"], "Caffè; cornetto")
+        self.assertEqual(rows[0]["time"], "")
+
+    def test_six_columns_with_time_are_accepted(self):
+        data = (
+            "data;descrizione;categoria;conto;importo;ora\r\n"
+            "01-10-2026;Caffè;bar;Contanti;1,20;9:05\r\n"
+        ).encode("utf-8-sig")
+        rows, errors, _ = parse_csv(data)
+        self.assertEqual(errors, [])
+        self.assertEqual(rows[0]["time"], "9:05")
+
+    def test_five_columns_are_still_accepted(self):
+        rows, errors, _ = parse_csv(csv_file(VALID_ROWS))
+        self.assertEqual(errors, [])
+        self.assertEqual(rows[0]["time"], "")
+
+    def test_mixed_five_and_six_columns_are_accepted(self):
+        data = (
+            "data;descrizione;categoria;conto;importo;ora\r\n"
+            "01-10-2026;Prima;altro;Contanti;-10,00;08:00\r\n"
+            "02-10-2026;Seconda;altro;Contanti;-20,00\r\n"
+        ).encode("utf-8-sig")
+        rows, errors, _ = parse_csv(data)
+        self.assertEqual(errors, [])
+        self.assertEqual(rows[0]["time"], "08:00")
+        self.assertEqual(rows[1]["time"], "")
 
     def test_non_utf8_is_rejected(self):
         rows, errors, _ = parse_csv("caffè".encode("latin-1"))
@@ -153,6 +181,19 @@ class ParserTests(FinanceTestBase):
         self.assertIsNotNone(parse_amount("€12,50")[1])
         self.assertIsNotNone(parse_amount("0,00")[1])
         self.assertIsNotNone(parse_amount("12,345")[1])
+
+    def test_time_rules(self):
+        from datetime import time
+
+        self.assertEqual(parse_time("12:00")[0], time(12, 0))
+        self.assertEqual(parse_time("9:05")[0], time(9, 5))
+        self.assertEqual(parse_time("23:59")[0], time(23, 59))
+        self.assertEqual(parse_time("")[0], time(12, 0))
+        self.assertEqual(parse_time("   ")[0], time(12, 0))
+        self.assertIsNotNone(parse_time("24:00")[1])
+        self.assertIsNotNone(parse_time("9:5")[1])
+        self.assertIsNotNone(parse_time("9.05")[1])
+        self.assertIsNotNone(parse_time("mezzogiorno")[1])
 
 
 class FormatDetectionTests(FinanceTestBase):
@@ -421,6 +462,54 @@ class AnalyzeTests(ImportTestBase):
         response = self.analyze_rows([])
         self.assertEqual(response.status_code, 400)
 
+    def test_time_is_optional_and_defaults_to_noon(self):
+        self.create_account(initial="100.00")
+        today = self.today.strftime("%d-%m-%Y")
+        response = self.upload(
+            [
+                [today, "Senza ora", "spesa", "Contanti", "5,00"],
+                [today, "Con ora", "spesa", "Contanti", "6,00", "18:45"],
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["rows"][0]["time"], "12:00")
+        self.assertEqual(response.data["rows"][1]["time"], "18:45")
+        self.assertTrue(response.data["summary"]["can_confirm"])
+
+    def test_invalid_time_is_a_row_error(self):
+        self.create_account(initial="100.00")
+        today = self.today.strftime("%d-%m-%Y")
+        response = self.upload(
+            [
+                [today, "Senza ora", "spesa", "Contanti", "5,00"],
+                [today, "Ora sbagliata", "spesa", "Contanti", "6,00", "25:99"],
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["rows"][1]["errors"][0]["code"], "invalid_time"
+        )
+        self.assertEqual(
+            response.data["rows"][1]["errors"][0]["field"], "time"
+        )
+        self.assertFalse(response.data["summary"]["can_confirm"])
+
+    def test_duplicates_ignore_the_time_column(self):
+        self.create_account(initial="100.00")
+        today = self.today.strftime("%d-%m-%Y")
+        response = self.upload(
+            [
+                [today, "Caffè", "bar", "Contanti", "1,20", "08:00"],
+                [today, "Caffè", "bar", "Contanti", "1,20", "18:00"],
+            ]
+        )
+        codes = [
+            error["code"]
+            for item in response.data["rows"]
+            for error in item["errors"]
+        ]
+        self.assertEqual(codes.count("duplicate_in_file"), 2)
+
 
 class ConfirmTests(ImportTestBase):
     def test_confirm_creates_accounts_and_movements(self):
@@ -440,9 +529,22 @@ class ConfirmTests(ImportTestBase):
         self.assertEqual(account.balance, Decimal("987.50"))
         opening = Transaction.objects.get(kind=Transaction.Kind.OPENING)
         self.assertEqual(opening.amount, Decimal("1000.00"))
+        self.assertEqual(opening.time.isoformat(), "12:00:00")
         expense = Transaction.objects.get(kind=Transaction.Kind.EXPENSE)
         self.assertEqual(expense.date.isoformat(), "2026-10-02")
+        self.assertEqual(expense.time.isoformat(), "12:00:00")
         self.assertEqual(expense.lines.get().amount, Decimal("-12.50"))
+
+    def test_confirm_preserves_the_imported_time(self):
+        rows = self.json_rows(VALID_ROWS)
+        rows[0]["time"] = "08:15"
+        rows[1]["time"] = "19:40"
+        response = self.confirm_rows(rows)
+        self.assertEqual(response.status_code, 201)
+        opening = Transaction.objects.get(kind=Transaction.Kind.OPENING)
+        self.assertEqual(opening.time.isoformat(), "08:15:00")
+        expense = Transaction.objects.get(kind=Transaction.Kind.EXPENSE)
+        self.assertEqual(expense.time.isoformat(), "19:40:00")
 
     def test_confirm_rejects_rows_with_errors(self):
         response = self.confirm_rows(
@@ -494,6 +596,7 @@ class ExportTests(FinanceTestBase):
                 "description": "Caffè",
                 "amount": "1.20",
                 "account": account["id"],
+                "time": "09:15",
             }
         )
         self.create_transaction(
@@ -503,6 +606,7 @@ class ExportTests(FinanceTestBase):
                 "description": "Entrata",
                 "amount": "50.00",
                 "account": account["id"],
+                "time": "18:45",
             }
         )
         response = self.client.get(reverse("finance-export"))
@@ -512,10 +616,18 @@ class ExportTests(FinanceTestBase):
         text = response.content.decode("utf-8-sig")
         self.assertTrue(response.content.startswith(b"\xef\xbb\xbf"))
         lines = text.splitlines()
-        self.assertEqual(lines[0], "data;descrizione;categoria;conto;importo")
-        self.assertIn(f"{today};Caffè;Altro;Contanti;1,20", lines)
-        self.assertIn(f"{today};Entrata;Altro;Contanti;-50,00", lines)
-        self.assertTrue(any(";Apertura;Contanti;-100,00" in line for line in lines))
+        self.assertEqual(
+            lines[0], "data;descrizione;categoria;conto;importo;ora"
+        )
+        self.assertIn(f"{today};Caffè;Altro;Contanti;1,20;09:15", lines)
+        self.assertIn(f"{today};Entrata;Altro;Contanti;-50,00;18:45", lines)
+        self.assertTrue(
+            any(";Apertura;Contanti;-100,00;12:00" in line for line in lines)
+        )
+        # L'export a 6 colonne resta importabile.
+        rows, errors, _ = parse_csv(response.content)
+        self.assertEqual(errors, [])
+        self.assertIn("09:15", [row["time"] for row in rows])
 
     def test_export_respects_date_filter(self):
         account = self.create_account(initial="100.00").data
@@ -550,6 +662,7 @@ class ExportTests(FinanceTestBase):
                 "description": "=HYPERLINK(\"http://example.com\")",
                 "amount": "1.20",
                 "account": account["id"],
+                "time": "10:00",
             }
         )
         self.create_transaction(
@@ -559,6 +672,7 @@ class ExportTests(FinanceTestBase):
                 "description": "+Entrata",
                 "amount": "50.00",
                 "account": account["id"],
+                "time": "20:30",
             }
         )
         response = self.client.get(reverse("finance-export"))
@@ -566,5 +680,5 @@ class ExportTests(FinanceTestBase):
         lines = response.content.decode("utf-8-sig").splitlines()
         self.assertTrue(any("'=HYPERLINK" in line for line in lines))
         self.assertTrue(any(";'+Entrata;Altro;'@Conto;" in line for line in lines))
-        self.assertTrue(any(line.endswith(";-50,00") for line in lines))
+        self.assertTrue(any(line.endswith(";-50,00;20:30") for line in lines))
         self.assertFalse(any("'-50,00" in line for line in lines))

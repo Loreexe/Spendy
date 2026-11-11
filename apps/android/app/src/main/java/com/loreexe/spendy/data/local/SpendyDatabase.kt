@@ -17,7 +17,7 @@ import androidx.room.RoomDatabase
         LocalAutomationExecutionEntity::class,
         LocalNotificationEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class SpendyDatabase : RoomDatabase() {

@@ -2,6 +2,7 @@ package com.loreexe.spendy.ui.search
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -29,7 +30,10 @@ import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.data.model.SearchResults
+import com.loreexe.spendy.ui.components.CategoryIconBadge
+import com.loreexe.spendy.ui.components.IconBadge
 import com.loreexe.spendy.util.formatCents
+import com.loreexe.spendy.util.formatDateTimeItalian
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -117,9 +121,13 @@ fun SearchScreen(
                     if (state.results.transactions.isNotEmpty()) {
                         item { Section("Movimenti") }
                         items(state.results.transactions, key = { "tx-${it.uuid}" }) {
+                            val isTransfer = it.kind == "transfer"
                             ResultRow(
-                                it.description.ifBlank { it.kind },
-                                "${it.date} · ${formatCents(it.amountCents)}",
+                                title = it.description.ifBlank { it.kind },
+                                subtitle = "${formatDateTimeItalian(it.date, it.time)} · " +
+                                    formatCents(it.amountCents),
+                                icon = if (isTransfer) null else it.categoryIcon,
+                                transfer = isTransfer,
                             )
                         }
                     }
@@ -132,7 +140,7 @@ fun SearchScreen(
                     if (state.results.categories.isNotEmpty()) {
                         item { Section("Categorie") }
                         items(state.results.categories, key = { "ca-${it.uuid}" }) {
-                            ResultRow(it.name, null)
+                            ResultRow(it.name, null, icon = it.icon)
                         }
                     }
                     if (state.results.tags.isNotEmpty()) {
@@ -158,16 +166,40 @@ private fun Section(title: String) {
 }
 
 @Composable
-private fun ResultRow(title: String, subtitle: String?) {
+private fun ResultRow(
+    title: String,
+    subtitle: String?,
+    icon: String? = null,
+    transfer: Boolean = false,
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(title, fontWeight = FontWeight.Medium)
-            subtitle?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            when {
+                transfer -> IconBadge(
+                    iconRes = R.drawable.ic_lucide_arrow_left_right,
+                    size = 32.dp,
+                    iconSize = 16.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                icon != null -> CategoryIconBadge(
+                    icon = icon,
+                    size = 32.dp,
+                    iconSize = 16.dp,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.Medium)
+                subtitle?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

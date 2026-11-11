@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Tags, X } from "lucide-react";
 import {
   api,
@@ -20,8 +21,19 @@ import {
 } from "../api";
 import { LoadingScreen } from "../components/Guards";
 import { EmptyState } from "../components/EmptyState";
+import { CategoryIcon } from "../components/CategoryIcon";
+import { CategoryIconPicker } from "../components/CategoryIconPicker";
+import { CategorySelect } from "../components/CategorySelect";
 import { useToast } from "../components/Toast";
-import { amountClass, money, signedMoney, todayISO } from "../format";
+import {
+  amountClass,
+  currentTimeHM,
+  formatDate,
+  money,
+  normalizeTime,
+  signedMoney,
+  todayISO,
+} from "../format";
 
 type Kind = "income" | "expense" | "transfer";
 type SourceKind = "account" | "savings";
@@ -61,6 +73,7 @@ function MovementItem({
   onDelete: (transaction: Transaction) => void;
   onEdit: (transaction: Transaction) => void;
 }) {
+  const time = normalizeTime(transaction.time);
   return (
     <li className="movement-row">
       <div className="movement-main">
@@ -71,9 +84,17 @@ function MovementItem({
           </span>
         </div>
         <span className="muted small">
-          {new Date(`${transaction.date}T12:00:00`).toLocaleDateString("it-IT")} ·{" "}
-          {transaction.kind_label}
-          {transaction.category ? ` · ${transaction.category.name}` : ""}
+          {formatDate(transaction.date)}
+          {time ? ` · ${time}` : ""} · {transaction.kind_label}
+          {transaction.category ? (
+            <>
+              {" · "}
+              <span className="movement-category">
+                <CategoryIcon name={transaction.category.icon} size={14} />
+                {transaction.category.name}
+              </span>
+            </>
+          ) : null}
         </span>
         {transaction.tags.length > 0 && (
           <span className="small">
@@ -119,6 +140,7 @@ function MovementItem({
 
 export function MovementsPage() {
   const { notify } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [savings, setSavings] = useState<SavingsAccount[]>([]);
@@ -130,9 +152,11 @@ export function MovementsPage() {
   const [kind, setKind] = useState<Kind>("expense");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [date, setDate] = useState(todayISO());
+  const [time, setTime] = useState(currentTimeHM());
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const amountInputRef = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef<HTMLElement | null>(null);
 
   const [accountId, setAccountId] = useState("");
   const [savingsId, setSavingsId] = useState("");
@@ -158,8 +182,10 @@ export function MovementsPage() {
   const [tagInput, setTagInput] = useState("");
   const [suggestion, setSuggestion] = useState<CategorySuggestion | null>(null);
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryIcon, setNewCategoryIcon] = useState("tag");
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingCategoryIcon, setEditingCategoryIcon] = useState("tag");
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [editingTagName, setEditingTagName] = useState("");
   const [taxonomyOpen, setTaxonomyOpen] = useState(false);
@@ -177,6 +203,31 @@ export function MovementsPage() {
       document.body.style.overflow = previous;
     };
   }, [taxonomyOpen]);
+
+  // `?new=expense|transfer|income` (azioni rapide della Home): preseleziona il
+  // tipo, porta al form, mette il focus sull'importo e ripulisce il parametro.
+  useEffect(() => {
+    const requested = searchParams.get("new");
+    if (!requested) return;
+    if (requested === "income" || requested === "expense" || requested === "transfer") {
+      resetForm();
+      setKind(requested);
+    }
+    const timer = window.setTimeout(() => {
+      const reduceMotion =
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      formRef.current?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      amountInputRef.current?.focus({ preventScroll: true });
+      const params = new URLSearchParams(searchParams);
+      params.delete("new");
+      setSearchParams(params, { replace: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [searchParams, setSearchParams]);
+
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -308,22 +359,39 @@ export function MovementsPage() {
     if (!name) return;
     setError(null);
     try {
-      await api.createCategory(name);
+      await api.createCategory(name, newCategoryIcon);
       setNewCategoryName("");
+      setNewCategoryIcon("tag");
       await refreshTaxonomy();
     } catch (err) {
       setError(errorMessage(err));
     }
   }
 
-  async function handleRenameCategory(category: Category) {
+  function startCategoryEdit(category: Category) {
+    setEditingCategoryId(category.id);
+    setEditingCategoryName(category.name);
+    setEditingCategoryIcon(category.icon || "tag");
+  }
+
+  function cancelCategoryEdit() {
+    setEditingCategoryId(null);
+    setEditingCategoryName("");
+    setEditingCategoryIcon("tag");
+  }
+
+  async function handleSaveCategory(category: Category) {
     const name = editingCategoryName.trim();
-    if (!name) return;
+    if (!category.is_default && !name) return;
     setError(null);
     try {
-      await api.updateCategory(category.id, name);
-      setEditingCategoryId(null);
-      setEditingCategoryName("");
+      await api.updateCategory(
+        category.id,
+        category.is_default
+          ? { icon: editingCategoryIcon }
+          : { name, icon: editingCategoryIcon },
+      );
+      cancelCategoryEdit();
       await refreshTaxonomy();
       await reload();
     } catch (err) {
@@ -349,6 +417,7 @@ export function MovementsPage() {
       });
       if (String(category.id) === categoryId) setCategoryId("");
       if (String(category.id) === filterCategory) setFilterCategory("");
+      if (editingCategoryId === category.id) cancelCategoryEdit();
       await refreshTaxonomy();
       await reload();
     } catch (err) {
@@ -406,6 +475,10 @@ export function MovementsPage() {
       setError("Inserisci un importo maggiore di zero.");
       return null;
     }
+    if (!time) {
+      setError("Inserisci l'ora del movimento.");
+      return null;
+    }
     const category_id = categoryId ? Number(categoryId) : undefined;
     const tags = parseTags();
     if (kind === "income") {
@@ -416,6 +489,7 @@ export function MovementsPage() {
       return {
         kind,
         date,
+        time,
         description,
         amount,
         account: Number(accountId),
@@ -432,6 +506,7 @@ export function MovementsPage() {
         return {
           kind,
           date,
+          time,
           description,
           amount,
           account: Number(accountId),
@@ -446,6 +521,7 @@ export function MovementsPage() {
       return {
         kind,
         date,
+        time,
         description,
         amount,
         savings: Number(savingsId),
@@ -462,6 +538,7 @@ export function MovementsPage() {
     const payload: TransactionPayload = {
       kind: "transfer",
       date,
+      time,
       description,
       amount,
       category_id: categoryId ? Number(categoryId) : undefined,
@@ -523,6 +600,7 @@ export function MovementsPage() {
   function resetForm() {
     setEditingId(null);
     setDate(todayISO());
+    setTime(currentTimeHM());
     setDescription("");
     setAmount("");
     setConfirmCoverage(false);
@@ -536,6 +614,7 @@ export function MovementsPage() {
     setEditingId(transaction.id);
     setKind(transaction.kind as Kind);
     setDate(transaction.date);
+    setTime(normalizeTime(transaction.time) ?? "12:00");
     setDescription(transaction.description);
     setAmount(transaction.amount);
     setConfirmCoverage(false);
@@ -641,7 +720,7 @@ export function MovementsPage() {
       {message && <p className="notice success">{message}</p>}
       {error && <p className="error">{error}</p>}
 
-      <section className="card">
+      <section className="card" ref={formRef}>
         <div className="card-heading">
           <h2>{editingId ? "Modifica movimento" : "Nuovo movimento"}</h2>
           {editingId && (
@@ -673,6 +752,15 @@ export function MovementsPage() {
               />
             </label>
             <label>
+              Ora
+              <input
+                type="time"
+                value={time}
+                onChange={(event) => setTime(event.target.value)}
+                required
+              />
+            </label>
+            <label>
               Importo
               <input
                 ref={amountInputRef}
@@ -696,20 +784,16 @@ export function MovementsPage() {
             <div className="form-field">
               <span>Categoria</span>
               <span className="field-row">
-                <select
+                <CategorySelect
+                  categories={categories}
                   value={categoryId}
-                  onChange={(event) => {
-                    setCategoryId(event.target.value);
+                  onChange={(value) => {
+                    setCategoryId(value);
                     setSuggestion(null);
                   }}
-                >
-                  <option value="">Altro (automatica)</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
+                  emptyLabel="Altro (automatica)"
+                  ariaLabel="Categoria del movimento"
+                />
                 <button
                   type="button"
                   className="icon-button"
@@ -732,7 +816,9 @@ export function MovementsPage() {
           </div>
           {suggestion && !categoryId && (
             <p className="muted small">
-              Categoria suggerita: <strong>{suggestion.category.name}</strong>{" "}
+              Categoria suggerita:{" "}
+              <CategoryIcon name={suggestion.category.icon} size={14} />{" "}
+              <strong>{suggestion.category.name}</strong>{" "}
               <button
                 type="button"
                 className="secondary"
@@ -988,20 +1074,16 @@ export function MovementsPage() {
                 onChange={(event) => setFilterEnd(event.target.value)}
               />
             </label>
-            <label>
+            <div className="filter-category">
               <span className="small muted">Categoria</span>
-              <select
+              <CategorySelect
+                categories={categories}
                 value={filterCategory}
-                onChange={(event) => setFilterCategory(event.target.value)}
-              >
-                <option value="">Tutte le categorie</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={setFilterCategory}
+                emptyLabel="Tutte le categorie"
+                ariaLabel="Filtra per categoria"
+              />
+            </div>
             <label>
               <span className="small muted">Tag</span>
               <input
@@ -1099,143 +1181,171 @@ export function MovementsPage() {
               </button>
             </div>
             <ul className="entity-list">
-          {categories.map((category) => (
-            <li key={category.id}>
-              {editingCategoryId === category.id ? (
-                <span className="inline-form">
-                  <input
-                    value={editingCategoryName}
-                    onChange={(event) =>
-                      setEditingCategoryName(event.target.value)
-                    }
-                    maxLength={60}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleRenameCategory(category)}
-                  >
-                    Salva
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setEditingCategoryId(null)}
-                  >
-                    Annulla
-                  </button>
-                </span>
-              ) : (
-                <>
-                  <span>
-                    {category.name}{" "}
-                    {category.is_default && (
-                      <span className="badge">Iniziale</span>
-                    )}{" "}
-                    {category.is_preset && !category.is_default && (
-                      <span className="badge">Predefinita</span>
-                    )}
-                  </span>
-                  {!category.is_default && (
-                    <span className="entity-side">
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          setEditingCategoryId(category.id);
-                          setEditingCategoryName(category.name);
-                        }}
-                      >
-                        Rinomina
-                      </button>
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => void handleDeleteCategory(category)}
-                      >
-                        Elimina
-                      </button>
-                    </span>
+              {categories.map((category) => (
+                <li key={category.id}>
+                  {editingCategoryId === category.id ? (
+                    <div className="taxonomy-editor">
+                      {category.is_default ? (
+                        <span className="taxonomy-entry-name">
+                          <CategoryIcon
+                            name={editingCategoryIcon}
+                            size={18}
+                          />
+                          {category.name}
+                        </span>
+                      ) : (
+                        <div className="inline-form">
+                          <input
+                            value={editingCategoryName}
+                            onChange={(event) =>
+                              setEditingCategoryName(event.target.value)
+                            }
+                            maxLength={60}
+                            aria-label={`Nome della categoria ${category.name}`}
+                          />
+                        </div>
+                      )}
+                      <CategoryIconPicker
+                        label="Icona della categoria"
+                        value={editingCategoryIcon}
+                        onChange={setEditingCategoryIcon}
+                      />
+                      <div className="actions">
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveCategory(category)}
+                        >
+                          Salva
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={cancelCategoryEdit}
+                        >
+                          Annulla
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="taxonomy-entry-name">
+                        <CategoryIcon name={category.icon} size={18} />
+                        <span>
+                          {category.name}{" "}
+                          {category.is_default && (
+                            <span className="badge">Iniziale</span>
+                          )}{" "}
+                          {category.is_preset && !category.is_default && (
+                            <span className="badge">Predefinita</span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="entity-side">
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => startCategoryEdit(category)}
+                        >
+                          {category.is_default ? "Cambia icona" : "Modifica"}
+                        </button>
+                        {!category.is_default && (
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => void handleDeleteCategory(category)}
+                          >
+                            Elimina
+                          </button>
+                        )}
+                      </span>
+                    </>
                   )}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-        <div className="inline-form" style={{ marginTop: "0.75rem" }}>
-          <input
-            value={newCategoryName}
-            onChange={(event) => setNewCategoryName(event.target.value)}
-            placeholder="Nuova categoria"
-            maxLength={60}
-          />
-          <button type="button" onClick={() => void handleCreateCategory()}>
-            Aggiungi
-          </button>
-        </div>
-        {allTags.length > 0 && (
-          <>
-            <div className="card-heading" style={{ marginTop: "1rem" }}>
-              <h2>Tag usati</h2>
+                </li>
+              ))}
+            </ul>
+            <div className="taxonomy-create">
+              <div className="inline-form">
+                <input
+                  value={newCategoryName}
+                  onChange={(event) => setNewCategoryName(event.target.value)}
+                  placeholder="Nuova categoria"
+                  maxLength={60}
+                  aria-label="Nome della nuova categoria"
+                />
+                <button type="button" onClick={() => void handleCreateCategory()}>
+                  Aggiungi
+                </button>
+              </div>
+              <CategoryIconPicker
+                label="Icona della nuova categoria"
+                value={newCategoryIcon}
+                onChange={setNewCategoryIcon}
+              />
             </div>
-            <p className="small">
-              {allTags.map((tag) =>
-                editingTagId === tag.id ? (
-                  <span key={tag.id} className="inline-form">
-                    <input
-                      value={editingTagName}
-                      onChange={(event) =>
-                        setEditingTagName(event.target.value)
-                      }
-                      maxLength={30}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleRenameTag(tag)}
-                    >
-                      Salva
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setEditingTagId(null)}
-                    >
-                      Annulla
-                    </button>
-                  </span>
-                ) : (
-                  <span
-                    key={tag.id}
-                    className="badge"
-                    style={{ marginRight: "0.25rem" }}
-                  >
-                    {tag.name}{" "}
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-label={`Rinomina tag ${tag.name}`}
-                      onClick={() => {
-                        setEditingTagId(tag.id);
-                        setEditingTagName(tag.name);
-                      }}
-                      style={{ color: "inherit", fontWeight: 700 }}
-                    >
-                      ✎
-                    </button>{" "}
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-label={`Elimina tag ${tag.name}`}
-                      onClick={() => void handleDeleteTag(tag)}
-                      style={{ color: "inherit", fontWeight: 700 }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ),
-              )}
-            </p>
-          </>
-        )}
+            {allTags.length > 0 && (
+              <>
+                <div className="card-heading" style={{ marginTop: "1rem" }}>
+                  <h2>Tag usati</h2>
+                </div>
+                <p className="small">
+                  {allTags.map((tag) =>
+                    editingTagId === tag.id ? (
+                      <span key={tag.id} className="inline-form">
+                        <input
+                          value={editingTagName}
+                          onChange={(event) =>
+                            setEditingTagName(event.target.value)
+                          }
+                          maxLength={30}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleRenameTag(tag)}
+                        >
+                          Salva
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setEditingTagId(null)}
+                        >
+                          Annulla
+                        </button>
+                      </span>
+                    ) : (
+                      <span
+                        key={tag.id}
+                        className="badge"
+                        style={{ marginRight: "0.25rem" }}
+                      >
+                        {tag.name}{" "}
+                        <button
+                          type="button"
+                          className="link-button"
+                          aria-label={`Rinomina tag ${tag.name}`}
+                          onClick={() => {
+                            setEditingTagId(tag.id);
+                            setEditingTagName(tag.name);
+                          }}
+                          style={{ color: "inherit", fontWeight: 700 }}
+                        >
+                          ✎
+                        </button>{" "}
+                        <button
+                          type="button"
+                          className="link-button"
+                          aria-label={`Elimina tag ${tag.name}`}
+                          onClick={() => void handleDeleteTag(tag)}
+                          style={{ color: "inherit", fontWeight: 700 }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ),
+                  )}
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -14,6 +14,7 @@ from .models import (
     Account,
     Automation,
     AutomationExecution,
+    Category,
     InvestmentOperation,
     InvestmentPosition,
     Line,
@@ -161,6 +162,28 @@ class ArchiveTestBase(FinanceTestBase):
         contents["manifest.json"] = json.dumps(manifest).encode("utf-8")
         return self.repack(contents)
 
+    def as_schema4(self, content):
+        """Downgrade uno schema 5 togliendo ``ora`` e ``icona``."""
+        contents = self.unpack(content)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        for name in ("movimenti.csv", "categorie.csv"):
+            rows = self.csv_rows(contents, name)
+            stripped = [row[:-1] for row in rows]
+            buffer = io.StringIO()
+            writer = csv.writer(buffer, delimiter=";", lineterminator="\r\n")
+            writer.writerows(stripped)
+            contents[name] = (
+                b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8")
+            )
+            manifest["file"][name]["sha256"] = hashlib.sha256(
+                contents[name]
+            ).hexdigest()
+            manifest["file"][name]["righe"] = len(stripped) - 1
+            manifest["conteggi"][name[:-4]] = len(stripped) - 1
+        manifest["schema"] = 4
+        contents["manifest.json"] = json.dumps(manifest).encode("utf-8")
+        return self.repack(contents)
+
     def make_data(self):
         account = self.create_account(initial="1000.00").data
         other = self.create_account(name="Risparmi", initial="500.00").data
@@ -295,6 +318,32 @@ class ArchiveTestBase(FinanceTestBase):
 
 
 class ArchiveExportTests(ArchiveTestBase):
+    def test_schema5_archive_contains_category_icons_and_movement_times(self):
+        self.make_data()
+        contents = self.unpack(self.export_archive().content)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        self.assertEqual(manifest["schema"], 5)
+        self.assertIn("Schema 5", " ".join(manifest["note"]))
+
+        categories = self.csv_rows(contents, "categorie.csv")
+        category_columns = {
+            key: index for index, key in enumerate(categories[0])
+        }
+        icons = {
+            row[category_columns["nome"]]: row[category_columns["icona"]]
+            for row in categories[1:]
+        }
+        self.assertEqual(icons["Altro"], "tag")
+        self.assertEqual(icons["Alimentari"], "shopping-cart")
+
+        movements = self.csv_rows(contents, "movimenti.csv")
+        movement_columns = {
+            key: index for index, key in enumerate(movements[0])
+        }
+        self.assertTrue(
+            all(row[movement_columns["ora"]] for row in movements[1:])
+        )
+
     def test_archive_has_expected_files_and_headers(self):
         self.make_data()
         response = self.export_archive()
@@ -328,12 +377,22 @@ class ArchiveExportTests(ArchiveTestBase):
             .splitlines()[0]
             .startswith("id;posizione_id;posizione;tipo_codice")
         )
+        self.assertTrue(
+            contents["movimenti.csv"].decode("utf-8-sig").splitlines()[0].endswith(
+                ";uuid;ora"
+            )
+        )
+        self.assertTrue(
+            contents["categorie.csv"].decode("utf-8-sig").splitlines()[0].endswith(
+                ";uuid;icona"
+            )
+        )
 
     def test_manifest_counts_and_checksums(self):
         self.make_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 4)
+        self.assertEqual(manifest["schema"], 5)
         self.assertEqual(manifest["scopo"], "backup-profilo")
         self.assertEqual(manifest["valuta"], "EUR")
         self.assertEqual(
@@ -407,11 +466,11 @@ class ArchiveExportTests(ArchiveTestBase):
                     len(contents[name].decode("utf-8-sig").splitlines()), 1
                 )
 
-    def test_schema4_archive_contains_positions_and_operations(self):
+    def test_schema5_archive_contains_positions_and_operations(self):
         account, _ = self.make_investment_data()
         contents = self.unpack(self.export_archive().content)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 4)
+        self.assertEqual(manifest["schema"], 5)
         self.assertEqual(manifest["conteggi"]["posizioni"], 1)
         self.assertEqual(manifest["conteggi"]["operazioni_investimenti"], 4)
         self.assertEqual(manifest["conto_investimenti_id"], account["id"])
@@ -595,9 +654,24 @@ class ArchiveRestoreTests(ArchiveTestBase):
         self.assertEqual(restored.data["investment_operations"], 0)
         self.assertEqual(restored.data["patrimony_total"], "1600.00")
 
+        # Schema 1: ora 12:00 e icona dalle categorie predefinite.
+        profile = target.finance_profile
+        self.assertTrue(
+            all(
+                movement.time.isoformat() == "12:00:00"
+                for movement in Transaction.objects.filter(profile=profile)
+            )
+        )
+        self.assertEqual(
+            Transaction.objects.get(
+                profile=profile, description="Stipendio"
+            ).category.icon,
+            "tag",
+        )
 
-class ArchiveSchema4Tests(ArchiveTestBase):
-    def test_schema4_includes_uuid_automations_and_profile_without_theme(self):
+
+class ArchiveSchema5Tests(ArchiveTestBase):
+    def test_schema5_includes_uuid_automations_and_profile_without_theme(self):
         account = self.create_account(initial="100.00").data
         savings = self.create_savings(account["id"], name="Vacanze").data
         profile = self.user.finance_profile
@@ -637,7 +711,7 @@ class ArchiveSchema4Tests(ArchiveTestBase):
         archive_bytes = self.export_archive().content
         contents = self.unpack(archive_bytes)
         manifest = json.loads(contents["manifest.json"].decode("utf-8"))
-        self.assertEqual(manifest["schema"], 4)
+        self.assertEqual(manifest["schema"], 5)
         self.assertIn("automazioni.csv", contents)
         self.assertIn("esecuzioni_automazioni.csv", contents)
         self.assertIn("profilo.json", contents)
@@ -669,6 +743,105 @@ class ArchiveSchema4Tests(ArchiveTestBase):
         )
         self.assertEqual(target.first_name, "Ada")
         self.assertEqual(target_profile.theme, "dark")
+
+
+class ArchiveSchema5RestoreTests(ArchiveTestBase):
+    def make_icon_time_data(self):
+        account = self.create_account(initial="1000.00").data
+        category = self.client.post(
+            reverse("finance-categories"),
+            {"name": "Viaggi", "icon": "plane"},
+            format="json",
+        ).data
+        movement = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Treno",
+                "amount": "40.00",
+                "account": account["id"],
+                "category_id": category["id"],
+                "time": "06:45",
+            }
+        )
+        self.assertEqual(movement.status_code, 201)
+        midnight = self.create_transaction(
+            {
+                "kind": "expense",
+                "date": self.today.isoformat(),
+                "description": "Mezzanotte",
+                "amount": "1.00",
+                "account": account["id"],
+                "category_id": category["id"],
+                "time": "00:00",
+            }
+        )
+        self.assertEqual(midnight.status_code, 201)
+        return account, category
+
+    def test_schema5_round_trip_preserves_icon_and_time(self):
+        self.make_icon_time_data()
+        content = self.export_archive().content
+        contents = self.unpack(content)
+        manifest = json.loads(contents["manifest.json"].decode("utf-8"))
+        self.assertEqual(manifest["schema"], 5)
+
+        movements = self.csv_rows(contents, "movimenti.csv")
+        movement_columns = {
+            key: index for index, key in enumerate(movements[0])
+        }
+        treno = next(
+            row
+            for row in movements[1:]
+            if row[movement_columns["descrizione"]] == "Treno"
+        )
+        self.assertEqual(treno[movement_columns["ora"]], "06:45")
+        categories = self.csv_rows(contents, "categorie.csv")
+        category_columns = {
+            key: index for index, key in enumerate(categories[0])
+        }
+        viaggi = next(
+            row
+            for row in categories[1:]
+            if row[category_columns["nome"]] == "Viaggi"
+        )
+        self.assertEqual(viaggi[category_columns["icona"]], "plane")
+
+        target = self.other_user("schema5@example.com")
+        self.client.force_authenticate(user=target)
+        restored = self.confirm(content)
+        self.assertEqual(restored.status_code, 201)
+        profile = target.finance_profile
+        movement = Transaction.objects.get(profile=profile, description="Treno")
+        self.assertEqual(movement.time.isoformat(), "06:45:00")
+        self.assertEqual(movement.category.name, "Viaggi")
+        self.assertEqual(movement.category.icon, "plane")
+        midnight = Transaction.objects.get(
+            profile=profile, description="Mezzanotte"
+        )
+        self.assertEqual(midnight.time.isoformat(), "00:00:00")
+
+    def test_schema4_restore_uses_default_icon_and_midday_time(self):
+        self.make_icon_time_data()
+        schema4 = self.as_schema4(self.export_archive().content)
+        target = self.other_user("schema4@example.com")
+        self.client.force_authenticate(user=target)
+        analysis = self.analyze(schema4)
+        self.assertEqual(analysis.status_code, 200)
+        self.assertEqual(analysis.data["manifest"]["schema"], 4)
+        self.assertTrue(analysis.data["can_restore"])
+
+        restored = self.confirm(schema4)
+        self.assertEqual(restored.status_code, 201)
+        profile = target.finance_profile
+        movement = Transaction.objects.get(profile=profile, description="Treno")
+        self.assertEqual(movement.time.isoformat(), "12:00:00")
+        # «Viaggi» non è una categoria predefinita: icona di ripiego.
+        self.assertEqual(movement.category.icon, "tag")
+        self.assertEqual(
+            Category.objects.get(profile=profile, name="Alimentari").icon,
+            "shopping-cart",
+        )
 
 
 class ArchiveInvestmentRestoreTests(ArchiveTestBase):

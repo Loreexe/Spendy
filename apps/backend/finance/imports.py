@@ -11,7 +11,7 @@ import csv
 import io
 import re
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from difflib import SequenceMatcher
 
@@ -28,7 +28,11 @@ from .services import (
     running_minimum,
 )
 
-HEADER = ("data", "descrizione", "categoria", "conto", "importo")
+# Il registro esporta l'ora come sesta colonna; l'import accetta anche il
+# formato a 5 colonne dei client 0.8.3 (ora assente => 12:00, DC-116).
+HEADER = ("data", "descrizione", "categoria", "conto", "importo", "ora")
+LEGACY_HEADER = HEADER[:5]
+DEFAULT_TIME = time(12, 0)
 SEPARATOR = ";"
 MAX_ROWS = 5000
 MAX_BYTES = 5 * 1024 * 1024
@@ -59,8 +63,8 @@ def _example_rows():
     # A day above 12 keeps spreadsheets from guessing the date order.
     example = today.replace(day=25).strftime("%d-%m-%Y")
     return [
-        [example, "ESEMPIO — spesa di prova", "esempio", "Contanti", "12,50"],
-        [example, "ESEMPIO — entrata di prova", "esempio", "Contanti", "-100,00"],
+        [example, "ESEMPIO — spesa di prova", "esempio", "Contanti", "12,50", "12:30"],
+        [example, "ESEMPIO — entrata di prova", "esempio", "Contanti", "-100,00", "09:00"],
     ]
 
 
@@ -84,14 +88,15 @@ def detect_delimiter(text: str) -> str:
         return SEPARATOR
     best = SEPARATOR
     best_score = (-1.0, False)
+    valid_headers = {HEADER, LEGACY_HEADER}
     for candidate in DELIMITERS:
         rows = list(csv.reader(lines, delimiter=candidate))
         if not rows:
             continue
-        filled = sum(1 for row in rows if len(row) == len(HEADER))
-        header_ok = tuple(
-            cell.strip().casefold() for cell in rows[0]
-        ) == HEADER
+        filled = sum(
+            1 for row in rows if len(row) in {len(LEGACY_HEADER), len(HEADER)}
+        )
+        header_ok = tuple(cell.strip().casefold() for cell in rows[0]) in valid_headers
         score = (filled / len(rows), header_ok)
         if score > best_score:
             best, best_score = candidate, score
@@ -173,22 +178,23 @@ def parse_csv(raw: bytes, delimiter: str | None = None):
             continue
         if header is None:
             header = tuple(cell.strip().casefold() for cell in cells)
-            if header != HEADER:
+            if header not in {HEADER, LEGACY_HEADER}:
                 return [], [
                     _file_error(
                         line_number,
                         "header",
                         "Intestazione non valida: usa il modello scaricato "
-                        "(data;descrizione;categoria;conto;importo).",
+                        "(data;descrizione;categoria;conto;importo;ora). "
+                        "La colonna «ora» è facoltativa.",
                     )
                 ], used
             continue
-        if len(cells) != len(HEADER):
+        if len(cells) not in {len(LEGACY_HEADER), len(HEADER)}:
             errors.append(
                 _file_error(
                     line_number,
                     "columns",
-                    f"La riga ha {len(cells)} colonne invece di {len(HEADER)}.",
+                    f"La riga ha {len(cells)} colonne invece di 5 o 6.",
                 )
             )
             continue
@@ -200,6 +206,7 @@ def parse_csv(raw: bytes, delimiter: str | None = None):
                 "category": cells[2].strip(),
                 "account": cells[3].strip(),
                 "amount": cells[4].strip(),
+                "time": cells[5].strip() if len(cells) > 5 else "",
                 "not_duplicate": False,
             }
         )
@@ -227,6 +234,20 @@ def parse_date(value: str, date_format: str = DEFAULT_DATE_FORMAT):
         return datetime.strptime(value, fmt).date(), None
     except ValueError:
         return None, "La data non esiste."
+
+
+def parse_time(value: str, default: time = DEFAULT_TIME):
+    """Parse ``HH:MM``/``H:MM``; vuoto o assente vale 12:00 (DC-116)."""
+    text = str(value or "").strip()
+    if not text:
+        return default, None
+    match = re.match(r"^(\d{1,2}):(\d{2})$", text)
+    if match is None:
+        return None, "L'ora deve essere nel formato HH:MM (es. 09:30 o 9:30)."
+    hour, minute = int(match.group(1)), int(match.group(2))
+    if hour > 23 or minute > 59:
+        return None, "L'ora deve essere compresa tra 00:00 e 23:59."
+    return time(hour, minute), None
 
 
 def parse_amount(value: str, decimal_separator: str = ","):
@@ -283,12 +304,14 @@ def _prepare_row(index: int, source: dict, date_format: str, decimal_separator: 
         "category": str(source.get("category", "")).strip(),
         "account": str(source.get("account", "")).strip(),
         "amount": str(source.get("amount", "")).strip(),
+        "time": str(source.get("time", "")).strip(),
         "not_duplicate": bool(source.get("not_duplicate")),
         "errors": [],
         "warnings": [],
         "kind": "expense",
         "valid": True,
         "date_value": None,
+        "time_value": None,
         "amount_value": None,
         "account_key": "",
     }
@@ -299,6 +322,14 @@ def _prepare_row(index: int, source: dict, date_format: str, decimal_separator: 
         row["valid"] = False
     else:
         row["date_value"] = parsed_date
+
+    # Ora facoltativa: se assente vale 12:00, se invalida la riga è in errore.
+    parsed_time, message = parse_time(row["time"])
+    if message:
+        _add_error(row, "invalid_time", "time", message)
+        row["valid"] = False
+    else:
+        row["time_value"] = parsed_time
 
     parsed_amount, message = parse_amount(row["amount"], decimal_separator)
     if message:
@@ -683,6 +714,11 @@ def _analyze(
                 "category": row["category"],
                 "account": row["account"],
                 "amount": row["amount"],
+                "time": (
+                    row["time_value"].strftime("%H:%M")
+                    if row["time_value"] is not None
+                    else row["time"]
+                ),
                 "kind": row["kind"] if row["valid"] else None,
                 "errors": row["errors"],
                 "warnings": row["warnings"],
@@ -717,6 +753,7 @@ def _analyze(
             "kind": row["kind"],
             "amount": abs(row["amount_value"]),
             "date": row["date_value"],
+            "time": row["time_value"],
             "description": row["description"],
             "category": row["category"],
         }
@@ -798,6 +835,7 @@ def confirm(
                 profile=profile,
                 kind=item["kind"],
                 date=item["date"],
+                time=item["time"],
                 description=item["description"],
                 amount=item["amount"],
                 category=match_category(profile, item.get("category", "")),

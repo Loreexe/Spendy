@@ -8,15 +8,16 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.3`. Livello operativo del **design system** in `design/`
-> (catalogo componenti, token, layout, matrice piattaforme, verifiche) e controlli
-> automatici in CI; componente condiviso `InlineMessage` su Profilo e Dispositivi.
-> **Entrate/Uscite** ora sono i **movimenti dei conti**: includono aperture e
-> trasferimenti (anche tra conti) e le operazioni con salvadanai e investimenti;
-> **Saldo del periodo = Entrate − Uscite** coincide con la somma delle variazioni
-> dei conti. Android ha la nuova barra **«Minimal»** ancorata al bordo, icona
-> profilo per «Altro», scorciatoia Categorie e tag in Movimenti e patrimonio
-> grigio nel grafico come sul web. Restano fuori gruppi, MCP e notifiche push/email.
+> **Stato:** release `v0.8.4`. Livello
+> operativo del **design system** in `design/` (catalogo componenti, token, layout,
+> matrice piattaforme, verifiche) e controlli automatici in CI. La **Dashboard**
+> diventa **Home**: portafoglio nella card saldo, azioni rapide, ultimi 3 movimenti
+> e tre grafici separati; il menu dell'avatar mostra foto, nome ed email. I
+> **movimenti hanno l'orario** (`HH:MM`) e le **categorie hanno un'icona** scelta da
+> un catalogo Lucide. Su Android la barra ha **Home, Movimenti, Salvadanai,
+> Investimenti, Automazioni**, l'avatar è in alto a destra e i Conti si aprono dal
+> portafoglio; l'archivio personale passa allo **schema 5** con ora e icone.
+> Restano fuori gruppi, MCP e notifiche push/email.
 
 ## Screenshot
 
@@ -25,7 +26,7 @@ Immagini catturate dall'ambiente demo (dati finti):
 | | |
 | :---: | :---: |
 | ![Dashboard](docs/screenshots/01-dashboard.jpg) | ![Movimenti](docs/screenshots/02-movimenti.jpg) |
-| **Dashboard** | **Movimenti** |
+| **Home** | **Movimenti** |
 | ![Conti](docs/screenshots/03-conti.jpg) | ![Salvadanai](docs/screenshots/04-salvadanai.jpg) |
 | **Conti** | **Salvadanai** |
 | ![Automazioni](docs/screenshots/05-automazioni.jpg) | ![Investimenti](docs/screenshots/06-investimenti.jpg) |
@@ -37,9 +38,9 @@ Immagini catturate dall'ambiente demo (dati finti):
 
 ## Funzionalità
 
-- **Dashboard** con saldo totale, patrimonio, saldo del periodo, entrate e uscite, grafici e ultimi movimenti.
+- **Home** con saldo totale, patrimonio, saldo del periodo, portafoglio, azioni rapide, ultimi movimenti, entrate e uscite e grafici per categoria.
 - **Conti personali** con nome, tipo, saldo iniziale e archiviazione.
-- **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento, con categorie e tag.
+- **Movimenti**: entrate, spese, trasferimenti tra conti e modifica/annullamento, con **data e ora**, categorie con icona e tag.
 - **Salvadanai** con conto di appoggio, versamenti e prelievi.
 - **Pagamento di spese dal salvadanaio**, con movimenti tecnici e copertura parziale dal conto di appoggio.
 - **Eliminazione dei salvadanai** con trasferimento del saldo residuo.
@@ -49,7 +50,7 @@ Immagini catturate dall'ambiente demo (dati finti):
 - **Importazione dei movimenti da CSV**, con modello scaricabile, anteprima correggibile, controllo dei duplicati e riepilogo prima della conferma.
 - **Esportazione** di movimenti, investimenti e archivio personale completo (ZIP con CSV e manifesto).
 - **Backup personale del profilo**: archivio ZIP con conti, salvadanai, movimenti, righe contabili, posizioni e operazioni di investimento in CSV, manifesto con checksum e ripristino guidato su un profilo vuoto. Distinto dal backup globale del database.
-- **Profilo e impostazioni**: nome, cognome, foto profilo, email, nome utente e cambio password; tema scuro, chiaro o di sistema; ricerca interna alle impostazioni.
+- **Profilo e impostazioni**: avatar con foto e menu con nome, cognome ed email; nome, cognome, foto profilo, email, nome utente e cambio password; tema scuro, chiaro o di sistema; ricerca interna alle impostazioni.
 - **Cestino** con ripristino, annullamento immediato e filtri per tipo e data.
 - **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero viene rifiutata con il saldo disponibile.
 - **Isolamento tra profili**: ogni account normale ha il proprio spazio finanziario; l'admin globale non ha un profilo finanziario.
@@ -175,15 +176,16 @@ cd apps/frontend && npm run lint && npm run build
 docker compose config
 ```
 
-Stato verificato: **349 test backend**, **15 test unitari Android**, lint e
-build frontend, configurazione Compose valida, configurazione Nginx e pagina di
-manutenzione verificate, procedura di aggiornamento provata in dry-run e con
-Docker simulato (successo e rollback). La release `v0.8.1` comprende l'API v1
-con token per dispositivo, UUID e archivio schema 4, il pairing via QR e l'app
-Android con conti, movimenti, salvadanai, investimenti, automazioni, cestino,
-import/export, migrazione, profilo, impostazioni, dispositivi e pairing.
-Restano inclusi backup reale su Backblaze B2, test di ripristino automatico e
-ripristino completo su host pulito.
+Stato verificato: **383 test backend**, **31 test unitari Android**, lint e
+build frontend, `assembleDebug`/`lintDebug`, configurazione Compose valida,
+configurazione Nginx e pagina di manutenzione verificate, procedura di
+aggiornamento provata in dry-run e con Docker simulato (successo e rollback).
+La versione `v0.8.4` comprende l'API v1 con token per dispositivo, UUID e
+archivio schema 5, il pairing via QR e l'app Android con Home, conti, movimenti
+con ora, salvadanai, investimenti, automazioni, cestino, import/export,
+migrazione, profilo con foto, impostazioni, dispositivi e pairing. Restano
+inclusi backup reale su Backblaze B2, test di ripristino automatico e ripristino
+completo su host pulito.
 
 ## Automazioni periodiche
 
@@ -256,12 +258,13 @@ caricare il tuo registro storico. Il file viene analizzato **prima** di scrivere
 qualsiasi dato: le righe con errori si possono correggere o scartare, e solo dopo
 la conferma l'importazione avviene in modo atomico.
 
-Il file deve essere un CSV UTF-8 con queste colonne:
+Il file deve essere un CSV UTF-8 con queste colonne (la colonna `ora` è
+facoltativa: se manca, il movimento vale 12:00):
 
 ```csv
-data;descrizione;categoria;conto;importo
-25-11-2026;Spesa di prova;esempio;Contanti;12,50
-25-11-2026;Entrata di prova;esempio;Contanti;-100,00
+data;descrizione;categoria;conto;importo;ora
+25-11-2026;Spesa di prova;esempio;Contanti;12,50;12:30
+25-11-2026;Entrata di prova;esempio;Contanti;-100,00;09:00
 ```
 
 - il formato della data, il separatore di colonna e il separatore decimale vengono **rilevati automaticamente** e si possono correggere dall'anteprima (es. `GG-MM-AAAA`, `AAAA-MM-GG`, `;` o `,`, virgola o punto decimale);
@@ -270,15 +273,15 @@ data;descrizione;categoria;conto;importo
 - la prima riga per data di un **nuovo conto** è la sua apertura e deve essere negativa; i conti esistenti ricevono solo movimenti;
 - se importi in un conto già esistente, il suo saldo iniziale resta quello già registrato: righe più vecchie dell'apertura possono risultare in un saldo insufficiente nel passato. Per uno storico completo usa un conto nuovo, che l'importazione crea con l'apertura presa dal file;
 - ogni riga è indipendente: trasferimenti e salvadanai non sono importabili;
-- la colonna `categoria` è accettata ma ignorata, in attesa della funzionalità;
+- la colonna `categoria` viene confrontata con le categorie del profilo (senza corrispondenza finisce su «Altro»); `ora` accetta `HH:MM` o `H:MM` e un valore non valido blocca la riga;
 - righe identiche nel file o già presenti nell'app sono segnalate come duplicati (stesso segno: un'uscita e un'entrata dello stesso importo non lo sono); puoi scartarle oppure confermare singolarmente che non lo sono.
 
 ### Esportazione
 
 Dal registro movimenti, **Esporta CSV** scarica i movimenti filtrati con le
-stesse colonne e la stessa convenzione di segno dell'importazione, così il file
-può essere aperto in un foglio di calcolo o reimportato. La colonna `categoria`
-contiene il tipo del movimento (Apertura, Entrata, Spesa, Trasferimento). I
+stesse colonne (inclusa `ora`) e la stessa convenzione di segno dell'importazione,
+così il file può essere aperto in un foglio di calcolo o reimportato. La colonna
+`categoria` contiene il nome reale della categoria del movimento. I
 trasferimenti diventano una riga per conto; dei salvadanai viene esportata solo
 la parte che passa dal conto. Le operazioni di investimento non sono incluse in
 questo export: si esportano dalla pagina Investimenti.
@@ -290,13 +293,14 @@ del profilo:
 
 - `conti.csv`, `salvadanai.csv`, `movimenti.csv`, `righe.csv`, `posizioni.csv`, `operazioni_investimenti.csv`;
 - `manifest.json` con data, versione, conteggi e checksum SHA-256.
+- schema **5**: ora dei movimenti e icona delle categorie; gli archivi degli
+  schemi 1–4 restano ripristinabili (ora 12:00 e icona dedotta dal nome).
 
 L'archivio conserva anche le due parti dei trasferimenti, le righe tecniche dei
 salvadanai, le coperture parziali, le posizioni e le operazioni di investimento
 (comprese le aperture senza movimento di conto). Può essere ricaricato con
 **Ripristina un archivio** su un profilo vuoto: Spendy valida il contenuto,
-mostra un'anteprima e scrive in modo atomico. Gli archivi creati con la versione
-precedente (quattro CSV) restano ripristinabili. Le regole di automazione e il
+mostra un'anteprima e scrive in modo atomico. Gli archivi creati con le versioni precedenti (schemi 1–4) restano ripristinabili. Le regole di automazione e il
 loro storico non sono ancora incluse in questo archivio CSV: sono protette dal
 backup globale del database PostgreSQL. Il ripristino è pensato per il passaggio
 a un altro server; non sostituisce il backup globale.
@@ -323,8 +327,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.3
-./scripts/update.sh v0.8.3
+./scripts/update.sh --dry-run v0.8.4
+./scripts/update.sh v0.8.4
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

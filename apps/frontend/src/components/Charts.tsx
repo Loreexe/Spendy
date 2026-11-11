@@ -1,5 +1,6 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { money } from "../format";
+import { CategoryIcon } from "./CategoryIcon";
 
 export interface SeriesPoint {
   date: string;
@@ -11,6 +12,8 @@ export interface CategoryTotal {
   id: number;
   name: string;
   total: string;
+  /** Nome Lucide dell'icona; fallback `tag` se assente (server 0.8.3). */
+  icon?: string;
 }
 
 /** Etichetta compatta per le assi: stessa lingua e stesso separatore di money(). */
@@ -186,7 +189,10 @@ export function CategoryBars({ rows }: { rows: CategoryTotal[] }) {
     <div className="chart-bars">
       {rows.map((row) => (
         <div key={row.id} className="chart-bar-row">
-          <span className="chart-bar-label">{row.name}</span>
+          <span className="chart-bar-label">
+            <CategoryIcon name={row.icon} size={14} />
+            {row.name}
+          </span>
           <div
             className="chart-bar-track"
             role="img"

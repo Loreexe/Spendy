@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
+from unittest import mock
 
 from django.db.models.deletion import ProtectedError
 from django.test import TestCase
@@ -194,6 +195,18 @@ class BuyTests(InvestmentTestBase):
         self.assertEqual(operation.unit_price, D("102.5"))
         self.assertEqual(operation.gross_amount, D("205.00"))
         self.assertEqual(operation.cash_amount, D("206.50"))
+
+    def test_buy_movement_uses_the_real_registration_time(self):
+        position = self.make_position()
+        self.opening(position, quantity="10", total="1000.00")
+        with mock.patch(
+            "finance.investments.current_local_time",
+            return_value=time(7, 25),
+        ):
+            operation = self.buy(
+                position, quantity="2", unit_price="102.50", commission="1.50"
+            )
+        self.assertEqual(operation.transaction.time, time(7, 25))
 
     def test_buy_rejected_when_account_would_go_negative(self):
         account = self.make_account("Scarso", initial="50.00")

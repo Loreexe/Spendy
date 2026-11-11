@@ -67,7 +67,11 @@ class DashboardSeriesTests(FinanceTestBase):
         rows = {
             entry["name"]: entry["total"] for entry in response.data["by_category"]
         }
+        icons = {
+            entry["name"]: entry["icon"] for entry in response.data["by_category"]
+        }
         self.assertEqual(rows.get("Alimentari"), "200.00")
+        self.assertEqual(icons.get("Alimentari"), "shopping-cart")
         self.assertNotIn("Altro", rows)
 
     def test_long_period_uses_weekly_buckets(self):

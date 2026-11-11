@@ -18,7 +18,7 @@ from .imports import (
 )
 from .views import FinanceView
 
-ROW_FIELDS = ("date", "description", "category", "account", "amount")
+ROW_FIELDS = ("date", "description", "category", "account", "amount", "time")
 
 
 def _rows_from_request(request) -> list[dict]:

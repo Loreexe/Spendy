@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Monitor, Moon, Search, Sun, X } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -87,7 +88,21 @@ function AppearanceSection({ query }: { query: string }) {
 
 export function SettingsPage() {
   const { user } = useAuth();
+  const location = useLocation();
   const [query, setQuery] = useState("");
+
+  // Dal menu del profilo "Import/Export" porta direttamente alla sezione.
+  useEffect(() => {
+    if (location.hash !== "#import-export") return;
+    const target = document.getElementById("import-export");
+    if (!target) return;
+    const reduceMotion =
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    target.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [location.hash, user]);
 
   if (!user) return null;
 

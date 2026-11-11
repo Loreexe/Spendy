@@ -1,5 +1,10 @@
 package com.loreexe.spendy.ui.profile
 
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,12 +57,14 @@ import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.R
 import com.loreexe.spendy.data.AccountRepository
 import com.loreexe.spendy.data.AppMode
+import com.loreexe.spendy.data.AvatarRepository
 import com.loreexe.spendy.data.LocalFinanceRepository
 import com.loreexe.spendy.data.ServerProfile
 import com.loreexe.spendy.data.ServerRepository
 import com.loreexe.spendy.data.SessionStore
 import com.loreexe.spendy.ui.components.FactRow
 import com.loreexe.spendy.ui.components.PasswordField
+import com.loreexe.spendy.ui.components.ProfileAvatar
 import com.loreexe.spendy.ui.components.SectionCard
 import com.loreexe.spendy.ui.components.SectionDivider
 import com.loreexe.spendy.ui.components.SectionRow
@@ -78,6 +87,10 @@ data class ProfileUiState(
     val status: String = "",
     val isGlobalAdmin: Boolean = false,
     val initials: String = "?",
+    val avatar: Bitmap? = null,
+    val hasAvatar: Boolean = false,
+    val uploadingAvatar: Boolean = false,
+    val avatarMessage: String? = null,
     val saving: Boolean = false,
     val saved: Boolean = false,
     val error: String? = null,
@@ -94,6 +107,7 @@ class ProfileViewModel @Inject constructor(
     private val local: LocalFinanceRepository,
     private val sessionStore: SessionStore,
     private val serverRepository: ServerRepository,
+    private val avatarRepository: AvatarRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         ProfileUiState(
@@ -121,6 +135,11 @@ class ProfileViewModel @Inject constructor(
             if (_state.value.serverMode) {
                 accounts.me()
                     .onSuccess { user ->
+                        val avatar = if (user?.hasAvatar == true) {
+                            avatarRepository.load(user.avatarUpdatedAt)
+                        } else {
+                            null
+                        }
                         _state.update {
                             it.copy(
                                 loading = false,
@@ -139,6 +158,8 @@ class ProfileViewModel @Inject constructor(
                                     user?.email,
                                     user?.username,
                                 ),
+                                avatar = avatar,
+                                hasAvatar = user?.hasAvatar == true,
                             )
                         }
                     }
@@ -160,6 +181,8 @@ class ProfileViewModel @Inject constructor(
                             .filter { part -> part.isNotBlank() }
                             .joinToString(" "),
                         initials = initialsOf("$first $last", profile?.email, profile?.username),
+                        avatar = null,
+                        hasAvatar = false,
                     )
                 }
             }
@@ -177,6 +200,56 @@ class ProfileViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     _state.update { it.copy(saving = false, error = error.message) }
+                }
+        }
+    }
+
+    /** Carica la foto scelta (solo modalità server, DC-115). */
+    fun uploadAvatar(uri: Uri) {
+        if (!_state.value.serverMode) return
+        viewModelScope.launch {
+            _state.update { it.copy(uploadingAvatar = true, avatarMessage = null, error = null) }
+            avatarRepository.upload(uri)
+                .onSuccess {
+                    _state.update { it.copy(uploadingAvatar = false) }
+                    load()
+                    _state.update { it.copy(avatarMessage = "Foto profilo aggiornata.") }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            uploadingAvatar = false,
+                            error = error.message ?: "Impossibile aggiornare la foto.",
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Rimuove la foto profilo dal server: l'avatar torna alle iniziali. */
+    fun removeAvatar() {
+        if (!_state.value.serverMode) return
+        viewModelScope.launch {
+            _state.update { it.copy(uploadingAvatar = true, avatarMessage = null, error = null) }
+            avatarRepository.remove()
+                .onSuccess {
+                    _state.update {
+                        it.copy(
+                            uploadingAvatar = false,
+                            avatar = null,
+                            hasAvatar = false,
+                            avatarMessage = "Foto profilo rimossa.",
+                        )
+                    }
+                    load()
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            uploadingAvatar = false,
+                            error = error.message ?: "Impossibile rimuovere la foto.",
+                        )
+                    }
                 }
         }
     }
@@ -260,6 +333,12 @@ fun ProfileScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showPassword by remember { mutableStateOf(false) }
     var showLogout by remember { mutableStateOf(false) }
+    // Selettore di sistema per la foto (PickVisualMedia): nessun permesso extra.
+    val pickAvatar = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.uploadAvatar(uri)
+    }
 
     Scaffold(
         topBar = {
@@ -292,6 +371,17 @@ fun ProfileScreen(
         ) {
             ProfileHeader(state)
             if (state.serverMode) {
+                AvatarActions(
+                    state = state,
+                    onPickImage = {
+                        pickAvatar.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
+                    onRemove = viewModel::removeAvatar,
+                )
                 PersonalDataSection(
                     state = state,
                     onSave = { firstName, lastName, username, email ->
@@ -361,6 +451,54 @@ fun ProfileScreen(
     }
 }
 
+/**
+ * Azioni sulla foto profilo: solo modalità server (DC-115). In archivio locale
+ * l'avatar resta a iniziali e non viene mai inviato al server.
+ */
+@Composable
+private fun AvatarActions(
+    state: ProfileUiState,
+    onPickImage: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onPickImage, enabled = !state.uploadingAvatar) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_lucide_camera),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(stringResource(R.string.profile_avatar_change))
+            }
+            if (state.hasAvatar) {
+                TextButton(onClick = onRemove, enabled = !state.uploadingAvatar) {
+                    Text(
+                        text = stringResource(R.string.profile_avatar_remove),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            if (state.uploadingAvatar) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+            }
+        }
+        state.avatarMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Text(
+            text = stringResource(R.string.profile_avatar_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProfileHeader(state: ProfileUiState) {
@@ -369,25 +507,12 @@ private fun ProfileHeader(state: ProfileUiState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(84.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-                    CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = state.initials,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+        ProfileAvatar(
+            bitmap = state.avatar,
+            initials = state.initials,
+            size = 84.dp,
+            contentDescription = stringResource(R.string.profile_avatar_description),
+        )
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -728,6 +853,11 @@ private fun LocalProfileSection(state: ProfileUiState) {
             FactRow("Nome utente", state.username.ifBlank { "—" })
             FactRow("Email", state.email.ifBlank { "—" })
             Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.profile_avatar_local),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 text = stringResource(R.string.profile_local_note),
                 style = MaterialTheme.typography.bodySmall,

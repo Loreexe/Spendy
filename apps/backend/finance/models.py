@@ -1,4 +1,5 @@
 import uuid
+from datetime import time
 from decimal import Decimal
 
 from django.conf import settings
@@ -118,6 +119,64 @@ class Profile(models.Model):
         return self.display_name or self.user.get_full_name()
 
 
+# Icona predefinita delle categorie senza icona scelta (DC-117).
+DEFAULT_CATEGORY_ICON = "tag"
+
+# Whitelist delle icone delle categorie (nomi Lucide, DC-117). Il client mostra
+# solo queste icone; il server rifiuta i valori fuori elenco.
+CATEGORY_ICONS = (
+    # Icone delle categorie predefinite.
+    "tag",
+    "shopping-cart",
+    "house",
+    "car",
+    "heart-pulse",
+    "gamepad-2",
+    "shopping-bag",
+    "briefcase",
+    "piggy-bank",
+    # Catalogo aggiuntivo.
+    "utensils",
+    "coffee",
+    "plane",
+    "train-front",
+    "fuel",
+    "gift",
+    "music",
+    "film",
+    "dumbbell",
+    "paw-print",
+    "graduation-cap",
+    "stethoscope",
+    "wrench",
+    "smartphone",
+    "shirt",
+    "sparkles",
+    "receipt",
+    "credit-card",
+    "book-open",
+    "leaf",
+)
+
+# Icona associata alle categorie predefinite (DC-117).
+DEFAULT_CATEGORY_ICONS = {
+    "Altro": "tag",
+    "Alimentari": "shopping-cart",
+    "Casa e bollette": "house",
+    "Trasporti": "car",
+    "Salute": "heart-pulse",
+    "Svago e tempo libero": "gamepad-2",
+    "Shopping": "shopping-bag",
+    "Lavoro e studio": "briefcase",
+    "Risparmio": "piggy-bank",
+}
+
+
+def default_category_icon(name: str) -> str:
+    """Icona da usare per una categoria: mappatura per nome, altrimenti ``tag``."""
+    return DEFAULT_CATEGORY_ICONS.get(name, DEFAULT_CATEGORY_ICON)
+
+
 class Category(SoftDeleteModel):
     """Movement category: one per transaction, preset or personal (DC-086)."""
 
@@ -125,6 +184,7 @@ class Category(SoftDeleteModel):
         Profile, on_delete=models.CASCADE, related_name="categories"
     )
     name = models.CharField(max_length=60)
+    icon = models.CharField(max_length=32, default=DEFAULT_CATEGORY_ICON)
     is_preset = models.BooleanField(default=False)
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -173,6 +233,7 @@ def ensure_default_categories(profile: Profile) -> dict[str, Category]:
             result[name] = Category.objects.create(
                 profile=profile,
                 name=name,
+                icon=default_category_icon(name),
                 is_preset=True,
                 is_default=(name == DEFAULT_CATEGORY_NAME),
             )
@@ -191,6 +252,7 @@ def ensure_default_categories(profile: Profile) -> dict[str, Category]:
         existing[DEFAULT_CATEGORY_NAME] = Category.objects.create(
             profile=profile,
             name=DEFAULT_CATEGORY_NAME,
+            icon=default_category_icon(DEFAULT_CATEGORY_NAME),
             is_preset=True,
             is_default=True,
         )
@@ -505,6 +567,9 @@ class Transaction(SoftDeleteModel):
     )
     kind = models.CharField(max_length=19, choices=Kind.choices)
     date = models.DateField()
+    # Ora del movimento (DC-116): le righe esistenti e le aperture valgono 12:00,
+    # le creazioni manuali usano l'ora corrente Europe/Rome.
+    time = models.TimeField(default=time(12, 0))
     description = models.CharField(max_length=255, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     category = models.ForeignKey(
@@ -519,7 +584,7 @@ class Transaction(SoftDeleteModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ("-date", "-id")
+        ordering = ("-date", "-time", "-id")
         constraints = [
             models.CheckConstraint(
                 condition=Q(amount__gt=0), name="finance_transaction_amount_positive"

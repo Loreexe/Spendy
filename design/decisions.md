@@ -20,6 +20,10 @@ non usare per nuovo codice (serve approvazione per dichiararlo tale).
 | DC-098 | topbar continua con avatar e menu, Profilo/Impostazioni separati, niente didascalie | `Layout.tsx`, `AccountPage`, `SettingsPage` |
 | DC-102 | Android Kotlin + Compose, Material 3 con token Spendy, bottom bar 5 voci, tema Sistema locale, solo italiano | `apps/android`, `platform-matrix.md` |
 | DC-109 | navbar mobile Android «Minimal»: ancorata 60 dp, nessuna linea/indicatore, superficie piena con sfumatura di 16 dp in alto (niente blur, rivista su richiesta); Compose resta 1.7.6 | `ui/components/SpendyBottomBar.kt`, `MainScreen.kt`; `DESIGN.md` §06/§08 |
+| DC-114 | Home e navigazione: Home (icona `house`) al posto di Dashboard, topbar web a 6 voci, bottom bar Android a 5 voci senza «Altro», Conti dal portafoglio, Home con azioni rapide, popover conti, ultimi 3 movimenti e tre card separate, menu avatar con testata e voci | **implementato e verificato** (2026-11-11): web verificato con build, controlli e ispezione visiva 390/1440 px nei due temi; Android compilato e testato (31 test, lint), **senza prova su device**; `DESIGN.md` §05/§06/§08, catalogo e layout |
+| DC-115 | Profilo, avatar e foto: foto del profilo su web e Android con fallback iniziali, upload Android solo in modalità server, testata del menu con foto/nome/cognome/email | **implementato e verificato** (2026-11-11): web verificato (foto profilo e testata del menu); Android compilato e testato, upload/rimozione non provati su device |
+| DC-116 | Orario dei movimenti: `time` con default 12:00, API `HH:MM`, POST opzionale (ora corrente `Europe/Rome`), migrazione, CSV a 6 colonne, archivio schema 5, Room v7 | **implementato e verificato** (2026-11-11): backend 383 test e API provata dal vivo; web verificato; Android compilato e testato, migrazione Room non provata a runtime |
+| DC-117 | Icone delle categorie: `Category.icon` con whitelist di 29 icone Lucide, mappatura delle 9 predefinite, catalogo extra, «Altro» con icona modificabile | **implementato e verificato** (2026-11-11): backend 383 test e API provata dal vivo; web verificato; Android compilato e testato, resa non provata su device |
 | DC-103/104 | API v1 per il client nativo; archivio locale standalone e migrazione | differenza web/Android sulla modalità dati |
 | DC-105/106 | distribuzione APK, verifiche e fasi della Fase Q | stato «Android implementato con limiti» |
 
@@ -85,6 +89,8 @@ Nessun elemento è stato approvato come deprecato. Candidati da valutare (richie
 
 ## Nota sul versionamento
 
-`DESIGN.md` 0.9 descrive l'identità della release 0.8.2. Le modifiche del livello operativo
-(catalogo, regole, controlli, consolidamenti di token senza cambio visivo) **non** cambiano la
-versione dell'identità; cambiano solo quando cambia un valore visivo approvato.
+`DESIGN.md` **0.9.2** (2026-11-11), release di prodotto 0.8.4 (DC-114…117), descrive: Home e navigazione,
+foto/avatar e menu, orario dei movimenti, icone delle categorie. Backend e web sono verificati;
+Android è compilato e testato ma non provato su device. Le modifiche del
+livello operativo (catalogo, regole, controlli, consolidamenti di token senza cambio visivo) **non**
+cambiano la versione dell'identità; cambiano solo quando cambia un valore visivo approvato.

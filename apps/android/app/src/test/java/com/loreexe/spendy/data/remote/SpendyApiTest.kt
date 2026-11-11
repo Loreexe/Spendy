@@ -97,4 +97,69 @@ class SpendyApiTest {
         assertEquals("0.00000000", detail.operations[2].unitPrice)
         assertEquals("/api/v1/finance/investments/7/", server.takeRequest().path)
     }
+
+    @Test
+    fun transactionParsesTimeAndCategoryIcon() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {
+                      "count": 1,
+                      "transactions": [{
+                        "id": 5, "uuid": "t-1", "kind": "expense", "date": "2026-11-02",
+                        "time": "18:45", "description": "Spesa", "amount": "12.50",
+                        "category": {"id": 2, "uuid": "c-1", "name": "Alimentari", "icon": "shopping-cart"}
+                      }]
+                    }
+                    """.trimIndent(),
+                ),
+        )
+
+        val transaction = api.transactions().transactions.first()
+
+        assertEquals("18:45", transaction.time)
+        assertEquals("shopping-cart", transaction.category?.icon)
+    }
+
+    @Test
+    fun dashboardParsesRecentTransactions() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """
+                    {
+                      "total_balance": "100.00",
+                      "recent_transactions": [{
+                        "id": 9, "uuid": "t-9", "kind": "income", "date": "2026-11-03",
+                        "time": "09:05", "description": "Stipendio", "amount": "500.00"
+                      }]
+                    }
+                    """.trimIndent(),
+                ),
+        )
+
+        val dashboard = api.dashboard()
+
+        assertEquals(1, dashboard.recentTransactions.size)
+        assertEquals("09:05", dashboard.recentTransactions.first().time)
+    }
+
+    @Test
+    fun categoryIconFallsBackToTagWhenAbsent() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""[{"id": 1, "uuid": "c-1", "name": "Altro"}]"""),
+        )
+
+        val category = api.categories().first()
+
+        assertEquals("tag", category.icon)
+    }
 }

@@ -29,7 +29,11 @@ from .models import (
     Profile,
     Transaction,
 )
-from .services import assert_accounts_non_negative, format_money
+from .services import (
+    assert_accounts_non_negative,
+    current_local_time,
+    format_money,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +323,9 @@ def _fail_technically(
 
 
 def _apply_effect(
-    automation: Automation, execution: AutomationExecution
+    automation: Automation,
+    execution: AutomationExecution,
+    now: datetime | None = None,
 ) -> Transaction:
     source: Account | None = execution.source_account
     if source is None:
@@ -328,6 +334,8 @@ def _apply_effect(
         raise MissingAutomationData("Il conto di partenza è archiviato.")
 
     amount = execution.amount
+    # Automazioni: ora reale di esecuzione/registrazione (DC-116).
+    movement_time = current_local_time(now)
 
     if execution.kind == Automation.Kind.EXPENSE:
         assert_accounts_non_negative([(source, -amount, execution.scheduled_date)])
@@ -336,6 +344,7 @@ def _apply_effect(
             automation=automation,
             kind=Transaction.Kind.EXPENSE,
             date=execution.scheduled_date,
+            time=movement_time,
             description=execution.description or "Spesa ricorrente",
             amount=amount,
         )
@@ -357,6 +366,7 @@ def _apply_effect(
         automation=automation,
         kind=Transaction.Kind.TRANSFER,
         date=execution.scheduled_date,
+        time=movement_time,
         description=f"Versamento automatico · {savings.name}",
         amount=amount,
     )
@@ -428,7 +438,7 @@ def execute_occurrence(
 
             execution.status = AutomationExecution.Status.RUNNING
             execution.save(update_fields=("status", "updated_at"))
-            operation = _apply_effect(automation, execution)
+            operation = _apply_effect(automation, execution, now=now)
             execution.attempts += 1
             execution.status = AutomationExecution.Status.SUCCEEDED
             execution.transaction = operation

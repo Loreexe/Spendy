@@ -77,9 +77,15 @@ import com.loreexe.spendy.data.model.NewTransaction
 import com.loreexe.spendy.data.model.TransactionData
 import com.loreexe.spendy.data.model.TagData
 import com.loreexe.spendy.data.model.TransactionFilters
+import com.loreexe.spendy.util.currentTimeHhMm
 import com.loreexe.spendy.util.formatCents
+import com.loreexe.spendy.util.formatDateTimeItalian
+import com.loreexe.spendy.util.isTimeValid
+import com.loreexe.spendy.util.normalizeTime
 import com.loreexe.spendy.util.parseMoneyToCents
+import com.loreexe.spendy.ui.components.CategoryIconBadge
 import com.loreexe.spendy.ui.components.EmptyState
+import com.loreexe.spendy.ui.components.IconBadge
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -108,6 +114,7 @@ data class MovementsUiState(
     val saving: Boolean = false,
     val showDialog: Boolean = false,
     val editing: TransactionData? = null,
+    val newKind: String? = null,
     val undoMessage: String? = null,
 )
 
@@ -199,10 +206,14 @@ class MovementsViewModel @Inject constructor(
         load()
     }
 
-    fun showAdd() = _state.update { it.copy(showDialog = true, editing = null) }
+    /** Apre il dialogo nuovo movimento, con il tipo già scelto se richiesto. */
+    fun showAdd(kind: String? = null) =
+        _state.update { it.copy(showDialog = true, editing = null, newKind = kind) }
+
     fun edit(transaction: TransactionData) =
-        _state.update { it.copy(showDialog = true, editing = transaction) }
-    fun hideAdd() = _state.update { it.copy(showDialog = false, editing = null) }
+        _state.update { it.copy(showDialog = true, editing = transaction, newKind = null) }
+
+    fun hideAdd() = _state.update { it.copy(showDialog = false, editing = null, newKind = null) }
 
     fun create(transaction: NewTransaction) {
         viewModelScope.launch {
@@ -267,9 +278,18 @@ fun MovementsScreen(
     showTopBar: Boolean = true,
     onCategories: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    pendingKind: String? = null,
+    onPendingKindConsumed: () -> Unit = {},
     viewModel: MovementsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Le azioni rapide della Home passano qui con il tipo già scelto.
+    LaunchedEffect(pendingKind) {
+        if (pendingKind != null) {
+            viewModel.showAdd(pendingKind)
+            onPendingKindConsumed()
+        }
+    }
     var minText by remember { mutableStateOf("") }
     var maxText by remember { mutableStateOf("") }
     var showFilters by rememberSaveable { mutableStateOf(false) }
@@ -313,7 +333,7 @@ fun MovementsScreen(
         },
         floatingActionButton = {
             Box(modifier = Modifier.padding(bottom = LocalBottomBarInset.current)) {
-                FloatingActionButton(onClick = viewModel::showAdd) {
+                FloatingActionButton(onClick = { viewModel.showAdd() }) {
                     Icon(painterResource(R.drawable.ic_lucide_plus), contentDescription = stringResource(R.string.movement_add))
                 }
             }
@@ -452,13 +472,12 @@ fun MovementsScreen(
                                 onSelect = { viewModel.setAccount(it.ifBlank { null }) },
                                 modifier = Modifier.weight(1f),
                             )
-                            Selector(
+                            CategorySelectorField(
                                 label = stringResource(R.string.filter_category),
-                                selected = state.categories.firstOrNull { it.uuid == state.filters.categoryUuid }?.name
-                                    ?: stringResource(R.string.filter_all),
-                                options = listOf("" to stringResource(R.string.filter_all)) +
-                                    state.categories.map { it.uuid to it.name },
-                                onSelect = { viewModel.setCategory(it.ifBlank { null }) },
+                                categories = state.categories,
+                                selectedUuid = state.filters.categoryUuid,
+                                allLabel = stringResource(R.string.filter_all),
+                                onSelect = viewModel::setCategory,
                                 modifier = Modifier.weight(1f),
                             )
                             Selector(
@@ -526,7 +545,7 @@ fun MovementsScreen(
                     title = stringResource(R.string.empty_movements_title),
                     description = stringResource(R.string.empty_movements_body),
                     actionLabel = stringResource(R.string.movement_add),
-                    onAction = viewModel::showAdd,
+                    onAction = { viewModel.showAdd() },
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
                 else -> LazyColumn(
@@ -555,6 +574,7 @@ fun MovementsScreen(
                 accounts = state.accounts,
                 categories = state.categories,
                 initial = state.editing,
+                initialKind = state.newKind,
                 saving = state.saving,
                 onDismiss = viewModel::hideAdd,
                 onCreate = viewModel::create,
@@ -570,6 +590,7 @@ private fun MovementCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val isTransfer = transaction.kind == "transfer"
     val sign = when (transaction.kind) {
         "income" -> "+"
         "expense" -> "−"
@@ -590,7 +611,18 @@ private fun MovementCard(
         Row(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (isTransfer) {
+                IconBadge(
+                    iconRes = R.drawable.ic_lucide_arrow_left_right,
+                    size = 36.dp,
+                    iconSize = 18.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                CategoryIconBadge(icon = transaction.categoryIcon, size = 36.dp, iconSize = 18.dp)
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     transaction.description.ifBlank {
@@ -601,9 +633,11 @@ private fun MovementCard(
                         }
                     },
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 val details = listOfNotNull(
-                    transaction.date,
+                    formatDateTimeItalian(transaction.date, transaction.time),
                     transaction.categoryName,
                     transaction.tags.joinToString(", ").ifBlank { null },
                 ).joinToString(" · ")
@@ -611,6 +645,8 @@ private fun MovementCard(
                     details,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(
@@ -678,17 +714,22 @@ private fun AddMovementDialog(
     accounts: List<AccountData>,
     categories: List<CategoryData>,
     initial: TransactionData?,
+    initialKind: String? = null,
     saving: Boolean,
     onDismiss: () -> Unit,
     onCreate: (NewTransaction) -> Unit,
     onUpdate: (TransactionData, NewTransaction) -> Unit,
 ) {
-    var kind by remember(initial) { mutableStateOf(initial?.kind ?: "expense") }
+    var kind by remember(initial, initialKind) {
+        mutableStateOf(initial?.kind ?: initialKind ?: "expense")
+    }
     var amount by remember(initial) {
         mutableStateOf(initial?.let { String.format(Locale.US, "%.2f", it.amountCents / 100.0) } ?: "")
     }
     var description by remember(initial) { mutableStateOf(initial?.description ?: "") }
     var date by remember(initial) { mutableStateOf(initial?.date ?: LocalDate.now().toString()) }
+    // Ora del movimento (DC-116): default l'ora corrente, come nel dialogo web.
+    var time by remember(initial) { mutableStateOf(initial?.time ?: currentTimeHhMm()) }
     var account by remember(initial) {
         mutableStateOf(initial?.accountUuid ?: accounts.firstOrNull()?.uuid ?: "")
     }
@@ -712,7 +753,9 @@ private fun AddMovementDialog(
         if (category.isBlank()) category = categories.firstOrNull()?.uuid ?: ""
     }
 
+    val timeValid = isTimeValid(time)
     val valid = amount.toBigDecimalOrNull() != null &&
+        timeValid &&
         (if (kind == "transfer") {
             fromAccount.isNotBlank() && toAccount.isNotBlank() && fromAccount != toAccount
         } else {
@@ -769,12 +812,29 @@ private fun AddMovementDialog(
                     label = { Text(stringResource(R.string.movement_description)) },
                     singleLine = true,
                 )
-                DatePickerField(
-                    label = stringResource(R.string.movement_date),
-                    value = date,
-                    onDateChange = { picked -> date = picked ?: date },
-                    allowClear = false,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DatePickerField(
+                        label = stringResource(R.string.movement_date),
+                        value = date,
+                        onDateChange = { picked -> date = picked ?: date },
+                        allowClear = false,
+                        modifier = Modifier.weight(1.4f),
+                    )
+                    OutlinedTextField(
+                        value = time,
+                        onValueChange = { time = it },
+                        label = { Text(stringResource(R.string.movement_time)) },
+                        placeholder = { Text(stringResource(R.string.movement_time_hint)) },
+                        singleLine = true,
+                        isError = !timeValid,
+                        supportingText = {
+                            if (!timeValid) {
+                                Text(stringResource(R.string.movement_time_invalid))
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 if (kind == "transfer") {
                     OutlinedSelectorField(
                         label = stringResource(R.string.movement_from),
@@ -798,11 +858,11 @@ private fun AddMovementDialog(
                         onSelect = { account = it },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedSelectorField(
+                    CategorySelectorField(
                         label = stringResource(R.string.movement_category),
-                        selected = categories.firstOrNull { it.uuid == category }?.name ?: "—",
-                        options = categories.map { it.uuid to it.name },
-                        onSelect = { category = it },
+                        categories = categories,
+                        selectedUuid = category,
+                        onSelect = { category = it.orEmpty() },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -820,6 +880,7 @@ private fun AddMovementDialog(
                     val payload = NewTransaction(
                         kind = kind,
                         date = date,
+                        time = normalizeTime(time),
                         description = description,
                         amountCents = parseMoneyToCents(amount),
                         accountUuid = if (kind == "transfer") null else account.ifBlank { null },
@@ -837,6 +898,67 @@ private fun AddMovementDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+/**
+ * Selettore di categoria con l'icona del catalogo (DC-117): usato sia nei
+ * filtri («Tutti» in cima) sia nel dialogo del movimento.
+ */
+@Composable
+private fun CategorySelectorField(
+    label: String,
+    categories: List<CategoryData>,
+    selectedUuid: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+    allLabel: String? = null,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = categories.firstOrNull { it.uuid == selectedUuid }
+    Box(modifier = modifier) {
+        OutlinedPickerField(
+            label = label,
+            value = selected?.name ?: allLabel ?: "—",
+            placeholder = allLabel ?: "—",
+            onClick = { expanded = true },
+            iconRes = R.drawable.ic_lucide_chevron_down,
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (allLabel != null) {
+                DropdownMenuItem(
+                    text = { Text(allLabel) },
+                    leadingIcon = {
+                        Icon(
+                            painterResource(R.drawable.ic_lucide_tag),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(null)
+                    },
+                )
+            }
+            categories.forEach { category ->
+                DropdownMenuItem(
+                    text = { Text(category.name) },
+                    leadingIcon = {
+                        CategoryIconBadge(
+                            icon = category.icon,
+                            size = 24.dp,
+                            iconSize = 14.dp,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(category.uuid)
+                    },
+                )
+            }
+        }
+    }
 }
 
 private val movementDateFormatter: DateTimeFormatter =

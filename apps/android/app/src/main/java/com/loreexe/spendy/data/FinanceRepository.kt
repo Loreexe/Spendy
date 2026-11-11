@@ -16,12 +16,14 @@ import com.loreexe.spendy.data.local.SpendyDao
 import com.loreexe.spendy.data.model.AccountCreateRequest
 import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.data.model.CategoryData
+import com.loreexe.spendy.data.model.CategoryIcons
 import com.loreexe.spendy.data.model.CategoryTotal
 import com.loreexe.spendy.data.model.CategoryWriteRequest
 import com.loreexe.spendy.data.model.AutomationData
 import com.loreexe.spendy.data.model.DashboardData
 import com.loreexe.spendy.data.model.ExecutionData
 import com.loreexe.spendy.data.model.NewAutomation
+import com.loreexe.spendy.data.model.NewCategory
 import com.loreexe.spendy.data.model.NotificationData
 import com.loreexe.spendy.data.model.TrashItemData
 import com.loreexe.spendy.data.model.InvestmentOperationData
@@ -43,6 +45,8 @@ import com.loreexe.spendy.data.model.TransactionFilters
 import com.loreexe.spendy.data.model.TransactionWriteRequest
 import com.loreexe.spendy.data.remote.ApiFactory
 import com.loreexe.spendy.data.remote.SpendyApi
+import com.loreexe.spendy.util.currentTimeHhMm
+import com.loreexe.spendy.util.normalizeTime
 import com.loreexe.spendy.util.parseMoneyToCents
 import com.loreexe.spendy.util.parsePriceToMicros
 import kotlinx.coroutines.Dispatchers
@@ -71,8 +75,8 @@ interface FinanceRepository {
     suspend fun createTransaction(transaction: NewTransaction): Result<Unit>
     suspend fun updateTransaction(original: TransactionData, transaction: NewTransaction): Result<Unit>
     suspend fun deleteTransaction(transaction: TransactionData): Result<Unit>
-    suspend fun createCategory(name: String): Result<Unit>
-    suspend fun renameCategory(category: CategoryData, name: String): Result<Unit>
+    suspend fun createCategory(category: NewCategory): Result<Unit>
+    suspend fun renameCategory(category: CategoryData, updated: NewCategory): Result<Unit>
     suspend fun createTag(name: String): Result<Unit>
     suspend fun renameTag(tag: TagData, name: String): Result<Unit>
     suspend fun deleteCategory(category: CategoryData): Result<Unit>
@@ -142,9 +146,10 @@ class SwitchingFinanceRepository(
         delegate().updateTransaction(original, transaction)
     override suspend fun deleteTransaction(transaction: TransactionData) =
         delegate().deleteTransaction(transaction)
-    override suspend fun createCategory(name: String) = delegate().createCategory(name)
-    override suspend fun renameCategory(category: CategoryData, name: String) =
-        delegate().renameCategory(category, name)
+    override suspend fun createCategory(category: NewCategory) =
+        delegate().createCategory(category)
+    override suspend fun renameCategory(category: CategoryData, updated: NewCategory) =
+        delegate().renameCategory(category, updated)
     override suspend fun createTag(name: String) = delegate().createTag(name)
     override suspend fun renameTag(tag: TagData, name: String) = delegate().renameTag(tag, name)
     override suspend fun deleteCategory(category: CategoryData) = delegate().deleteCategory(category)
@@ -250,6 +255,8 @@ class RemoteFinanceRepository(
             savingsUuid = savingsId?.let { savings[it] },
             fromSavingsUuid = fromSavingsId?.let { savings[it] },
             toSavingsUuid = toSavingsId?.let { savings[it] },
+            time = normalizeTime(dto.time),
+            categoryIcon = CategoryIcons.normalize(dto.category?.icon),
         )
     }
 
@@ -271,6 +278,7 @@ class RemoteFinanceRepository(
                 positionsWithoutPrice = dto.positionsWithoutPrice,
                 periodStart = dto.period.start,
                 periodEnd = dto.period.end,
+                recentTransactions = dto.recentTransactions.map { mapTransaction(it, emptyMap()) },
             )
         }
     }
@@ -315,6 +323,7 @@ class RemoteFinanceRepository(
                     name = it.name,
                     isPreset = it.isPreset,
                     isDefault = it.isDefault,
+                    icon = CategoryIcons.normalize(it.icon),
                 )
             }
         }
@@ -341,7 +350,11 @@ class RemoteFinanceRepository(
                     )
                 },
                 byCategory = dto.byCategory.map {
-                    CategoryTotal(name = it.name, totalCents = parseMoneyToCents(it.total))
+                    CategoryTotal(
+                        name = it.name,
+                        totalCents = parseMoneyToCents(it.total),
+                        icon = CategoryIcons.normalize(it.icon),
+                    )
                 },
             )
         }
@@ -367,6 +380,7 @@ class RemoteFinanceRepository(
                         name = it.name,
                         isPreset = it.isPreset,
                         isDefault = it.isDefault,
+                        icon = CategoryIcons.normalize(it.icon),
                     )
                 },
                 tags = dto.tags.map { TagData(id = it.id, uuid = it.uuid, name = it.name) },
@@ -419,6 +433,7 @@ class RemoteFinanceRepository(
             toSavings = transaction.toSavingsUuid?.let { savings[it] },
             categoryId = categoryId,
             tags = transaction.tags,
+            time = normalizeTime(transaction.time),
         )
     }
 
@@ -478,14 +493,28 @@ class RemoteFinanceRepository(
             }
         }
 
-    override suspend fun createCategory(name: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching { api().createCategory(CategoryWriteRequest(name)); Unit }
-    }
-
-    override suspend fun renameCategory(category: CategoryData, name: String): Result<Unit> =
+    override suspend fun createCategory(category: NewCategory): Result<Unit> =
         withContext(Dispatchers.IO) {
-            runCatching { api().renameCategory(category.id, CategoryWriteRequest(name)); Unit }
+            runCatching {
+                api().createCategory(
+                    CategoryWriteRequest(category.name, CategoryIcons.normalize(category.icon)),
+                )
+                Unit
+            }
         }
+
+    override suspend fun renameCategory(
+        category: CategoryData,
+        updated: NewCategory,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            api().renameCategory(
+                category.id,
+                CategoryWriteRequest(updated.name, CategoryIcons.normalize(updated.icon)),
+            )
+            Unit
+        }
+    }
 
     override suspend fun createTag(name: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching { api().createTag(TagWriteRequest(name)); Unit }
@@ -975,6 +1004,35 @@ class LocalFinanceRepository(
 ) : FinanceRepository {
     private var lastDeleted: TrashItemData? = null
     private val now: String get() = java.time.OffsetDateTime.now().toString()
+
+    /** Mappa una riga Room nel modello di lettura comune, con ora e icona. */
+    private fun mapLocalTransaction(
+        transaction: LocalTransactionEntity,
+        categories: Map<String, LocalCategoryEntity>,
+    ): TransactionData {
+        val category = transaction.categoryUuid?.let { categories[it] }
+        return TransactionData(
+            id = 0,
+            uuid = transaction.uuid,
+            kind = transaction.kind,
+            date = transaction.date,
+            description = transaction.description,
+            amountCents = transaction.amountCents,
+            accountUuid = transaction.accountUuid
+                ?: transaction.fromAccountUuid
+                ?: transaction.toAccountUuid,
+            fromAccountUuid = transaction.fromAccountUuid,
+            toAccountUuid = transaction.toAccountUuid,
+            categoryUuid = transaction.categoryUuid,
+            categoryName = category?.name,
+            tags = transaction.tags.split(",").map(String::trim).filter(String::isNotEmpty),
+            savingsUuid = transaction.savingsUuid,
+            fromSavingsUuid = transaction.fromSavingsUuid,
+            toSavingsUuid = transaction.toSavingsUuid,
+            time = normalizeTime(transaction.time),
+            categoryIcon = CategoryIcons.normalize(category?.icon),
+        )
+    }
     override suspend fun dashboard(
         start: String?,
         end: String?,
@@ -982,6 +1040,7 @@ class LocalFinanceRepository(
         runCatching {
             val accounts = dao.observeAllAccounts().first()
             val transactions = dao.observeTransactions().first()
+            val categories = dao.observeCategories().first().associateBy { it.uuid }
             val balances = accountBalances(accounts, transactions)
             // Saldi, patrimonio e salvadanai restano il totale corrente; entrate,
             // uscite e saldo del periodo sono filtrati per l'intervallo richiesto.
@@ -1008,6 +1067,9 @@ class LocalFinanceRepository(
                 positionsWithoutPrice = investmentSummary.positionsWithoutPrice,
                 periodStart = start.orEmpty(),
                 periodEnd = end.orEmpty(),
+                recentTransactions = transactions.take(3).map {
+                    mapLocalTransaction(it, categories)
+                },
             )
         }
     }
@@ -1051,27 +1113,7 @@ class LocalFinanceRepository(
                                 it.description.contains(filters.query, ignoreCase = true) ||
                                 categories[it.categoryUuid]?.name?.contains(filters.query, ignoreCase = true) == true)
                     }
-                    .map { transaction ->
-                        TransactionData(
-                            id = 0,
-                            uuid = transaction.uuid,
-                            kind = transaction.kind,
-                            date = transaction.date,
-                            description = transaction.description,
-                            amountCents = transaction.amountCents,
-                            accountUuid = transaction.accountUuid
-                                ?: transaction.fromAccountUuid
-                                ?: transaction.toAccountUuid,
-                            fromAccountUuid = transaction.fromAccountUuid,
-                            toAccountUuid = transaction.toAccountUuid,
-                            categoryUuid = transaction.categoryUuid,
-                            categoryName = categories[transaction.categoryUuid]?.name,
-                            tags = transaction.tags.split(",").map(String::trim).filter(String::isNotEmpty),
-                            savingsUuid = transaction.savingsUuid,
-                            fromSavingsUuid = transaction.fromSavingsUuid,
-                            toSavingsUuid = transaction.toSavingsUuid,
-                        )
-                    }
+                    .map { transaction -> mapLocalTransaction(transaction, categories) }
             }
         }
 
@@ -1084,6 +1126,7 @@ class LocalFinanceRepository(
                     name = it.name,
                     isPreset = false,
                     isDefault = it.isDefault,
+                    icon = CategoryIcons.normalize(it.icon),
                 )
             }
         }
@@ -1140,8 +1183,12 @@ class LocalFinanceRepository(
                 .filter { it.kind == "expense" && it.isInPeriod(start, end) }
                 .groupBy { it.categoryUuid }
                 .map { (uuid, items) ->
-                    val name = categories.firstOrNull { it.uuid == uuid }?.name ?: "Altro"
-                    CategoryTotal(name = name, totalCents = items.sumOf { it.amountCents })
+                    val category = categories.firstOrNull { it.uuid == uuid }
+                    CategoryTotal(
+                        name = category?.name ?: "Altro",
+                        totalCents = items.sumOf { it.amountCents },
+                        icon = CategoryIcons.normalize(category?.icon),
+                    )
                 }
                 .sortedByDescending { it.totalCents }
             SeriesData(points = points, byCategory = byCategory)
@@ -1234,6 +1281,7 @@ class LocalFinanceRepository(
                         savingsUuid = transaction.savingsUuid,
                         fromSavingsUuid = transaction.fromSavingsUuid,
                         toSavingsUuid = transaction.toSavingsUuid,
+                        time = normalizeTime(transaction.time),
                     ),
                 )
             }
@@ -1259,6 +1307,7 @@ class LocalFinanceRepository(
                     savingsUuid = transaction.savingsUuid,
                     fromSavingsUuid = transaction.fromSavingsUuid,
                     toSavingsUuid = transaction.toSavingsUuid,
+                    time = normalizeTime(transaction.time),
                 ),
             )
         }
@@ -1274,26 +1323,34 @@ class LocalFinanceRepository(
             }
         }
 
-    override suspend fun createCategory(name: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            dao.saveCategory(
-                LocalCategoryEntity(uuid = UUID.randomUUID().toString(), name = name.trim()),
-            )
-        }
-    }
-
-    override suspend fun renameCategory(category: CategoryData, name: String): Result<Unit> =
+    override suspend fun createCategory(category: NewCategory): Result<Unit> =
         withContext(Dispatchers.IO) {
             runCatching {
                 dao.saveCategory(
                     LocalCategoryEntity(
-                        uuid = category.uuid,
-                        name = name.trim(),
-                        isDefault = category.isDefault,
+                        uuid = UUID.randomUUID().toString(),
+                        name = category.name.trim(),
+                        icon = CategoryIcons.normalize(category.icon),
                     ),
                 )
             }
         }
+
+    override suspend fun renameCategory(
+        category: CategoryData,
+        updated: NewCategory,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            dao.saveCategory(
+                LocalCategoryEntity(
+                    uuid = category.uuid,
+                    name = updated.name.trim(),
+                    isDefault = category.isDefault,
+                    icon = CategoryIcons.normalize(updated.icon),
+                ),
+            )
+        }
+    }
 
     override suspend fun createTag(name: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
@@ -1379,6 +1436,7 @@ class LocalFinanceRepository(
                     uuid = UUID.nameUUIDFromBytes("spendy-default-$name".toByteArray()).toString(),
                     name = name,
                     isDefault = name == "Altro",
+                    icon = CategoryIcons.forName(name),
                 ),
             )
         }
@@ -1561,6 +1619,7 @@ class LocalFinanceRepository(
                             uuid = UUID.randomUUID().toString(),
                             kind = if (automation.kind == "transfer") "transfer" else "expense",
                             date = next,
+                            time = currentTimeHhMm(),
                             description = automation.description.ifBlank {
                                 if (automation.kind == "transfer") "Versamento automatico" else "Spesa ricorrente"
                             },
@@ -1739,6 +1798,7 @@ class LocalFinanceRepository(
                             uuid = UUID.randomUUID().toString(),
                             kind = "transfer",
                             date = LocalDate.now().toString(),
+                            time = currentTimeHhMm(),
                             description = "Saldo residuo salvadanaio ${savings.name}",
                             amountCents = kotlin.math.abs(balance),
                             fromSavingsUuid = if (balance > 0) savings.uuid else null,
@@ -2199,7 +2259,12 @@ class LocalFinanceRepository(
                 )
             },
             categories = dao.observeCategories().first().map {
-                com.loreexe.spendy.data.local.ArchiveCategory(it.uuid, it.name, it.isDefault)
+                com.loreexe.spendy.data.local.ArchiveCategory(
+                    it.uuid,
+                    it.name,
+                    it.isDefault,
+                    CategoryIcons.normalize(it.icon),
+                )
             },
             tags = dao.observeTags().first().map {
                 com.loreexe.spendy.data.local.ArchiveTag(it.uuid, it.name)
@@ -2222,6 +2287,7 @@ class LocalFinanceRepository(
                     savingsUuid = it.savingsUuid,
                     fromSavingsUuid = it.fromSavingsUuid,
                     toSavingsUuid = it.toSavingsUuid,
+                    time = normalizeTime(it.time),
                 )
             },
             positions = dao.observeInvestmentPositions().first().map {
@@ -2324,6 +2390,7 @@ class LocalFinanceRepository(
                                         kotlinx.serialization.json.JsonPrimitive(row.amountCents),
                                     )
                                     put("kind", kotlinx.serialization.json.JsonPrimitive(row.kind))
+                                    put("time", kotlinx.serialization.json.JsonPrimitive(row.time))
                                 })
                             }
                         },
@@ -2397,6 +2464,7 @@ class LocalFinanceRepository(
                             val saved = LocalCategoryEntity(
                                 uuid = UUID.randomUUID().toString(),
                                 name = categoryName,
+                                icon = CategoryIcons.forName(categoryName),
                             )
                             dao.saveCategory(saved)
                             categories[categoryName.lowercase()] = saved
@@ -2412,6 +2480,7 @@ class LocalFinanceRepository(
                             amountCents = kotlin.math.abs(cents),
                             accountUuid = account.uuid,
                             categoryUuid = category?.uuid,
+                            time = normalizeTime(text("time")),
                         ),
                     )
                     val delta = if (kind == "expense") -kotlin.math.abs(cents)
@@ -2467,7 +2536,14 @@ class LocalFinanceRepository(
                     )
                 }
                 data.categories.forEach {
-                    dao.saveCategory(LocalCategoryEntity(it.uuid, it.name, it.isDefault))
+                    dao.saveCategory(
+                        LocalCategoryEntity(
+                            it.uuid,
+                            it.name,
+                            it.isDefault,
+                            icon = CategoryIcons.normalize(it.icon),
+                        ),
+                    )
                 }
                 data.tags.forEach { dao.saveTag(LocalTagEntity(it.uuid, it.name)) }
                 data.accounts.forEach {
@@ -2500,6 +2576,7 @@ class LocalFinanceRepository(
                             savingsUuid = it.savingsUuid,
                             fromSavingsUuid = it.fromSavingsUuid,
                             toSavingsUuid = it.toSavingsUuid,
+                            time = normalizeTime(it.time),
                         ),
                     )
                 }

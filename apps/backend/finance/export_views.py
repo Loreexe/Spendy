@@ -17,7 +17,7 @@ from .investments import INVESTMENT_TRANSACTION_KINDS
 from .models import ZERO, Transaction
 from .views import FinanceView
 
-HEADER = ("data", "descrizione", "categoria", "conto", "importo")
+HEADER = ("data", "descrizione", "categoria", "conto", "importo", "ora")
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -41,7 +41,7 @@ class ExportTransactionsView(FinanceView):
             .exclude(kind__in=INVESTMENT_TRANSACTION_KINDS)
             .select_related("category")
             .prefetch_related("lines__account")
-            .order_by("date", "id")
+            .order_by("date", "time", "id")
         )
         account_id = request.query_params.get("account")
         savings_id = request.query_params.get("savings")
@@ -93,6 +93,7 @@ class ExportTransactionsView(FinanceView):
                         ),
                         sanitize_csv_text(names[account_pk]),
                         _amount(-net),
+                        operation.time.strftime("%H:%M"),
                     ]
                 )
 

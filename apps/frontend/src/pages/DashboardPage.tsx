@@ -14,13 +14,17 @@ import {
   type Transaction,
 } from "../api";
 import { useAuth } from "../auth";
+import { AccountsMenu } from "../components/AccountsMenu";
+import { CategoryIcon } from "../components/CategoryIcon";
 import { CategoryBars, InOutBars, TrendChart } from "../components/Charts";
 import { LoadingScreen } from "../components/Guards";
 import {
   amountClass,
   firstOfMonthISO,
+  formatDate,
   isoDate,
   money,
+  normalizeTime,
   signedMoney,
   todayISO,
 } from "../format";
@@ -38,11 +42,8 @@ function lineLabel(line: Line): string {
   return `${target}${role}`;
 }
 
-function formatDay(iso: string): string {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("it-IT");
-}
-
 function TransactionRows({ transaction }: { transaction: Transaction }) {
+  const time = normalizeTime(transaction.time);
   return (
     <li className="movement-row">
       <div className="movement-main">
@@ -53,7 +54,17 @@ function TransactionRows({ transaction }: { transaction: Transaction }) {
           </span>
         </div>
         <span className="muted small">
-          {formatDay(transaction.date)} · {transaction.kind_label}
+          {formatDate(transaction.date)}
+          {time ? ` · ${time}` : ""} · {transaction.kind_label}
+          {transaction.category ? (
+            <>
+              {" · "}
+              <span className="movement-category">
+                <CategoryIcon name={transaction.category.icon} size={14} />
+                {transaction.category.name}
+              </span>
+            </>
+          ) : null}
         </span>
         <ul className="lines">
           {transaction.lines.map((line) => (
@@ -168,7 +179,7 @@ export function DashboardPage() {
   if (user.is_global_admin) {
     return (
       <div className="card">
-        <p className="eyebrow">Amministrazione</p>
+        <p className="eyebrow">Home</p>
         <h1>Nessun profilo finanziario</h1>
         <p className="muted">
           L'amministratore globale gestisce account e impostazioni, ma non ha
@@ -187,7 +198,7 @@ export function DashboardPage() {
     <div className="stack-page dashboard-page">
       <section className="page-heading">
         <div>
-          <p className="eyebrow">Dashboard</p>
+          <p className="eyebrow">Home</p>
           <h1>Le tue finanze</h1>
         </div>
       </section>
@@ -257,160 +268,112 @@ export function DashboardPage() {
       {error && <p className="error">{error}</p>}
 
       <div className={`dash-content${loading ? " is-updating" : ""}`}>
-      {data && (
-        <>
-          <section className="dash-summary">
-            <div className="card dash-hero">
-              <span className="stat-label">Saldo del periodo</span>
-              <strong className="dash-big">
-                {money(data.period_balance)}
-              </strong>
-              <p className="muted small">
-                {formatDay(data.period.start)} – {formatDay(data.period.end)} · Entrate − Uscite
-                {Number(data.period_dividends) > 0
-                  ? ` · dividendi ${money(data.period_dividends)}`
-                  : ""}
-              </p>
-              <div className="dash-breakdown">
-                <div>
-                  <span>Saldo conti</span>
-                  <strong className={amountClass(data.total_balance)}>
-                    {money(data.total_balance)}
-                  </strong>
+        {data && (
+          <>
+            <section className="dash-summary">
+              <div className="card dash-hero">
+                <div className="dash-hero-head">
+                  <span className="stat-label">Saldo del periodo</span>
+                  <AccountsMenu accounts={data.accounts} />
                 </div>
-                <div>
-                  <span>Salvadanai</span>
-                  <strong>{money(data.total_savings)}</strong>
-                </div>
-                <div>
-                  <span>Investimenti</span>
-                  <strong>{money(data.total_investments_cost)}</strong>
-                  <span className="muted small">
-                    valore {money(data.total_investments_value)}
-                    {data.positions_without_price > 0
-                      ? ` · ${data.positions_without_price} senza prezzo`
-                      : ""}
-                  </span>
-                </div>
-                <div>
-                  <span>Patrimonio</span>
-                  <strong>{money(data.total_patrimony)}</strong>
+                <strong className="dash-big">
+                  {money(data.period_balance)}
+                </strong>
+                <p className="muted small">
+                  {formatDate(data.period.start)} – {formatDate(data.period.end)} ·
+                  Entrate − Uscite
+                  {Number(data.period_dividends) > 0
+                    ? ` · dividendi ${money(data.period_dividends)}`
+                    : ""}
+                </p>
+                <div className="dash-breakdown">
+                  <div>
+                    <span>Saldo conti</span>
+                    <strong className={amountClass(data.total_balance)}>
+                      {money(data.total_balance)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Salvadanai</span>
+                    <strong>{money(data.total_savings)}</strong>
+                  </div>
+                  <div>
+                    <span>Investimenti</span>
+                    <strong>{money(data.total_investments_cost)}</strong>
+                    <span className="muted small">
+                      valore {money(data.total_investments_value)}
+                      {data.positions_without_price > 0
+                        ? ` · ${data.positions_without_price} senza prezzo`
+                        : ""}
+                    </span>
+                  </div>
+                  <div>
+                    <span>Patrimonio</span>
+                    <strong>{money(data.total_patrimony)}</strong>
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section className="card dash-charts">
-            <div className="card-heading">
-              <h2>Grafici del periodo</h2>
-            </div>
+            <section className="actions home-actions" aria-label="Azioni rapide">
+              <Link className="button" to="/movements?new=expense">
+                + Movimento
+              </Link>
+              <Link className="button secondary" to="/movements?new=transfer">
+                Trasferimento
+              </Link>
+            </section>
+
+            <section className="card">
+              <div className="card-heading">
+                <h2>Ultimi movimenti</h2>
+                <Link to="/movements">Tutti i movimenti</Link>
+              </div>
+              {data.recent_transactions.length === 0 ? (
+                <p className="muted">Nessun movimento registrato.</p>
+              ) : (
+                <ul className="movement-list">
+                  {data.recent_transactions
+                    .slice(0, 3)
+                    .map((transaction) => (
+                      <TransactionRows
+                        key={transaction.id}
+                        transaction={transaction}
+                      />
+                    ))}
+                </ul>
+              )}
+            </section>
+
             {series && (
-              <div className="stack">
-                <div>
-                  <h3 className="stat-label">Andamento saldo e patrimonio</h3>
+              <>
+                <section className="card">
+                  <div className="card-heading">
+                    <h2>Entrate vs uscite</h2>
+                  </div>
+                  <InOutBars
+                    income={data.income_total}
+                    expense={data.expense_total}
+                  />
+                </section>
+
+                <section className="card">
+                  <div className="card-heading">
+                    <h2>Andamento saldo e patrimonio</h2>
+                  </div>
                   <TrendChart points={series.buckets} />
-                </div>
-                <div className="dash-charts-row">
-                  <div>
-                    <h3 className="stat-label">Entrate vs uscite</h3>
-                    <InOutBars
-                      income={data.income_total}
-                      expense={data.expense_total}
-                    />
+                </section>
+
+                <section className="card">
+                  <div className="card-heading">
+                    <h2>Spese per categoria</h2>
                   </div>
-                  <div>
-                    <h3 className="stat-label">Spese per categoria</h3>
-                    <CategoryBars rows={series.by_category} />
-                  </div>
-                </div>
-              </div>
+                  <CategoryBars rows={series.by_category} />
+                </section>
+              </>
             )}
-          </section>
-
-          <section className="two-columns equal">
-            <div className="card">
-              <div className="card-heading">
-                <h2>Conti</h2>
-                <Link to="/accounts">Gestisci</Link>
-              </div>
-              {data.accounts.length === 0 ? (
-                <p className="muted">Nessun conto. Creane uno per iniziare.</p>
-              ) : (
-                <ul className="balance-list">
-                  {data.accounts.map((account) => (
-                    <li key={account.id}>
-                      <div>
-                        <strong>{account.name}</strong>
-                        <span className="muted small">
-                          {" "}
-                          · {account.type_label}
-                          {account.archived ? " · archiviato" : ""}
-                        </span>
-                      </div>
-                      <span className="account-amounts">
-                        <span className={amountClass(account.period_balance ?? "0")}>
-                          {money(account.period_balance ?? "0.00")}
-                        </span>
-                        <span className="muted small">
-                          ({money(account.total_with_savings ?? account.balance)})
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="card">
-              <div className="card-heading">
-                <h2>Salvadanai</h2>
-                <Link to="/savings">Gestisci</Link>
-              </div>
-              {data.savings.length === 0 ? (
-                <p className="muted">Nessun salvadanaio.</p>
-              ) : (
-                <ul className="balance-list">
-                  {data.savings.map((savings) => (
-                    <li key={savings.id}>
-                      <div>
-                        <strong>{savings.name}</strong>
-                        <span className="muted small">
-                          {" "}
-                          · appoggio {savings.backing_account_name}
-                        </span>
-                      </div>
-                      <span className={amountClass(savings.balance)}>
-                        {money(savings.balance)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="card-heading">
-              <h2>Ultimi movimenti</h2>
-              <Link to="/movements">Tutti i movimenti</Link>
-            </div>
-            {data.recent_transactions.length === 0 ? (
-              <p className="muted">Nessun movimento registrato.</p>
-            ) : (
-              <ul className="movement-list">
-                {data.recent_transactions
-                  .slice(0, 6)
-                  .map((transaction) => (
-                    <TransactionRows
-                      key={transaction.id}
-                      transaction={transaction}
-                    />
-                  ))}
-              </ul>
-            )}
-          </section>
-        </>
-      )}
+          </>
+        )}
       </div>
     </div>
   );

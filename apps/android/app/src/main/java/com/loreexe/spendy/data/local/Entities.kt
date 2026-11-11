@@ -39,6 +39,8 @@ data class LocalTransactionEntity(
     val fromSavingsUuid: String? = null,
     val toSavingsUuid: String? = null,
     val deletedAt: String? = null,
+    /** Ora del movimento `HH:MM`; le righe migrate da Room v6 valgono 12:00. */
+    val time: String = "12:00",
 )
 
 @Entity(tableName = "local_categories")
@@ -47,6 +49,8 @@ data class LocalCategoryEntity(
     val name: String,
     val isDefault: Boolean = false,
     val deletedAt: String? = null,
+    /** Chiave icona del catalogo (`tag` come fallback). */
+    val icon: String = "tag",
 )
 
 @Entity(tableName = "local_tags")

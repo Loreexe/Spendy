@@ -1,11 +1,22 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 
 from django.db.models import Sum
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from .models import ZERO, Account, Line, SavingsAccount
+
+
+def current_local_time(now=None) -> time:
+    """Ora corrente Europe/Rome, senza secondi, per i movimenti (DC-116).
+
+    Restituisce un ``datetime.time`` naive (Django ``TimeField`` non conserva
+    il fuso orario): è l'ora di parete della timezone configurata.
+    """
+    moment = now or timezone.now()
+    return timezone.localtime(moment).time().replace(second=0, microsecond=0)
 
 
 def format_money(value: Decimal) -> str:

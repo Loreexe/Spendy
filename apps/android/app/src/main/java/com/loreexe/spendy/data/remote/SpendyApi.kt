@@ -78,6 +78,18 @@ interface SpendyApi {
     @GET("auth/me/")
     suspend fun me(): MeResponse
 
+    /** Avatar in archivio sul server (richiede il token, come le altre API). */
+    @Streaming
+    @GET("auth/avatar/")
+    suspend fun avatar(): ResponseBody
+
+    @Multipart
+    @POST("auth/avatar/")
+    suspend fun uploadAvatar(@Part avatar: MultipartBody.Part): MeResponse
+
+    @DELETE("auth/avatar/")
+    suspend fun deleteAvatar(): MeResponse
+
     @GET("finance/dashboard/")
     suspend fun dashboard(
         @Query("start") start: String? = null,
