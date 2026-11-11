@@ -19,8 +19,9 @@ senza integrazioni bancarie.
 > portafoglio; l'archivio personale passa allo **schema 5** con ora e icone.
 > La **0.8.5** rifinisce la Home web (niente azioni rapide, ultimi **4 movimenti
 > compatti** con icona categoria a sinistra e icona del tipo) e la pagina **Conti**
-> (saldo tra parentesi accanto al nome, nome e tipo modificabili). L'app Android
-> resta la **0.8.4**: nessuna modifica al client nativo.
+> (saldo tra parentesi accanto al nome, nome e tipo modificabili). L'app Android è
+> allineata alla **0.8.5** con lo stesso contenuto funzionale della 0.8.4: nessuna
+> modifica al client nativo.
 > Restano fuori gruppi, MCP e notifiche push/email.
 
 ## Screenshot

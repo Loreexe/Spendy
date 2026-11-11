@@ -5,7 +5,7 @@ Android (Kotlin/Compose). Documento pubblico, versione **0.9.3** (11 novembre 20
 Le decisioni e la progettazione vivono in `.spendy-wiki/` (privata); questo file ne è la
 proiezione pubblica e la fonte normativa per l'implementazione.
 
-> **Versione 0.9.3 — release di prodotto 0.8.5 (2026-11-11):** rifiniture web della Home (niente azioni rapide, 4 movimenti compatti, icone a sinistra) e pagina Conti (saldo tra parentesi, nome/tipo modificabili); Android invariato alla 0.8.4. In precedenza, **0.9.2 — release di prodotto 0.8.4 (DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
+> **Versione 0.9.3 — release di prodotto 0.8.5 (2026-11-11):** rifiniture web della Home (niente azioni rapide, 4 movimenti compatti, icone a sinistra) e pagina Conti (saldo tra parentesi, nome/tipo modificabili); Android allineato alla 0.8.5 (stesso contenuto funzionale della 0.8.4). In precedenza, **0.9.2 — release di prodotto 0.8.4 (DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
 > movimenti, icone delle categorie. Le parti contrassegnate «0.8.4» sono **implementate e
 > verificate sul web e sul backend**; Android è **compilato e testato** (`assembleDebug`, 31 test
 > unitari, `lintDebug`) ma **non provato su device/emulatore** in questa sessione. La release è
@@ -376,7 +376,7 @@ Due canali distinti, non sovrapposti:
 
 ## Cronologia
 
-- **0.9.3 — 2026-11-11** — Release di prodotto 0.8.5, **pubblicata** (tag `v0.8.5`): Home web ripristinata senza azioni rapide, ultimi 4 movimenti compatti con icone categoria/tipo e pagina Conti con saldo tra parentesi e nome/tipo modificabili; Android invariato alla 0.8.4.
+- **0.9.3 — 2026-11-11** — Release di prodotto 0.8.5, **pubblicata** (tag `v0.8.5`): Home web ripristinata senza azioni rapide, ultimi 4 movimenti compatti con icone categoria/tipo e pagina Conti con saldo tra parentesi e nome/tipo modificabili; Android allineato alla 0.8.5 (stesso contenuto funzionale della 0.8.4).
 - **0.9.2 — 2026-11-11** — Release di prodotto 0.8.4, **pubblicata** (tag `v0.8.4`): Home al posto di
   Dashboard (icona `house`) e navigazione web/Android senza «Altro» con Conti dal portafoglio; menu
   avatar con testata foto/nome/cognome/email e avatar con foto (fallback iniziali); orario dei
