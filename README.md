@@ -25,11 +25,13 @@ senza integrazioni bancarie.
 
 ## Screenshot
 
-Immagini catturate dall'ambiente demo (dati finti):
+Immagini catturate dall'ambiente demo (dati finti), **solo tema scuro**.
+
+### Web
 
 | | |
 | :---: | :---: |
-| ![Dashboard](docs/screenshots/01-dashboard.jpg) | ![Movimenti](docs/screenshots/02-movimenti.jpg) |
+| ![Home](docs/screenshots/01-dashboard.jpg) | ![Movimenti](docs/screenshots/02-movimenti.jpg) |
 | **Home** | **Movimenti** |
 | ![Conti](docs/screenshots/03-conti.jpg) | ![Salvadanai](docs/screenshots/04-salvadanai.jpg) |
 | **Conti** | **Salvadanai** |
@@ -39,6 +41,23 @@ Immagini catturate dall'ambiente demo (dati finti):
 | **Profilo** | **Impostazioni** |
 | ![Cestino](docs/screenshots/09-cestino.jpg) | ![Importa movimenti](docs/screenshots/10-importa.jpg) |
 | **Cestino** | **Importa movimenti** |
+
+### App Android
+
+| | |
+| :---: | :---: |
+| ![Home Android](docs/screenshots/android/01-home.jpg) | ![Movimenti Android](docs/screenshots/android/02-movimenti.jpg) |
+| **Home** | **Movimenti** |
+| ![Conti Android](docs/screenshots/android/03-conti.jpg) | ![Salvadanai Android](docs/screenshots/android/04-salvadanai.jpg) |
+| **Conti** | **Salvadanai** |
+| ![Investimenti Android](docs/screenshots/android/05-investimenti.jpg) | ![Automazioni Android](docs/screenshots/android/06-automazioni.jpg) |
+| **Investimenti** | **Automazioni** |
+| ![Profilo Android](docs/screenshots/android/07-profilo.jpg) | ![Impostazioni Android](docs/screenshots/android/08-impostazioni.jpg) |
+| **Profilo** | **Impostazioni** |
+
+![Menu avatar Android](docs/screenshots/android/09-menu.jpg)
+
+**Menu avatar**
 
 ## Funzionalità
 

@@ -1,6 +1,6 @@
 # Spendy — visualizzazione del design
 
-Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) **0.9.2**, riferita a **Spendy 0.8.4**
+Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) **0.9.3**, riferita a **Spendy 0.8.5**
 (11 novembre 2026) e al sistema di design di prodotto **web + Android**. I valori vengono dai
 sorgenti reali: token CSS, costanti Compose, pacchetto logo, font self-hosted e illustrazioni
 dell'app. Non è un asset di prodotto e non introduce decisioni nuove.
