@@ -20,8 +20,9 @@
 
 .empty-state-art svg {
   display: block;
-  width: clamp(8.5rem, 42%, 11rem);
-  height: auto;
+  /* Geometria dell'icona di stato vuoto: 96 px = 96 dp sul client Android. */
+  width: 6rem;
+  height: 6rem;
 }
 
 .empty-state-title {

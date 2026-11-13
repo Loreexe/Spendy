@@ -25,7 +25,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +60,7 @@ import com.loreexe.spendy.data.model.CategoryIcons
 import com.loreexe.spendy.data.model.NewCategory
 import com.loreexe.spendy.data.model.TagData
 import com.loreexe.spendy.ui.components.CategoryIconBadge
+import com.loreexe.spendy.ui.components.SpendyListSkeleton
 import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.ui.components.categoryIconLabelRes
 import com.loreexe.spendy.ui.components.categoryIconRes
@@ -176,7 +176,10 @@ fun CategoriesScreen(
         },
     ) { padding ->
         if (state.loading) {
-            CircularProgressIndicator(Modifier.padding(padding))
+            SpendyListSkeleton(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                rows = 6,
+            )
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),

@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +40,7 @@ import com.loreexe.spendy.data.AccountRepository
 import com.loreexe.spendy.data.SessionStore
 import com.loreexe.spendy.data.model.PairingCreateDto
 import com.loreexe.spendy.data.model.PairingDto
+import com.loreexe.spendy.ui.components.SpendyInlineSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -288,7 +288,7 @@ fun PairingScreen(
                 }
 
                 Text("Richieste in attesa", style = MaterialTheme.typography.titleMedium)
-                if (state.loading) CircularProgressIndicator()
+                if (state.loading) SpendyInlineSkeleton(rows = 1)
                 state.pending.forEach { pairing ->
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

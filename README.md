@@ -8,7 +8,7 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.5`. Livello
+> **Stato:** release `v0.8.6`. Livello
 > operativo del **design system** in `design/` (catalogo componenti, token, layout,
 > matrice piattaforme, verifiche) e controlli automatici in CI. La **Dashboard**
 > diventa **Home**: portafoglio nella card saldo, grafici, elenchi di conti e salvadanai
@@ -17,11 +17,10 @@ senza integrazioni bancarie.
 > un catalogo Lucide. Su Android la barra ha **Home, Movimenti, Salvadanai,
 > Investimenti, Automazioni**, l'avatar è in alto a destra e i Conti si aprono dal
 > portafoglio; l'archivio personale passa allo **schema 5** con ora e icone.
-> La **0.8.5** rifinisce la Home web (niente azioni rapide, ultimi **4 movimenti
-> compatti** con icona categoria a sinistra e icona del tipo) e la pagina **Conti**
-> (saldo tra parentesi accanto al nome, nome e tipo modificabili). L'app Android è
-> allineata alla **0.8.5** con lo stesso contenuto funzionale della 0.8.4: nessuna
-> modifica al client nativo.
+> La **0.8.6** introduce un **nuovo flusso guidato per registrare i movimenti** su web e
+> Android: importo con slider a tacche, conti o salvadanaio, categorie, data/ora, tag e
+> riepilogo con conferma. Include inoltre le rifiniture della Home, gli skeleton di
+> pagina coerenti e il feedback aptico Android.
 > Restano fuori gruppi, MCP e notifiche push/email.
 
 ## Screenshot
@@ -351,8 +350,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.5
-./scripts/update.sh v0.8.5
+./scripts/update.sh --dry-run v0.8.6
+./scripts/update.sh v0.8.6
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

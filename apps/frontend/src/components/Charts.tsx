@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { money } from "../format";
 import { CategoryIcon } from "./CategoryIcon";
@@ -32,17 +33,47 @@ function shortDate(iso: string): string {
   return `${d}/${m}`;
 }
 
+const CHART_W = 640;
+const CHART_H = 220;
+const CHART_PAD_B = 22;
+const CHART_PAD_T = 10;
+const CHART_LABEL_BASE = 11;
+
 export function TrendChart({ points }: { points: SeriesPoint[] }) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [labelSize, setLabelSize] = useState(CHART_LABEL_BASE);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const width = svg.getBoundingClientRect().width;
+      if (!width) return;
+      const scale = width / CHART_W;
+      // Sotto la scala 1:1 le etichette SVG si rimpiccioliscono con il grafico:
+      // si ingrandisce il corpo in unità utente per mantenere leggibile la resa.
+      setLabelSize(
+        scale < 1
+          ? Math.min(30, Math.ceil(CHART_LABEL_BASE / scale))
+          : CHART_LABEL_BASE,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
+
   if (points.length < 2) {
     return (
       <p className="muted">Dati insufficienti per il grafico di andamento.</p>
     );
   }
-  const W = 640;
-  const H = 220;
-  const PAD_L = 56;
-  const PAD_B = 22;
-  const PAD_T = 10;
+  const W = CHART_W;
+  const H = CHART_H;
+  const PAD_L = Math.max(56, Math.round(labelSize * 4.2));
+  const PAD_B = CHART_PAD_B;
+  const PAD_T = Math.max(CHART_PAD_T, Math.round(labelSize * 0.9));
   const values = points.flatMap((p) => [Number(p.saldo), Number(p.patrimonio)]);
   let min = Math.min(...values);
   let max = Math.max(...values);
@@ -63,6 +94,7 @@ export function TrendChart({ points }: { points: SeriesPoint[] }) {
   return (
     <figure className="chart" style={{ margin: 0 }}>
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         role="img"
         aria-label="Andamento del saldo e del patrimonio nel periodo"
@@ -82,7 +114,7 @@ export function TrendChart({ points }: { points: SeriesPoint[] }) {
               x={PAD_L - 6}
               y={y(t) + 4}
               textAnchor="end"
-              fontSize={11}
+              fontSize={labelSize}
               fill="var(--muted)"
             >
               {shortEuro(t)}
@@ -110,7 +142,7 @@ export function TrendChart({ points }: { points: SeriesPoint[] }) {
               x={i === 0 ? PAD_L : W - 8}
               y={H - 6}
               textAnchor={i === 0 ? "start" : "end"}
-              fontSize={11}
+              fontSize={labelSize}
               fill="var(--muted)"
             >
               {shortDate(p.date)}
@@ -121,7 +153,7 @@ export function TrendChart({ points }: { points: SeriesPoint[] }) {
           x={(x(0) + x(points.length - 1)) / 2}
           y={H - 6}
           textAnchor="middle"
-          fontSize={11}
+          fontSize={labelSize}
           fill="var(--muted)"
         >
           {shortDate(mid.date)}

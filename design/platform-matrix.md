@@ -25,7 +25,7 @@ identità, non una copia pixel-per-pixel del web.
 | Colori, superfici, semantica | token `tokens.css` ↔ costanti `Color.kt`/`Theme.kt` |
 | Tipografia | Inter 400/500/600/700, cifre tabulari |
 | Icone | set Lucide (web: `lucide-react`; Android: vector drawable) |
-| Illustrazioni | 6 soggetti line-art mint (React ↔ vector drawable) |
+| Icone degli stati vuoti | 6 glifi Lucide (`wallet`, `receipt-text`, `piggy-bank`, `trending-up`, `clock`, `trash`), 96 px e tratto 1,5 su entrambi i client (DC-120) |
 | Forma | raggi 18/20, pillole 999, ombra singola, motion 150/200 |
 | Formati | `it-IT`, EUR, date `gg/mm/aaaa`, ore `HH:MM`, `Europe/Rome` |
 | Icone delle categorie | catalogo di 29 icone Lucide condiviso: whitelist backend ↔ `CategoryIcon`/`CategorySelect` web ↔ `CategoryIcons.kt`/drawable Android (0.8.4, DC-117) |

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type SetupStatus } from "../api";
 import { useAuth } from "../auth";
 import { AuthHero } from "../components/AuthHero";
-import { LoadingScreen } from "../components/Guards";
+import { AuthPageSkeleton } from "../components/PageSkeletons";
 
 export function SetupPage() {
   const { refresh } = useAuth();
@@ -45,7 +45,7 @@ export function SetupPage() {
   }
 
   if (!status) {
-    return error ? <ErrorCard message={error} /> : <LoadingScreen />;
+    return error ? <ErrorCard message={error} /> : <AuthPageSkeleton />;
   }
 
   if (!status.setup_required) {

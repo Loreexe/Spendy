@@ -1,14 +1,15 @@
 # Spendy — visualizzazione del design
 
-Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) **0.9.3**, riferita a **Spendy 0.8.5**
-(11 novembre 2026) e al sistema di design di prodotto **web + Android**. I valori vengono dai
-sorgenti reali: token CSS, costanti Compose, pacchetto logo, font self-hosted e illustrazioni
+Rappresentazione grafica di [`DESIGN.md`](../../DESIGN.md) (versione corrente **0.9.4**), riferita a
+**Spendy 0.8.6** (12 novembre 2026) e al sistema di design di prodotto **web + Android**. I valori
+vengono dai sorgenti reali: token CSS, costanti Compose, pacchetto logo, font self-hosted e icone
 dell'app. Non è un asset di prodotto e non introduce decisioni nuove.
 
-> **Tavola non rigenerata (2026-11-11):** i file `design-system*.html/png` e i dettagli non sono
-> stati rigenerati in questa sessione e rappresentano ancora la release **0.8.3**: non includono
-> Home al posto di Dashboard, il menu avatar con testata, le icone delle categorie e l'orario dei
-> movimenti. Vanno rigenerati con i comandi sotto prima di essere considerati allineati alla 0.8.4.
+> **Tavola non rigenerata (2026-11-12):** i file `design-system*.html/png` e i dettagli non sono
+> stati rigenerati e rappresentano ancora la release **0.8.3**: non includono Home al posto di
+> Dashboard, il menu avatar con testata, le icone delle categorie, l'orario dei movimenti né le
+> icone Lucide degli stati vuoti (DC-120). Vanno rigenerati con i comandi sotto prima di essere
+> considerati allineati alla 0.8.6.
 
 ## File
 

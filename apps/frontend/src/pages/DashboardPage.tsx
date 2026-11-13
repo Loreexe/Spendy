@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   api,
   type Dashboard,
@@ -16,7 +16,8 @@ import {
 import { useAuth } from "../auth";
 import { AccountsMenu } from "../components/AccountsMenu";
 import { CategoryBars, InOutBars, TrendChart } from "../components/Charts";
-import { LoadingScreen } from "../components/Guards";
+import { EmptyState } from "../components/EmptyState";
+import { DashboardContentSkeleton } from "../components/HomeSkeleton";
 import { MovementKindIcon, TransactionIcon } from "../components/TransactionIcon";
 import {
   amountClass,
@@ -42,6 +43,28 @@ function lineLabel(line: Line): string {
   return `${target}${role}`;
 }
 
+const MINUS = "\u2212";
+
+/**
+ * Importo della riga compatta: segno e colore per direzione, la stessa
+ * convenzione del client Android (spese con «−» e `--down`, entrate con «+»
+ * e `--up`, trasferimenti neutri). L'aggregato `amount` dell'API è positivo
+ * per ogni tipo: il segno va ricavato da `kind`.
+ */
+function compactAmount(transaction: Transaction): {
+  text: string;
+  className: string;
+} {
+  const magnitude = Math.abs(Number(transaction.amount));
+  if (transaction.kind === "expense") {
+    return { text: `${MINUS}${money(magnitude)}`, className: "money negative" };
+  }
+  if (transaction.kind === "income") {
+    return { text: `+${money(magnitude)}`, className: "money positive" };
+  }
+  return { text: money(magnitude), className: "money" };
+}
+
 function TransactionRows({
   transaction,
   compact = false,
@@ -50,6 +73,12 @@ function TransactionRows({
   compact?: boolean;
 }) {
   const time = normalizeTime(transaction.time);
+  const amount = compact
+    ? compactAmount(transaction)
+    : {
+        text: money(transaction.amount),
+        className: `money ${amountClass(transaction.amount)}`,
+      };
   return (
     <li className={`movement-row${compact ? " movement-row-compact" : ""}`}>
       <span className="movement-leading">
@@ -58,9 +87,7 @@ function TransactionRows({
       <div className="movement-main">
         <div className="movement-title">
           <strong>{transaction.description || transaction.kind_label}</strong>
-          <span className={`money ${amountClass(transaction.amount)}`}>
-            {money(transaction.amount)}
-          </span>
+          <span className={amount.className}>{amount.text}</span>
           {compact && (
             <span className="movement-kind" title={transaction.kind_label}>
               <MovementKindIcon kind={transaction.kind} />
@@ -98,6 +125,7 @@ function TransactionRows({
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState<Dashboard | null>(null);
   const [series, setSeries] = useState<DashboardSeries | null>(null);
   const [start, setStart] = useState(firstOfMonthISO());
@@ -207,7 +235,12 @@ export function DashboardPage() {
     );
   }
 
-  if (loading && !data) return <LoadingScreen />;
+  const hasTrend = (series?.buckets.length ?? 0) >= 2;
+  const hasFlow = Boolean(
+    data && (Number(data.income_total) > 0 || Number(data.expense_total) > 0),
+  );
+  const hasCategories = (series?.by_category.length ?? 0) > 0;
+  const showCharts = hasTrend || hasFlow || hasCategories;
 
   return (
     <div className="stack-page dashboard-page">
@@ -240,6 +273,7 @@ export function DashboardPage() {
               ref={(el) => {
                 buttonRefs.current[index] = el;
               }}
+              aria-pressed={start === preset.from && end === preset.to}
               className={
                 start === preset.from && end === preset.to ? "active" : ""
               }
@@ -255,6 +289,7 @@ export function DashboardPage() {
             <span>Dal</span>
             <input
               type="date"
+              aria-label="Data iniziale"
               value={start}
               onChange={(event) => setStart(event.target.value)}
             />
@@ -266,6 +301,7 @@ export function DashboardPage() {
             <span>Al</span>
             <input
               type="date"
+              aria-label="Data finale"
               value={end}
               onChange={(event) => setEnd(event.target.value)}
             />
@@ -280,10 +316,33 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {error && <p className="error">{error}</p>}
-
-      <div className={`dash-content${loading ? " is-updating" : ""}`}>
-        {data && (
+      <div
+        className={`dash-content${loading && data ? " is-updating" : ""}`}
+        aria-busy={loading || undefined}
+      >
+        <span className="visually-hidden" role="status">
+          {loading && data ? "Aggiornamento del periodo in corso…" : ""}
+        </span>
+        {error && (
+          <div className="error error-stack" role="alert">
+            <span>{error}</span>
+            {data && (
+              <span className="muted small">
+                I dati mostrati sono quelli dell'ultimo caricamento riuscito.
+              </span>
+            )}
+            <button
+              type="button"
+              className="secondary small-button"
+              onClick={() => void load(start, end)}
+            >
+              Riprova
+            </button>
+          </div>
+        )}
+        {loading && !data ? (
+          <DashboardContentSkeleton />
+        ) : data ? (
           <>
             <section className="dash-summary">
               <div className="card dash-hero">
@@ -304,9 +363,7 @@ export function DashboardPage() {
                 <div className="dash-breakdown">
                   <div>
                     <span>Saldo conti</span>
-                    <strong className={amountClass(data.total_balance)}>
-                      {money(data.total_balance)}
-                    </strong>
+                    <strong>{money(data.total_balance)}</strong>
                   </div>
                   <div>
                     <span>Salvadanai</span>
@@ -330,42 +387,67 @@ export function DashboardPage() {
               </div>
             </section>
 
-            <section className="card dash-charts">
-              <div className="card-heading">
-                <h2>Grafici del periodo</h2>
-              </div>
-              {series && (
-                <div className="stack">
-                  <div>
-                    <h3 className="stat-label">Andamento saldo e patrimonio</h3>
-                    <TrendChart points={series.buckets} />
-                  </div>
-                  <div className="dash-charts-row">
-                    <div>
-                      <h3 className="stat-label">Entrate vs uscite</h3>
-                      <InOutBars
-                        income={data.income_total}
-                        expense={data.expense_total}
-                      />
-                    </div>
-                    <div>
-                      <h3 className="stat-label">Spese per categoria</h3>
-                      <CategoryBars rows={series.by_category} />
-                    </div>
-                  </div>
+            {showCharts && (
+              <section className="card dash-charts">
+                <div className="card-heading">
+                  <h2>Grafici del periodo</h2>
                 </div>
-              )}
-            </section>
+                <div className="stack">
+                  {hasTrend && (
+                    <div>
+                      <h3 className="stat-label">
+                        Andamento saldo e patrimonio
+                      </h3>
+                      <TrendChart points={series?.buckets ?? []} />
+                    </div>
+                  )}
+                  {(hasFlow || hasCategories) && (
+                    <div
+                      className={`dash-charts-row${hasFlow && hasCategories ? "" : " single"}`}
+                    >
+                      {hasFlow && (
+                        <div>
+                          <h3 className="stat-label">Entrate vs uscite</h3>
+                          <InOutBars
+                            income={data.income_total}
+                            expense={data.expense_total}
+                          />
+                        </div>
+                      )}
+                      {hasCategories && (
+                        <div>
+                          <h3 className="stat-label">Spese per categoria</h3>
+                          <CategoryBars rows={series?.by_category ?? []} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section className="two-columns equal">
               <div className="card">
                 <div className="card-heading">
                   <h2>Conti</h2>
-                  <Link to="/accounts">Gestisci</Link>
+                  {data.accounts.length > 0 && (
+                    <Link to="/accounts">Gestisci</Link>
+                  )}
                 </div>
                 {data.accounts.length === 0 ? (
-                  <p className="muted">Nessun conto. Creane uno per iniziare.</p>
+                  <EmptyState
+                    illustration="accounts"
+                    title="Nessun conto"
+                    description="Aggiungi il primo conto per iniziare a tenere traccia di saldi e movimenti."
+                    actionLabel="Crea conto"
+                    onAction={() => navigate("/accounts")}
+                  />
                 ) : (
+                  <>
+                    <p className="muted small dash-note">
+                      Saldo del periodo; tra parentesi il saldo attuale con i
+                      salvadanai.
+                    </p>
                   <ul className="balance-list">
                     {data.accounts.map((account) => (
                       <li key={account.id}>
@@ -388,16 +470,25 @@ export function DashboardPage() {
                       </li>
                     ))}
                   </ul>
+                  </>
                 )}
               </div>
 
               <div className="card">
                 <div className="card-heading">
                   <h2>Salvadanai</h2>
-                  <Link to="/savings">Gestisci</Link>
+                  {data.savings.length > 0 && (
+                    <Link to="/savings">Gestisci</Link>
+                  )}
                 </div>
                 {data.savings.length === 0 ? (
-                  <p className="muted">Nessun salvadanaio.</p>
+                  <EmptyState
+                    illustration="savings"
+                    title="Nessun salvadanaio"
+                    description="Crea un salvadanaio per mettere da parte i risparmi."
+                    actionLabel="Crea salvadanaio"
+                    onAction={() => navigate("/savings")}
+                  />
                 ) : (
                   <ul className="balance-list">
                     {data.savings.map((savings) => (
@@ -422,10 +513,18 @@ export function DashboardPage() {
             <section className="card">
               <div className="card-heading">
                 <h2>Ultimi movimenti</h2>
-                <Link to="/movements">Tutti i movimenti</Link>
+                {data.recent_transactions.length > 0 && (
+                  <Link to="/movements">Tutti i movimenti</Link>
+                )}
               </div>
               {data.recent_transactions.length === 0 ? (
-                <p className="muted">Nessun movimento registrato.</p>
+                <EmptyState
+                  illustration="movements"
+                  title="Nessun movimento"
+                  description="Registra il primo movimento per vedere qui gli ultimi aggiornamenti."
+                  actionLabel="Registra movimento"
+                  onAction={() => navigate("/movements")}
+                />
               ) : (
                 <ul className="movement-list">
                   {data.recent_transactions
@@ -441,7 +540,7 @@ export function DashboardPage() {
               )}
             </section>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

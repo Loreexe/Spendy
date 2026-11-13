@@ -184,6 +184,7 @@ data class TransactionWriteRequest(
     @SerialName("from_savings") val fromSavings: Int? = null,
     @SerialName("to_savings") val toSavings: Int? = null,
     @SerialName("category_id") val categoryId: Int? = null,
+    @SerialName("confirm_coverage") val confirmCoverage: Boolean = false,
     val tags: List<String> = emptyList(),
     val time: String? = null,
 )
@@ -274,6 +275,7 @@ data class NewTransaction(
     val fromSavingsUuid: String? = null,
     val toSavingsUuid: String? = null,
     val categoryUuid: String? = null,
+    val confirmCoverage: Boolean = false,
     val tags: List<String> = emptyList(),
     val time: String = "12:00",
 )

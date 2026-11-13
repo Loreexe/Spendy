@@ -6,7 +6,7 @@ import {
   type User,
   type UserStatus,
 } from "../api";
-import { LoadingScreen } from "../components/Guards";
+import { AdminPageSkeleton } from "../components/PageSkeletons";
 
 const STATUS_LABEL: Record<UserStatus, string> = {
   pending: "In attesa",
@@ -121,7 +121,7 @@ export function AdminPage() {
     }
   }
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <AdminPageSkeleton />;
 
   const pending = users.filter((user) => user.status === "pending");
 

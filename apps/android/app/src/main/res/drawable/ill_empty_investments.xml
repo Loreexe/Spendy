@@ -1,24 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Illustrazione line art per lo stato vuoto "investimenti": grafico con freccia in salita.
-     viewport 160x150, stroke 2, cap/join round; il colore accento arriva dal tint di Compose. -->
+<!-- Icona dello stato vuoto "investments": glifo Lucide `trending-up` (Investimenti: andamento in salita).
+     Fonte lucide.dev, licenza ISC; viewport 24x24, tratto 1,5, resa 96 dp.
+     Il colore arriva dal tint di Compose (ColorFilter in EmptyState). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="160dp"
-    android:height="150dp"
-    android:viewportWidth="160"
-    android:viewportHeight="150">
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
     <path
-        android:pathData="M44 36 v82 h84"
-        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:pathData="M16 7h6v6"
+        android:strokeColor="#FF000000" android:strokeWidth="1.5"
         android:strokeLineCap="round" android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent" />
     <path
-        android:pathData="M56 100 l22-24 18 12 28-34"
-        android:strokeColor="#FF000000" android:strokeWidth="2"
-        android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:fillColor="@android:color/transparent" />
-    <path
-        android:pathData="M124 54 h-12 M124 54 v12"
-        android:strokeColor="#FF000000" android:strokeWidth="2"
+        android:pathData="m22 7l-8.5 8.5l-5-5L2 17"
+        android:strokeColor="#FF000000" android:strokeWidth="1.5"
         android:strokeLineCap="round" android:strokeLineJoin="round"
         android:fillColor="@android:color/transparent" />
 </vector>

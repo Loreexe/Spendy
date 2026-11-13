@@ -5,9 +5,9 @@ solo i princìpi **operativi** che guidano le decisioni quotidiane, con lo stato
 
 ## Identità (approvata, DC-084/085/090/102)
 
-- **Una sola identità su web e Android.** Stessa palette, Inter, Lucide, illustrazioni line-art,
-  stessi raggi e stessa semantica di colore. Material 3 è il contenitore Android, non una seconda
-  identità; nessun colore dinamico Material You.
+- **Una sola identità su web e Android.** Stessa palette, Inter, Lucide (anche per le icone degli
+  stati vuoti), stessi raggi e stessa semantica di colore. Material 3 è il contenitore Android, non
+  una seconda identità; nessun colore dinamico Material You.
 - **Scuro di default** sul web; **Sistema** di default su Android (deroga locale approvata, DC-102).
   Il chiaro è a parità di qualità, non un ripensamento.
 - **AA come soglia minima** su superfici e fondi soft; focus sempre visibile; tastiera e touch
@@ -26,7 +26,7 @@ solo i princìpi **operativi** che guidano le decisioni quotidiane, con lo stato
 - **Stati pertinenti per ogni componente**: normale, hover (dove c'è puntatore), focus visibile,
   disabilitato, caricamento, errore, vuoto, successo.
 - **Caricamento con skeleton** che mantengono il layout (`aria-busy`), non «Caricamento…» come unico
-  segnale; **empty state** con illustrazione, titolo, spiegazione e azione quando esiste.
+  segnale; **empty state** con icona Lucide, titolo, spiegazione e azione quando esiste.
 - **Movimento 150–200 ms**, nessuna transizione più lunga, `prefers-reduced-motion` rispettato.
 - **Niente didascalie o spiegazioni di regole nelle pagine** (DC-098): restano avvisi, errori e
   stati vuoti.

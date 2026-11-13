@@ -68,6 +68,7 @@ import com.loreexe.spendy.ui.components.ProfileAvatar
 import com.loreexe.spendy.ui.components.SectionCard
 import com.loreexe.spendy.ui.components.SectionDivider
 import com.loreexe.spendy.ui.components.SectionRow
+import com.loreexe.spendy.ui.components.SpendyProfileSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -351,14 +352,11 @@ fun ProfileScreen(
         },
     ) { padding ->
         if (state.loading) {
-            Box(
+            SpendyProfileSkeleton(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
+            )
             return@Scaffold
         }
         Column(

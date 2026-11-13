@@ -13,15 +13,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
- * Stato vuoto condiviso: illustrazione line art (tinta accento), titolo, testo e CTA
- * opzionale. L'illustrazione è decorativa (contentDescription = null): il testo che la
- * accompagna è già letto dagli screen reader.
+ * Stato vuoto condiviso: icona Lucide di grandi dimensioni (tinta accento, 96 dp come sul
+ * web), titolo, testo e CTA opzionale. L'icona è decorativa (contentDescription = null):
+ * il testo che la accompagna è già letto dagli screen reader.
  */
 @Composable
 fun EmptyState(
@@ -43,7 +44,9 @@ fun EmptyState(
             painter = painterResource(illustration),
             contentDescription = null,
             colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-            modifier = Modifier.size(width = 140.dp, height = 132.dp),
+            modifier = Modifier
+                .size(96.dp)
+                .alpha(0.85f),
         )
         Text(
             text = title,

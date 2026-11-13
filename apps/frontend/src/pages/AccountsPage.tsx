@@ -8,7 +8,7 @@ import {
 import { api, type Account, type AccountType } from "../api";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { EmptyState } from "../components/EmptyState";
-import { LoadingScreen } from "../components/Guards";
+import { AccountsSkeleton } from "../components/PageSkeletons";
 import { useToast } from "../components/Toast";
 import { amountClass, money } from "../format";
 
@@ -146,7 +146,7 @@ export function AccountsPage() {
     }
   }
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <AccountsSkeleton />;
 
   return (
     <div className="stack-page">

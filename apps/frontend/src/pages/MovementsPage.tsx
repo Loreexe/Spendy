@@ -1,12 +1,13 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
 } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Tags, X } from "lucide-react";
+import { Check, Plus, Tags, X } from "lucide-react";
 import {
   api,
   ApiError,
@@ -19,12 +20,14 @@ import {
   type Transaction,
   type TransactionPayload,
 } from "../api";
-import { LoadingScreen } from "../components/Guards";
+import { MovementsSkeleton } from "../components/PageSkeletons";
 import { CategoryIcon } from "../components/CategoryIcon";
 import { TransactionIcon } from "../components/TransactionIcon";
 import { EmptyState } from "../components/EmptyState";
 import { CategoryIconPicker } from "../components/CategoryIconPicker";
 import { CategorySelect } from "../components/CategorySelect";
+import { AppSelect } from "../components/AppSelect";
+import { DateField, TimeField } from "../components/MovementDateTime";
 import { useToast } from "../components/Toast";
 import {
   amountClass,
@@ -157,9 +160,9 @@ export function MovementsPage() {
   const [date, setDate] = useState(todayISO());
   const [time, setTime] = useState(currentTimeHM());
   const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState("20,00");
   const amountInputRef = useRef<HTMLInputElement | null>(null);
-  const formRef = useRef<HTMLElement | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   const [accountId, setAccountId] = useState("");
   const [savingsId, setSavingsId] = useState("");
@@ -192,6 +195,13 @@ export function MovementsPage() {
   const [editingTagId, setEditingTagId] = useState<number | null>(null);
   const [editingTagName, setEditingTagName] = useState("");
   const [taxonomyOpen, setTaxonomyOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [formStep, setFormStep] = useState<0 | 1 | 2>(0);
+  const typePillRef = useRef<HTMLDivElement | null>(null);
+  const typeIndicatorRef = useRef<HTMLSpanElement | null>(null);
+  const wizardLayoutRef = useRef<HTMLDivElement | null>(null);
+  const confirmArmedAtRef = useRef(0);
+  const [confirmReady, setConfirmReady] = useState(false);
 
   useEffect(() => {
     if (!taxonomyOpen) return;
@@ -474,7 +484,8 @@ export function MovementsPage() {
   }
 
   function buildPayload(): TransactionPayload | null {
-    if (!amount || Number(amount) <= 0) {
+    const amountValue = amount.replace(",", ".").replace(/[.,]$/, "").trim();
+    if (!amountValue || Number(amountValue) <= 0) {
       setError("Inserisci un importo maggiore di zero.");
       return null;
     }
@@ -494,7 +505,7 @@ export function MovementsPage() {
         date,
         time,
         description,
-        amount,
+        amount: amountValue,
         account: Number(accountId),
         category_id,
         tags,
@@ -511,7 +522,7 @@ export function MovementsPage() {
           date,
           time,
           description,
-          amount,
+          amount: amountValue,
           account: Number(accountId),
           category_id,
           tags,
@@ -526,7 +537,7 @@ export function MovementsPage() {
         date,
         time,
         description,
-        amount,
+        amount: amountValue,
         savings: Number(savingsId),
         confirm_coverage: confirmCoverage,
         category_id,
@@ -543,7 +554,7 @@ export function MovementsPage() {
       date,
       time,
       description,
-      amount,
+      amount: amountValue,
       category_id: categoryId ? Number(categoryId) : undefined,
       tags: parseTags(),
     };
@@ -578,6 +589,15 @@ export function MovementsPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // La conferma esiste solo al passo 3: Enter o invii impliciti non devono
+    // saltare data, ora e tag.
+    if (formStep < 2) {
+      nextStep();
+      return;
+    }
+    if (Date.now() - confirmArmedAtRef.current < 450) {
+      return;
+    }
     setError(null);
     setMessage(null);
     const payload = buildPayload();
@@ -602,14 +622,17 @@ export function MovementsPage() {
 
   function resetForm() {
     setEditingId(null);
+    setKind("expense");
     setDate(todayISO());
     setTime(currentTimeHM());
     setDescription("");
-    setAmount("");
+    setAmount("20,00");
     setConfirmCoverage(false);
     setCategoryId("");
     setTagInput("");
     setSuggestion(null);
+    setComposerOpen(false);
+    setFormStep(0);
   }
 
   function startEdit(transaction: Transaction) {
@@ -619,7 +642,7 @@ export function MovementsPage() {
     setDate(transaction.date);
     setTime(normalizeTime(transaction.time) ?? "12:00");
     setDescription(transaction.description);
-    setAmount(transaction.amount);
+    setAmount(String(transaction.amount).replace(".", ","));
     setConfirmCoverage(false);
     setCategoryId(transaction.category ? String(transaction.category.id) : "");
     setTagInput(transaction.tags.join(", "));
@@ -670,7 +693,8 @@ export function MovementsPage() {
         setToSavingsId(String(inLine.savings));
       }
     }
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setComposerOpen(true);
+    setFormStep(0);
   }
 
   async function remove(transaction: Transaction) {
@@ -700,7 +724,184 @@ export function MovementsPage() {
     }
   }
 
-  if (loading && transactions.length === 0) return <LoadingScreen />;
+  function numberAmount(): number {
+    const parsed = Number(amount.replace(",", ".").replace(/\s/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function setAmountValue(next: number) {
+    const clamped = Math.max(0, Math.round(next * 100) / 100);
+    setAmount(clamped.toFixed(2).replace(".", ","));
+  }
+
+  function sanitizeAmount(raw: string): string {
+    let value = raw.replace(/[^0-9.,]/g, "");
+    const first = value.search(/[.,]/);
+    if (first >= 0) {
+      value = value.slice(0, first + 1) + value.slice(first + 1).replace(/[.,]/g, "");
+    }
+    return value;
+  }
+
+  function openNewMovement() {
+    resetForm();
+    setComposerOpen(true);
+    setFormStep(0);
+  }
+
+  function closeComposer() {
+    resetForm();
+  }
+
+  function accountLabel(id: string): string {
+    return accounts.find((item) => String(item.id) === id)?.name ?? "—";
+  }
+
+  function savingsLabel(id: string): string {
+    return savings.find((item) => String(item.id) === id)?.name ?? "—";
+  }
+
+  function sourceLabel(): string {
+    if (kind === "income") return accountLabel(accountId);
+    if (kind === "expense") {
+      return expenseSource === "account"
+        ? accountLabel(accountId)
+        : savingsLabel(savingsId);
+    }
+    const from = fromKind === "account" ? accountLabel(fromAccountId) : savingsLabel(fromSavingsId);
+    const to = toKind === "account" ? accountLabel(toAccountId) : savingsLabel(toSavingsId);
+    return `${from} → ${to}`;
+  }
+
+  function categoryLabel(): string {
+    return categories.find((item) => String(item.id) === categoryId)?.name ?? "Altro (automatica)";
+  }
+
+  const kindLabel = kind === "income" ? "Entrata" : kind === "expense" ? "Spesa" : "Trasferimento";
+  const summaryDate = date.split("-").reverse().join("/");
+  const summaryTags = tagInput.split(",").map((item) => item.trim()).filter(Boolean);
+
+  function nextStep() {
+    setError(null);
+    if (formStep === 0) {
+      if (numberAmount() <= 0) {
+        setError("Inserisci un importo maggiore di zero.");
+        return;
+      }
+      if (kind === "income" && !accountId) {
+        setError("Seleziona il conto dell'entrata.");
+        return;
+      }
+      if (kind === "expense") {
+        if (expenseSource === "account" && !accountId) {
+          setError("Seleziona il conto della spesa.");
+          return;
+        }
+        if (expenseSource === "savings" && !savingsId) {
+          setError("Seleziona il salvadanaio della spesa.");
+          return;
+        }
+      }
+      if (kind === "transfer") {
+        if (fromKind === "account" && !fromAccountId) {
+          setError("Seleziona il conto di origine.");
+          return;
+        }
+        if (fromKind === "savings" && !fromSavingsId) {
+          setError("Seleziona il salvadanaio di origine.");
+          return;
+        }
+        if (toKind === "account" && !toAccountId) {
+          setError("Seleziona il conto di destinazione.");
+          return;
+        }
+        if (toKind === "savings" && !toSavingsId) {
+          setError("Seleziona il salvadanaio di destinazione.");
+          return;
+        }
+      }
+    }
+    setFormStep((current) => (current === 0 ? 1 : 2));
+  }
+
+  function previousStep() {
+    setError(null);
+    setFormStep((current) => (current === 2 ? 1 : 0));
+  }
+
+  const amountForSlider = Math.min(100, Math.max(0, numberAmount()));
+  const accountOptions = accounts.map((account) => ({
+    value: String(account.id),
+    label: account.name,
+    detail: money(account.balance),
+  }));
+  const savingsOptions = savings.map((item) => ({
+    value: String(item.id),
+    label: item.name,
+    detail: money(item.balance),
+  }));
+
+  function toggleSummaryTag(name: string) {
+    const current = tagInput.split(",").map((item) => item.trim()).filter(Boolean);
+    const next = current.includes(name)
+      ? current.filter((item) => item !== name)
+      : [...current, name];
+    setTagInput(next.join(", "));
+  }
+
+  useLayoutEffect(() => {
+    if (!composerOpen) return;
+    wizardLayoutRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    if (formStep === 2) {
+      // Evita che un doppio clic su «Avanti» colpisca subito «Conferma».
+      confirmArmedAtRef.current = Date.now();
+    }
+  }, [formStep, composerOpen]);
+
+  useEffect(() => {
+    if (!composerOpen || formStep !== 2) {
+      setConfirmReady(false);
+      return;
+    }
+    setConfirmReady(false);
+    const timer = window.setTimeout(() => setConfirmReady(true), 450);
+    return () => window.clearTimeout(timer);
+  }, [formStep, composerOpen]);
+
+  useLayoutEffect(() => {
+    if (!composerOpen) return;
+    const positionIndicator = () => {
+      const pill = typePillRef.current;
+      const indicator = typeIndicatorRef.current;
+      if (!pill || !indicator) return;
+      const active = pill.querySelector<HTMLButtonElement>("button.active");
+      if (!active) return;
+      indicator.style.width = `${active.offsetWidth}px`;
+      indicator.style.transform = `translateX(${active.offsetLeft}px)`;
+    };
+    positionIndicator();
+    window.addEventListener("resize", positionIndicator);
+    return () => window.removeEventListener("resize", positionIndicator);
+  }, [kind, composerOpen, formStep]);
+
+  useEffect(() => {
+    if (!composerOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeComposer();
+    };
+    document.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const timer = window.setTimeout(() => amountInputRef.current?.focus(), 60);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerOpen]);
+
+  if (loading && transactions.length === 0) return <MovementsSkeleton />;
 
   const filtersActive = Boolean(
     filterAccount ||
@@ -721,302 +922,467 @@ export function MovementsPage() {
       </section>
 
       {message && <p className="notice success">{message}</p>}
-      {error && <p className="error">{error}</p>}
+      {!composerOpen && error && <p className="error">{error}</p>}
 
-      <section className="card" ref={formRef}>
-        <div className="card-heading">
-          <h2>{editingId ? "Modifica movimento" : "Nuovo movimento"}</h2>
-          {editingId && (
-            <button type="button" className="secondary" onClick={resetForm}>
-              Annulla modifica
-            </button>
-          )}
-        </div>
-        <form onSubmit={handleSubmit} className="stack">
-          <div className="form-grid">
-            <label>
-              Tipo
-              <select
-                value={kind}
-                onChange={(event) => setKind(event.target.value as Kind)}
-              >
-                <option value="income">Entrata</option>
-                <option value="expense">Spesa</option>
-                <option value="transfer">Trasferimento</option>
-              </select>
-            </label>
-            <label>
-              Data
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Ora
-              <input
-                type="time"
-                value={time}
-                onChange={(event) => setTime(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Importo
-              <input
-                ref={amountInputRef}
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Descrizione
-              <input
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                onBlur={(event) => void suggestForDescription(event.target.value)}
-                placeholder="Facoltativa"
-              />
-            </label>
-            <div className="form-field">
-              <span>Categoria</span>
-              <span className="field-row">
-                <CategorySelect
-                  categories={categories}
-                  value={categoryId}
-                  onChange={(value) => {
-                    setCategoryId(value);
-                    setSuggestion(null);
-                  }}
-                  emptyLabel="Altro (automatica)"
-                  ariaLabel="Categoria del movimento"
-                />
-                <button
-                  type="button"
-                  className="icon-button"
-                  title="Gestisci categorie e tag"
-                  aria-label="Gestisci categorie e tag"
-                  onClick={() => setTaxonomyOpen(true)}
-                >
-                  <Tags size={18} aria-hidden="true" />
-                </button>
-              </span>
-            </div>
-            <label>
-              Tag (separati da virgola)
-              <input
-                value={tagInput}
-                onChange={(event) => setTagInput(event.target.value)}
-                placeholder="Facoltativi"
-              />
-            </label>
-          </div>
-          {suggestion && !categoryId && (
-            <p className="muted small">
-              Categoria suggerita:{" "}
-              <CategoryIcon name={suggestion.category.icon} size={14} />{" "}
-              <strong>{suggestion.category.name}</strong>{" "}
+      <div className="movement-composer-launch">
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={() => setTaxonomyOpen(true)}
+        >
+          <Tags size={18} aria-hidden="true" /> Categorie e tag
+        </button>
+        <button type="button" className="btn" onClick={openNewMovement}>
+          <Plus size={18} aria-hidden="true" /> Nuovo movimento
+        </button>
+      </div>
+
+      {composerOpen && (
+        <div
+          className="movement-wizard-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeComposer();
+          }}
+        >
+          <div
+            className="movement-wizard"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="movement-wizard-title"
+            ref={formRef}
+          >
+            <div className="movement-wizard-head">
+              <div>
+                <p className="eyebrow">{editingId ? "Modifica" : "Registro"}</p>
+                <h2 id="movement-wizard-title">
+                  {editingId ? "Modifica movimento" : "Nuovo movimento"}
+                </h2>
+              </div>
               <button
                 type="button"
-                className="secondary"
-                onClick={() => {
-                  setCategoryId(String(suggestion.category.id));
-                  setSuggestion(null);
-                }}
+                className="icon-button"
+                aria-label="Chiudi"
+                onClick={closeComposer}
               >
-                Usa
+                <X size={18} aria-hidden="true" />
               </button>
-            </p>
-          )}
-
-          {kind === "income" && (
-            <label>
-              Conto
-              <select
-                value={accountId}
-                onChange={(event) => setAccountId(event.target.value)}
-                required
-              >
-                <option value="">Seleziona…</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} · {money(account.balance)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          {kind === "expense" && (
-            <>
-              <label>
-                Pagato da
-                <select
-                  value={expenseSource}
-                  onChange={(event) =>
-                    setExpenseSource(event.target.value as SourceKind)
-                  }
-                >
-                  <option value="account">Conto</option>
-                  <option value="savings">Salvadanaio</option>
-                </select>
-              </label>
-              {expenseSource === "account" ? (
-                <label>
-                  Conto
-                  <select
-                    value={accountId}
-                    onChange={(event) => setAccountId(event.target.value)}
-                    required
-                  >
-                    <option value="">Seleziona…</option>
-                    {accounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name} · {money(account.balance)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <>
-                  <label>
-                    Salvadanaio
-                    <select
-                      value={savingsId}
-                      onChange={(event) => setSavingsId(event.target.value)}
-                      required
-                    >
-                      <option value="">Seleziona…</option>
-                      {savings.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} · {money(item.balance)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={confirmCoverage}
-                      onChange={(event) => setConfirmCoverage(event.target.checked)}
-                    />
-                    Se il salvadanaio non basta, usa il conto di appoggio
-                  </label>
-                </>
+            </div>
+            <form onSubmit={handleSubmit} className="wizard-form">
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
               )}
-            </>
-          )}
+              <div className="wizard-layout" ref={wizardLayoutRef}>
+                <div className="wizard-main">
+                  {formStep === 0 && (
+                    <section className="wizard-step wizard-step-amount" aria-label="Importo">
+                      <div
+                        className="wizard-type"
+                        role="group"
+                        aria-label="Tipo di movimento"
+                        ref={typePillRef}
+                      >
+                        <span
+                          className="wizard-type-indicator"
+                          ref={typeIndicatorRef}
+                          aria-hidden="true"
+                        />
+                        {([
+                          ["expense", "Spesa"],
+                          ["income", "Entrata"],
+                          ["transfer", "Trasferimento"],
+                        ] as const).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={kind === value ? "active" : ""}
+                            aria-pressed={kind === value}
+                            onClick={() => setKind(value)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="wizard-amount-row">
+                        <button
+                          type="button"
+                          className="wizard-round"
+                          aria-label="Diminuisci di 50 centesimi"
+                          onClick={() => setAmountValue(numberAmount() - 0.5)}
+                        >
+                          −
+                        </button>
+                        <span className="wizard-amount-shell">
+                          <input
+                            ref={amountInputRef}
+                            className="wizard-amount-input"
+                            type="text"
+                            inputMode="decimal"
+                            aria-label="Importo"
+                            value={amount}
+                            onChange={(event) => setAmount(sanitizeAmount(event.target.value))}
+                          />
+                          <span className="wizard-amount-suffix" aria-hidden="true">€</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="wizard-round"
+                          aria-label="Aumenta di 50 centesimi"
+                          onClick={() => setAmountValue(numberAmount() + 0.5)}
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div className="wizard-slider">
+                        <div className="wizard-ticks" aria-hidden="true">
+                          {Array.from({ length: 21 }, (_, index) => (
+                            <i
+                              key={index}
+                              className={`${index % 5 === 0 ? "major" : ""}${
+                                Math.round(amountForSlider / 5) === index ? " active" : ""
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="0.5"
+                          value={amountForSlider}
+                          aria-label="Importo da 0 a 100 euro, scatti di 50 centesimi"
+                          onChange={(event) => setAmountValue(Number(event.target.value))}
+                        />
+                        <div className="wizard-ticks-labels">
+                          <span>0 €</span>
+                          <span>50 €</span>
+                          <span>100 €</span>
+                        </div>
+                      </div>
+                      {kind === "income" && (
+                        <label className="wizard-field">
+                          <span>Conto</span>
+                          <AppSelect
+                            options={accountOptions}
+                            value={accountId}
+                            onChange={setAccountId}
+                            ariaLabel="Conto dell'entrata"
+                            placeholder="Seleziona conto…"
+                          />
+                        </label>
+                      )}
+                      {kind === "expense" && (
+                        <div className="wizard-fields">
+                          <div className="wizard-source-toggle" role="group" aria-label="Pagato da">
+                            <button
+                              type="button"
+                              className={expenseSource === "account" ? "active" : ""}
+                              aria-pressed={expenseSource === "account"}
+                              onClick={() => setExpenseSource("account")}
+                            >
+                              Conto
+                            </button>
+                            <button
+                              type="button"
+                              className={expenseSource === "savings" ? "active" : ""}
+                              aria-pressed={expenseSource === "savings"}
+                              onClick={() => setExpenseSource("savings")}
+                            >
+                              Salvadanaio
+                            </button>
+                          </div>
+                          <label className="wizard-field">
+                            <span>{expenseSource === "account" ? "Conto" : "Salvadanaio"}</span>
+                            {expenseSource === "account" ? (
+                              <AppSelect
+                                options={accountOptions}
+                                value={accountId}
+                                onChange={setAccountId}
+                                ariaLabel="Conto della spesa"
+                                placeholder="Seleziona conto…"
+                              />
+                            ) : (
+                              <AppSelect
+                                options={savingsOptions}
+                                value={savingsId}
+                                onChange={setSavingsId}
+                                ariaLabel="Salvadanaio della spesa"
+                                placeholder="Seleziona salvadanaio…"
+                              />
+                            )}
+                          </label>
+                          {expenseSource === "savings" && (
+                            <label className="wizard-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={confirmCoverage}
+                                onChange={(event) => setConfirmCoverage(event.target.checked)}
+                              />
+                              <span className="wizard-checkbox-box" aria-hidden="true">
+                                <Check size={14} aria-hidden="true" />
+                              </span>
+                              <span>Se il salvadanaio non basta, usa il conto di appoggio</span>
+                            </label>
+                          )}
+                        </div>
+                      )}
+                      {kind === "transfer" && (
+                        <div className="wizard-transfer">
+                          <div className="wizard-fields">
+                            <div className="wizard-source-toggle" role="group" aria-label="Origine">
+                              <button
+                                type="button"
+                                className={fromKind === "account" ? "active" : ""}
+                                aria-pressed={fromKind === "account"}
+                                onClick={() => setFromKind("account")}
+                              >
+                                Conto
+                              </button>
+                              <button
+                                type="button"
+                                className={fromKind === "savings" ? "active" : ""}
+                                aria-pressed={fromKind === "savings"}
+                                onClick={() => setFromKind("savings")}
+                              >
+                                Salvadanaio
+                              </button>
+                            </div>
+                            <label className="wizard-field">
+                              <span>Da</span>
+                              {fromKind === "account" ? (
+                                <AppSelect
+                                  options={accountOptions}
+                                  value={fromAccountId}
+                                  onChange={setFromAccountId}
+                                  ariaLabel="Conto di origine"
+                                  placeholder="Seleziona conto…"
+                                />
+                              ) : (
+                                <AppSelect
+                                  options={savingsOptions}
+                                  value={fromSavingsId}
+                                  onChange={setFromSavingsId}
+                                  ariaLabel="Salvadanaio di origine"
+                                  placeholder="Seleziona salvadanaio…"
+                                />
+                              )}
+                            </label>
+                          </div>
+                          <div className="wizard-fields">
+                            <div className="wizard-source-toggle" role="group" aria-label="Destinazione">
+                              <button
+                                type="button"
+                                className={toKind === "account" ? "active" : ""}
+                                aria-pressed={toKind === "account"}
+                                onClick={() => setToKind("account")}
+                              >
+                                Conto
+                              </button>
+                              <button
+                                type="button"
+                                className={toKind === "savings" ? "active" : ""}
+                                aria-pressed={toKind === "savings"}
+                                onClick={() => setToKind("savings")}
+                              >
+                                Salvadanaio
+                              </button>
+                            </div>
+                            <label className="wizard-field">
+                              <span>A</span>
+                              {toKind === "account" ? (
+                                <AppSelect
+                                  options={accountOptions}
+                                  value={toAccountId}
+                                  onChange={setToAccountId}
+                                  ariaLabel="Conto di destinazione"
+                                  placeholder="Seleziona conto…"
+                                />
+                              ) : (
+                                <AppSelect
+                                  options={savingsOptions}
+                                  value={toSavingsId}
+                                  onChange={setToSavingsId}
+                                  ariaLabel="Salvadanaio di destinazione"
+                                  placeholder="Seleziona salvadanaio…"
+                                />
+                              )}
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  )}
 
-          {kind === "transfer" && (
-            <>
-              <div className="form-grid">
-                <label>
-                  Da
-                  <select
-                    value={fromKind}
-                    onChange={(event) =>
-                      setFromKind(event.target.value as SourceKind)
-                    }
-                  >
-                    <option value="account">Conto</option>
-                    <option value="savings">Salvadanaio</option>
-                  </select>
-                </label>
-                {fromKind === "account" ? (
-                  <label>
-                    Conto di origine
-                    <select
-                      value={fromAccountId}
-                      onChange={(event) => setFromAccountId(event.target.value)}
-                      required
-                    >
-                      <option value="">Seleziona…</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} · {money(account.balance)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {formStep === 1 && (
+                    <section className="wizard-step" aria-label="Dettagli">
+                      <label className="wizard-field">
+                        <span>Descrizione</span>
+                        <input
+                          value={description}
+                          onChange={(event) => setDescription(event.target.value)}
+                          onBlur={(event) => void suggestForDescription(event.target.value)}
+                          placeholder="Facoltativa"
+                        />
+                      </label>
+                      <div className="wizard-field">
+                        <span>Categoria</span>
+                        <div
+                          className="wizard-cat-pills"
+                          role="group"
+                          aria-label="Categorie"
+                        >
+                          <button
+                            type="button"
+                            className={`wizard-cat-pill${categoryId === "" ? " active" : ""}`}
+                            aria-pressed={categoryId === ""}
+                            onClick={() => {
+                              setCategoryId("");
+                              setSuggestion(null);
+                            }}
+                          >
+                            <CategoryIcon name="tag" size={14} />
+                            Altro (automatica)
+                          </button>
+                          {categories.map((category) => (
+                            <button
+                              key={category.id}
+                              type="button"
+                              className={`wizard-cat-pill${
+                                String(category.id) === categoryId ? " active" : ""
+                              }`}
+                              aria-pressed={String(category.id) === categoryId}
+                              onClick={() => {
+                                setCategoryId(String(category.id));
+                                setSuggestion(null);
+                              }}
+                            >
+                              <CategoryIcon name={category.icon} size={14} />
+                              {category.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {suggestion && !categoryId && (
+                        <p className="muted small">
+                          Categoria suggerita:{" "}
+                          <CategoryIcon name={suggestion.category.icon} size={14} />{" "}
+                          <strong>{suggestion.category.name}</strong>{" "}
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => {
+                              setCategoryId(String(suggestion.category.id));
+                              setSuggestion(null);
+                            }}
+                          >
+                            Usa
+                          </button>
+                        </p>
+                      )}
+                    </section>
+                  )}
+
+                  {formStep === 2 && (
+                    <section className="wizard-step" aria-label="Data, ora e tag">
+                      <h3 className="wizard-step-title">Data e ora e tag</h3>
+                      <div className="wizard-datetime">
+                        <DateField value={date} onChange={setDate} />
+                        <TimeField value={time} onChange={setTime} />
+                      </div>
+                      <label className="wizard-field">
+                        <span>Tag</span>
+                        <input
+                          value={tagInput}
+                          onChange={(event) => setTagInput(event.target.value)}
+                          placeholder="Separati da virgola"
+                        />
+                      </label>
+                      {allTags.length > 0 && (
+                        <div className="wizard-tag-pills" aria-label="Tag recenti">
+                          {allTags.slice(0, 10).map((tag) => {
+                            const active = summaryTags.includes(tag.name);
+                            return (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                className={`wizard-tag-pill${active ? " active" : ""}`}
+                                aria-pressed={active}
+                                onClick={() => toggleSummaryTag(tag.name)}
+                              >
+                                {tag.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  )}
+                </div>
+
+                <aside className="wizard-summary" aria-label="Riepilogo movimento">
+                  <h3>Riepilogo</h3>
+                  <div className="wizard-sum-line">
+                    <span>Tipo</span>
+                    <strong>{kindLabel}</strong>
+                  </div>
+                  <div className="wizard-sum-line">
+                    <span>Fonte</span>
+                    <strong>{sourceLabel()}</strong>
+                  </div>
+                  {formStep >= 1 && (
+                    <>
+                      <div className="wizard-sum-line">
+                        <span>Descrizione</span>
+                        <strong>{description || "—"}</strong>
+                      </div>
+                      <div className="wizard-sum-line">
+                        <span>Categoria</span>
+                        <strong>{categoryLabel()}</strong>
+                      </div>
+                    </>
+                  )}
+                  {formStep >= 2 && (
+                    <>
+                      <div className="wizard-sum-line">
+                        <span>Data e ora</span>
+                        <strong>{summaryDate} · {time}</strong>
+                      </div>
+                      <div className="wizard-sum-line">
+                        <span>Tag</span>
+                        <strong>{summaryTags.length > 0 ? summaryTags.join(", ") : "—"}</strong>
+                      </div>
+                    </>
+                  )}
+                  <div className="wizard-sum-total">
+                    <span>Totale</span>
+                    <strong>{money(numberAmount())}</strong>
+                  </div>
+                </aside>
+              </div>
+
+              <div className="wizard-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={formStep === 0 ? closeComposer : previousStep}
+                >
+                  {formStep === 0 ? "Annulla" : "Indietro"}
+                </button>
+                {formStep < 2 ? (
+                  <button type="button" onClick={nextStep}>
+                    Avanti
+                  </button>
                 ) : (
-                  <label>
-                    Salvadanaio di origine
-                    <select
-                      value={fromSavingsId}
-                      onChange={(event) => setFromSavingsId(event.target.value)}
-                      required
-                    >
-                      <option value="">Seleziona…</option>
-                      {savings.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} · {money(item.balance)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <label>
-                  A
-                  <select
-                    value={toKind}
-                    onChange={(event) => setToKind(event.target.value as SourceKind)}
-                  >
-                    <option value="account">Conto</option>
-                    <option value="savings">Salvadanaio</option>
-                  </select>
-                </label>
-                {toKind === "account" ? (
-                  <label>
-                    Conto di destinazione
-                    <select
-                      value={toAccountId}
-                      onChange={(event) => setToAccountId(event.target.value)}
-                      required
-                    >
-                      <option value="">Seleziona…</option>
-                      {accounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <label>
-                    Salvadanaio di destinazione
-                    <select
-                      value={toSavingsId}
-                      onChange={(event) => setToSavingsId(event.target.value)}
-                      required
-                    >
-                      <option value="">Seleziona…</option>
-                      {savings.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <button type="submit" disabled={busy || !confirmReady}>
+                    {busy ? "Registrazione…" : editingId ? "Salva modifiche" : "Conferma"}
+                  </button>
                 )}
               </div>
-            </>
-          )}
-
-          <button type="submit" disabled={busy}>
-            {busy
-              ? "Registrazione…"
-              : editingId
-                ? "Salva modifiche"
-                : "Registra movimento"}
-          </button>
-        </form>
-      </section>
+            </form>
+          </div>
+        </div>
+      )}
 
       <section className="card">
         <div className="card-heading">

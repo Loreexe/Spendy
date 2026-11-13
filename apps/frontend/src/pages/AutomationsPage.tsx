@@ -15,7 +15,7 @@ import {
   type AutomationKind,
   type SavingsAccount,
 } from "../api";
-import { LoadingScreen } from "../components/Guards";
+import { AutomationsSkeleton } from "../components/PageSkeletons";
 import { EmptyState } from "../components/EmptyState";
 import { useMatchedHeight } from "../components/useMatchHeight";
 import { useToast } from "../components/Toast";
@@ -295,7 +295,7 @@ export function AutomationsPage() {
     });
   }
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <AutomationsSkeleton />;
 
   const activeAccounts = accounts;
   const hasDestinations = savings.length > 0;

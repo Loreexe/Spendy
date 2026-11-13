@@ -6,6 +6,10 @@ dichiarati come tali. Lo stato riportato è l'ultima esecuzione conosciuta, non 
 > **Release 0.8.4 (2026-11-11, pubblicata):** backend e web sono **verificati**;
 > Android è **compilato e testato** ma **non provato su device/emulatore**. Gli esiti sono nella
 > sezione dedicata; i limiti sono dichiarati e non vanno nascosti.
+> **Release 0.8.6 (2026-11-13, pubblicata):** nuovo flusso movimento verificato su web (browser,
+> creazione/eliminazione e modifica) e su Android (build, 31 test unitari, `lintDebug`, prova
+> visuale sul telefono RMX5061 per i quattro passi). Il backend non è stato modificato.
+
 
 ## Comandi
 
@@ -51,6 +55,57 @@ Verifica della prima applicazione concreta (`InlineMessage` nel Profilo), su ser
 Controllo negativo del `check_design.py`: aggiungendo temporaneamente una regola con colore grezzo,
 raggio `999px` e durata `120ms`, lo script ha rilevato 3 violazioni ed è uscito con codice 1; il file
 è stato ripristinato (hash verificato). Il controllo quindi non è un falso positivo permanente.
+
+## Home — rifiniture da critique (2026-11-12, non rilasciate)
+
+Critique Impeccable con due assessment isolati (design review + detector/evidenza browser) sulla **sola Home web**; correzioni approvate dall'utente e applicate in questa sessione. Verifiche eseguite sul server demo con Chromium headless 156 via CDP, viewport 1440×900, 768×1024 e 390×844, temi scuro e chiaro; nessuna baseline visiva aggiunta al repository.
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Typecheck + build web | `cd apps/frontend && npm run lint && npm run build` | **verde** |
+| Contrasti AA token | `python3 docs/design/build/check_contrast.py` | **verde**: tutte le coppie ≥ 4.5:1 |
+| Controlli design system | `python3 design/checks/check_design.py` | **verde**: 0 violazioni (2 divergenze note) |
+| Detector Impeccable | `impeccable detect --json` su `DashboardPage.tsx` e `Charts.tsx` | **0 finding** (62 regole); il detector non legge CSS/JSX inline → falsi negativi possibili |
+| 390×844 — overflow | `documentElement.scrollWidth` vs `clientWidth` | **390/390** in normale, vuoto, errore, aggiornamento (prima: 465/390) |
+| 768×1024 e 1440×900 | stesse misure | **nessun overflow**; toolbar su una riga |
+| Grafico Andamento | bounding box delle etichette SVG | etichette **≥11 px resi**: bbox 14 px a 390 (prima ≈5,4 px), 14 px a 768, 20 px a 1440; etichetta Y superiore interamente dentro l'SVG (padding superiore dinamico), nessuna sovrapposizione |
+| Movimenti compatti — importi | DOM + colore calcolato | spese «−68,00 €», «−500,00 €», «−517,00 €» con `--down`; trasferimento «3,00 €» neutro; entrate «+»/`--up` (verificate dal codice e dalla convenzione Android, il dataset demo non ha entrate) |
+| Movimenti compatti — righe | rect a 390 | righe 101,8 / 101,8 / 77,8 / 76,8 px: titolo troncato, importo e icona del tipo sulla stessa riga (Δy ≤ 4 px); prima la riga arrivava a 169,8 px e l'icona andava a capo |
+| Conti — doppio importo | DOM | nota visibile «Saldo del periodo; tra parentesi il saldo attuale con i salvadanai»; «Saldo conti» della hero **neutro** |
+| Stato vuoto | risposte dashboard/serie vuote | **3 `EmptyState`** (Conti, Salvadanai, Ultimi movimenti) con CTA «Crea conto», «Crea salvadanaio», «Registra movimento»; card grafici **assente**; nessun overflow |
+| Stato di errore | risposte 500 | blocco `role="alert"` con «Riprova»; nessun dato residuo nell'errore iniziale; con dati già caricati compare la nota «I dati mostrati sono quelli dell'ultimo caricamento riuscito» |
+| Caricamento iniziale | richieste dashboard sospese | skeleton dentro un unico `.dash-content[aria-busy="true"]` che riproduce le 5 card reali (hero, Grafici, Conti, Salvadanai, Ultimi movimenti) con `role="status"` «Caricamento della Home…»; altezze a 1440: 254/732/247/247/408 px contro 283/724/263/263/412 reali; a 390: 317/682/285/215/416 contro 355/651/308/199/436. Con setup/auth lenti la Home mostra lo stesso skeleton di pagina dalla prima pittura (`.dash-skeleton-pill`, `.dash-skeleton-amount`; nessuna `.loading-card`), status «Caricamento della Home…» |
+| Aggiornamento periodo | richieste sospese dopo «Applica» | `.dash-content.is-updating` con `aria-busy="true"` e status live «Aggiornamento del periodo in corso…» |
+| Filtri periodo e date | DOM + focus programmatico | `aria-pressed` true/false sui 4 preset; input data con `aria-label` «Data iniziale»/«Data finale»; focus visibile `outline 2px accent` con offset 2 dopo 2 rAF; target 44 px su pill, «Applica», «Riprova» e label data; voci bottom bar ≥44 px |
+| Android | device/emulatore | **non eseguito** (nessun device in sessione): le modifiche sono solo web; il client Android ha già importi firmati e stati dedicati (dedotto dal codice, non verificato a runtime) |
+
+Limiti dichiarati: nessuna prova con screen reader o tastiera reali (solo focus programmatico); `prefers-reduced-motion: reduce` forzato nelle catture; dataset demo unico (nessun importo negativo, conto archiviato o nome lungo); build di produzione non servita (Vite dev); nessuna baseline visiva. `design/components.md` e `DESIGN.md` sono in sola lettura nel workspace: l'aggiornamento del catalogo (`EmptyState` adottato in Home) e ogni ritocco identitario restano da fare quando i file saranno sbloccati; l'identità visiva non è cambiata.
+
+## Skeleton di pagina — web (2026-11-12, non rilasciati)
+
+Verifiche con Chromium headless via CDP, server demo, viewport 1440×900 e 390×844, temi scuro/chiaro; setup/auth tenuti in pausa per vedere il fallback di route e chiamate finance in pausa per il caricamento interno delle pagine.
+
+| Controllo | Prova | Esito |
+| --- | --- | --- |
+| `npm run lint` / `npm run build` | build web | **verde** |
+| Fallback di route | `/movements`, `/accounts`, `/settings`, `/investments` con setup/auth lenti | heading reale (Movimenti/Registro, Conti/Patrimonio, Impostazioni, Investimenti/Patrimonio), 2–5 card, 7–21 blocchi skeleton, **nessuna** `.loading-card` centrata, nessun overflow |
+| Caricamento pagina | `/movements` e `/accounts` a 390 con chiamate finance sospese | skeleton della pagina (filtri/righe per Movimenti, form+elenco per Conti), 2 card, nessun overflow |
+| Skeleton della Home | vedi sezione dedicata | invariato e verificato |
+| Android | skeleton Compose al posto degli spinner | implementazione delegata e verificata con `assembleDebug` (vedi sezione Android) |
+
+Limiti: la forma dello skeleton è una **approssimazione** delle card reali (numero di card e righe coerente, altezze non pixel-identiche); nessuna baseline visiva. `design/components.md` e `DESIGN.md` sono in sola lettura: manca la riga di catalogo per `PageSkeletons`.
+
+## Skeleton di pagina — Android (2026-11-12, non rilasciati)
+
+Implementazione delegata e verificata dal Lead con build; **nessuna prova su device/emulatore**.
+
+| Controllo | Prova | Esito |
+| --- | --- | --- |
+| Build Android | `cd apps/android && source build/toolchain/env.sh && ./gradlew --console=plain :app:assembleDebug` | **BUILD SUCCESSFUL** (41 task; nessuna dipendenza nuova, versionName/versionCode invariati) |
+| Componente | `ui/components/Skeleton.kt` | shimmer unico per pagina (`rememberInfiniteTransition` + `drawBehind`), statico in `LocalInspectionMode`, solo token (`surfaceVariant`/`primaryContainer`/`outline`), primitive e pagine `SpendyListSkeleton`, `SpendyFormSkeleton`/`SpendyProfileSkeleton`, `SpendyDashboardSkeleton`, `SpendyInlineSkeleton`; semantica «Caricamento…» con live region |
+| Schermate coperte | 15 rami di caricamento sostituiti | Home dashboard, Accounts, Savings, Movements, Automations, Investments, Trash, Categories, Search, Devices, Profile (hero+sezioni), Data e Pairing (inline); error/empty e padding invariati |
+| Non coperto (motivato) | loader d'azione | avatar upload/cambio password (spinner 18–20 dp nei bottoni), versione in Impostazioni, login in ServerFlow, boot `AppNavHost`: non sono caricamenti di pagina e non hanno uno stato di pagina da skeletonizzare |
+| Limiti | device/emulatore | **non eseguito**: forme e shimmer non verificati a runtime su device; nessun `lintDebug` in questa sessione |
 
 ## Navbar «Minimal» (2026-11-10, DC-109)
 
@@ -101,7 +156,7 @@ Eseguire almeno quelli pertinenti alla modifica; dichiarare quelli saltati e per
 | Tastiera | Tab raggiunge tutto, `Esc` chiude menu/modali, focus trap nella modale, focus restituito |
 | Ingrandimento | zoom 200% e testo lungo: nessun contenuto tagliato o sovrapposto |
 | Movimento | `prefers-reduced-motion: reduce`: animazioni e scroll morbido disattivati |
-| Accessibilità | contrasto, etichette, ruoli (`dialog`, `status`), illustrazioni `aria-hidden`, target ≥ 44 px |
+| Accessibilità | contrasto, etichette, ruoli (`dialog`, `status`), icone degli stati vuoti `aria-hidden`, target ≥ 44 px |
 | Android (se toccato) | emulatore/dispositivo reale, TalkBack, scala font, tema Sistema; non basta il browser |
 
 ## Cosa non esiste (non dichiararlo come verificato)
@@ -125,3 +180,24 @@ Introdurre test frontend o baseline visive richiede **nuove dipendenze e approva
    revisiona e si approva.
 5. Se una modifica tocca i token, aggiorna anche la tavola `docs/design/` quando il valore è
    mostrato.
+
+## Wizard movimento (2026-11-13, implementazione in corso)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Web — typecheck + build | `cd apps/frontend && npm run lint && npm run build` | **verde** |
+| Web — design/contrasti | `check_design.py`, `check_contrast.py` | **verdi** (0 violazioni, 2 divergenze note) |
+| Web — wizard | browser demo via CDP, 1440×1100 e 390×844; apertura, passi 1–3, calendario in portal, riepilogo, chiusura con X/`Esc` | **verde**; nessuna baseline visiva aggiunta |
+| Web — creazione/eliminazione | `localhost:5173` (CSRF): creato «TEST WIZARD 3» a 12,50 €, notifica «Movimento registrato.», poi eliminato dalla riga | **verde** |
+| Web — modifica | apertura da «Modifica», titolo e importo precompilati, passo 1 | **verde** |
+| Web — mobile | 390×844: modale a larghezza utile, riepilogo sotto, azioni raggiungibili, nessun overflow orizzontale | **verde** (ispezione) |
+| Android — build/test/lint | `source apps/android/build/toolchain/env.sh && cd apps/android && ./gradlew --console=plain :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` | **verde**: BUILD SUCCESSFUL, 31 test, 0 failure, lint 0 errori; APK debug prodotto |
+| Android — runtime | device/emulatore | **non eseguito**: wizard non provato a runtime (touch, rotazione, temi, TalkBack); limite dichiarato |
+
+Nota: `design/components.md` e `DESIGN.md` sono **in sola lettura** in questo workspace; i nuovi
+componenti `AppSelect`, `DateField`/`TimeField` e la composizione del wizard sono registrati qui e
+nelle decisioni, ma non nel catalogo componenti finché il file non torna scrivibile.
+
+Limiti Android dichiarati dal teammate: nessuna prova su device/emulatore; le categorie/tag “recenti”
+derivano dalle transazioni caricate (risentono dei filtri); il vecchio `AddMovementDialog` privato
+resta nel file `MovementsScreen.kt` ma non è più invocato (codice morto, pulizia successiva).

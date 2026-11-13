@@ -3,6 +3,8 @@
 Fonte normativa: `DESIGN.md` §06. Qui le regole operative verificate sul codice reale
 (`apps/frontend/src/styles.css`, `Layout.tsx`, `App.tsx`).
 
+> **Aggiornamento 2026-11-12 — rifiniture Home (non rilasciate):** toolbar mobile impilata, importi firmati, stati vuoto/caricamento/errore accessibili, grafico leggibile a 390 px. Vedi la sezione «Home e portafoglio».
+>
 > **Aggiornamento 2026-11-11 — release `0.8.4` (DC-114…117):** le parti contrassegnate «0.8.4»
 > sono **implementate e verificate sul web** (ispezione visiva 390/1440 px nei due temi); su Android
 > sono **compilate e testate** (`assembleDebug`, 31 test unitari, `lintDebug`) ma **non provate su
@@ -26,7 +28,7 @@ Nel CSS esistono **due** breakpoint, non una scala arbitraria:
 | Breakpoint | Uso |
 | --- | --- |
 | `max-width: 900px` | dashboard: `.stat-grid` a 2 colonne, `.dash-summary`/`.dash-charts-row` a 1 colonna, `.dash-breakdown` a 2 |
-| `max-width: 760px` | **mobile**: topbar → bottom bar fissa, griglie a 1 colonna, righe entità in colonna, padding inferiore `5.5rem` per la barra |
+| `max-width: 760px` | **mobile**: topbar → bottom bar fissa, griglie a 1 colonna, righe entità in colonna, padding inferiore `5.5rem` per la barra; Home: toolbar periodo/date impilata, pill a capo (attivo `accent-soft`), target ≥44 px |
 
 Regole:
 
@@ -41,7 +43,18 @@ Regole:
 
 - **Pagina** per flussi lunghi e liste principali; **modale** per conferme e dettagli brevi;
   **CRUD inline** nella pagina per conti, salvadanai, automazioni, movimenti.
+- **Wizard movimento (2026-11-13, approvato via preview e implementato web):** la pagina Movimenti apre un
+  `+ Nuovo movimento` / modifica in una **modale a 3 passi** (Importo → Dettagli → Conferma) con
+  **riepilogo laterale sempre visibile** su desktop; a ≤760 px la modale occupa la larghezza utile,
+  il riepilogo va sotto il contenuto e le azioni restano raggiungibili; a ≤900 px il riepilogo passa
+  sotto. Il passo 1 include pillola tipo, importo digitabile con ± e slider a tacche 0–100 € (0,50 €),
+  conti con listbox app-style e due selettori Da/A per i trasferimenti; il passo 2 descrizione,
+  categoria con icone e pillole recenti; il passo 3 data/ora con mini calendario e mini orologio,
+  tag recenti e **Conferma**. Su Android il flusso è a **4 passi** con riepilogo finale (vedi
+  `platform-matrix.md`).
 - **Home (web)**: pill periodo → riepilogo con 4 metriche e portafoglio → card «Grafici del periodo» (andamento, entrate vs uscite e categorie) → elenchi Conti/Salvadanai → ultimi 4 movimenti compatti (icona categoria a sinistra, icona del tipo accanto all'importo, senza righe contabili). Su mobile la stessa sequenza in colonna. Modifica successiva alla `0.8.4` (non rilasciata): rimossi i tasti `+ Movimento`/`Trasferimento` e ripristinato il resto della Home precedente, mantenendo la prima card con il portafoglio.
+- **Skeleton di pagina (2026-11-12, non rilasciato)**: ogni route usa lo skeleton della propria forma (`components/PageSkeletons.tsx`, `RouteSkeleton` per il fallback setup/auth): heading reale, card e righe corrispondenti alla pagina; Home ha `HomeSkeleton` completa. La vecchia card centrata di `LoadingScreen` non è più usata dai guard né dalle pagine principali.
+- **Home — rifiniture 2026-11-12 (non rilasciate)**: a ≤760 px la toolbar va a capo (niente scroll orizzontale), i target salgono a ≥44 px; gli importi dei movimenti sono firmati e colorati per direzione (spese «−»/`--down`, entrate «+»/`--up`, trasferimenti neutri) come su Android; le righe compatte restano su una linea con titolo troncato; i grafici sono nascosti quando non hanno dati; le liste vuote usano `EmptyState` con CTA; caricamento con skeleton che riproduce la struttura delle card reali (hero, grafici, elenchi, movimenti) e `aria-busy`, mostrato **dalla prima pittura** anche durante setup/auth (fallback di route al posto della card centrata), aggiornamento con stato live, errore con `role="alert"`, «Riprova» e nota sui dati non aggiornati; etichette del grafico Andamento con corpo reso ≥11 px. La card Conti mostra la nota «Saldo del periodo; tra parentesi il saldo attuale con i salvadanai» e «Saldo conti» resta neutro.
 - **Impostazioni/Profilo**: blocchi `.settings-block` / sezioni `.profile-section` con
   `.section-heading` e form `.stack`; nessuna didascalia esplicativa.
 - **Auth/setup**: `.card.narrow` (max 420 px) centrata con `AuthHero` e glow.

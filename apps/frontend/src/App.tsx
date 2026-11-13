@@ -11,10 +11,10 @@ import { AuthProvider } from "./auth";
 import { ToastProvider } from "./components/Toast";
 import {
   AdminRoute,
-  LoadingScreen,
   ProfileRoute,
   ProtectedRoute,
 } from "./components/Guards";
+import { RouteSkeleton } from "./components/PageSkeletons";
 import { Layout } from "./components/Layout";
 import { AdminPage } from "./pages/AdminPage";
 import { AccountPage } from "./pages/AccountPage";
@@ -53,7 +53,9 @@ function SetupGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  if (setupRequired === null) return <LoadingScreen />;
+  if (setupRequired === null) {
+    return <RouteSkeleton />;
+  }
   if (setupRequired && location.pathname !== "/setup") {
     return <Navigate to="/setup" replace />;
   }

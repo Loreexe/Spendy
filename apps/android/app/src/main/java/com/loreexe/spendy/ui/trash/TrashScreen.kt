@@ -10,7 +10,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +34,7 @@ import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.data.model.TrashItemData
 import com.loreexe.spendy.ui.components.OverflowMenu
 import com.loreexe.spendy.ui.components.EmptyState
+import com.loreexe.spendy.ui.components.SpendyListSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -109,7 +109,10 @@ fun TrashScreen(
         },
     ) { padding ->
         when {
-            state.loading -> CircularProgressIndicator(Modifier.padding(padding))
+            state.loading -> SpendyListSkeleton(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                rows = 4,
+            )
             state.error != null -> Column(Modifier.padding(padding).padding(24.dp)) {
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }

@@ -1,11 +1,14 @@
 # Spendy — Design
 
 Identità visiva e sistema di design di **prodotto**: interfaccia web (React/TypeScript) e app
-Android (Kotlin/Compose). Documento pubblico, versione **0.9.3** (11 novembre 2026), allineato alla release di prodotto **0.8.5**.
+Android (Kotlin/Compose). Documento pubblico, versione **0.9.5** (13 novembre 2026), allineato alla release di prodotto **0.8.6**.
 Le decisioni e la progettazione vivono in `.spendy-wiki/` (privata); questo file ne è la
 proiezione pubblica e la fonte normativa per l'implementazione.
 
-> **Versione 0.9.3 — release di prodotto 0.8.5 (2026-11-11):** rifiniture web della Home (niente azioni rapide, 4 movimenti compatti, icone a sinistra) e pagina Conti (saldo tra parentesi, nome/tipo modificabili); Android allineato alla 0.8.5 (stesso contenuto funzionale della 0.8.4). In precedenza, **0.9.2 — release di prodotto 0.8.4 (DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
+> **Versione 0.9.5 — flusso guidato dei movimenti (2026-11-13):** nuovo inserimento e modifica dei movimenti in passi, con importo a slider e tacche, scelta conto/salvadanaio, categorie, data/ora, tag e riepilogo; componenti app-style per selettori, calendario e orologio; su Android tastierino custom, swipe tra i tipi e feedback aptico. In precedenza, **0.9.4 — icone degli stati vuoti (2026-11-12):** le vecchie illustrazioni line art
+> disegnate a mano sono sostituite da **un glifo Lucide per stato vuoto**, lo stesso soggetto
+> dell'icona di navigazione, reso a 96 px con tratto 1,5 (DC-120). Web e Android usano gli stessi
+> glifi. In precedenza, **0.9.3 — release di prodotto 0.8.5 (2026-11-11):** rifiniture web della Home (niente azioni rapide, 4 movimenti compatti, icone a sinistra) e pagina Conti (saldo tra parentesi, nome/tipo modificabili); Android allineato alla 0.8.5 (stesso contenuto funzionale della 0.8.4). In precedenza, **0.9.2 — release di prodotto 0.8.4 (DC-114…117):** Home e navigazione, foto/avatar e menu, orario dei
 > movimenti, icone delle categorie. Le parti contrassegnate «0.8.4» sono **implementate e
 > verificate sul web e sul backend**; Android è **compilato e testato** (`assembleDebug`, 31 test
 > unitari, `lintDebug`) ma **non provato su device/emulatore** in questa sessione. La release è
@@ -136,7 +139,7 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
   `1.234,56 €`, `14.853,51 €`, negativi `−24,90 €`. Un solo formattatore per gli importi completi (`format.ts`); le assi dei grafici usano etichette
   compatte con lo stesso locale. Date `gg/mm/aaaa`.
 
-## 05 — Icone e illustrazioni
+## 05 — Icone e stati vuoti
 
 - **Icone: Lucide**, sia sul web (`lucide-react`) sia su Android (vector drawable derivati da
   Lucide). Tratto 2, terminazioni tonde, 24×24 di base; dimensione 14–24 px secondo il contesto,
@@ -158,13 +161,15 @@ warn/warn-soft **5.24**, accent/accent-soft 6.49. Sono i valori minimi: non si s
   Le icone compaiono in liste, selettore categoria, gestione categorie, filtri e grafico delle spese.
 - **«Altro»**: nella release 0.8.3 usava l'icona profilo (`user`, DC-111); la 0.8.4 lo ha
   **rimosso** dalla navigazione Android (DC-114).
-- **Illustrazioni: line art mint.** Disegni essenziali a tratto singolo, `stroke-width 2`,
-  terminazioni tonde, `viewBox 160×150`, colore accento, dimensioni 96–120 px. Sei soggetti:
-  conti, movimenti, salvadanai, investimenti, automazioni, cestino. Sono decorative
-  (`aria-hidden`) e accompagnano sempre un titolo.
-- **Empty state**: ogni stato vuoto ha illustrazione + titolo + spiegazione breve + azione, quando
-  l'azione esiste. Il web le disegna in React con `currentColor`; Android usa gli stessi soggetti
-  come vector drawable.
+- **Icone degli stati vuoti: Lucide.** Un solo glifo Lucide per stato vuoto, lo stesso soggetto
+  dell'icona di navigazione della pagina: portafoglio (`wallet`) per i conti, ricevuta
+  (`receipt-text`) per i movimenti, salvadanaio (`piggy-bank`), andamento (`trending-up`) per gli
+  investimenti, orologio (`clock`) per le automazioni, pattumiera (`trash`) per il cestino. Resa a
+  96 px con `stroke-width 1,5` sul viewBox 24×24, colore accento, opacità 0,85; sono decorative
+  (`aria-hidden`) e accompagnano sempre un titolo. Web e Android usano gli stessi glifi: React
+  (`lucide-react`, con `currentColor`) e vector drawable derivati da Lucide.
+- **Empty state**: ogni stato vuoto ha icona + titolo + spiegazione breve + azione, quando
+  l'azione esiste.
 
 ## 06 — Struttura e navigazione
 
@@ -324,7 +329,7 @@ Due canali distinti, non sovrapposti:
   cestino, revoca dispositivo, archiviazione).
 - **Skeleton** per i caricamenti (blocchi che mantengono il layout, `aria-busy`), non "Caricamento…"
   come unico feedback.
-- **Empty state** con illustrazione, titolo, spiegazione e azione quando esiste.
+- **Empty state** con icona Lucide, titolo, spiegazione e azione quando esiste.
 - **Cestino**: soft delete, ripristino, eliminazione definitiva, svuotamento, filtri per tipo e
   data; retention **30 giorni** lato server.
 
@@ -341,7 +346,7 @@ Due canali distinti, non sovrapposti:
 - **Movimento**: transizioni 150–200 ms; `prefers-reduced-motion` disattiva animazioni e scroll
   morbido. Nessun lampeggio.
 - **Semantica**: ruoli `dialog`/`status`, `aria-live` per i toast, label esplicite per i campi,
-  illustrazioni decorative con `aria-hidden`.
+  icone degli stati vuoti decorative con `aria-hidden`.
 
 ## 11 — i18n e formati
 
@@ -376,6 +381,8 @@ Due canali distinti, non sovrapposti:
 
 ## Cronologia
 
+- **0.9.5 — 2026-11-13** — Release di prodotto 0.8.6: **nuovo flusso guidato per registrare i movimenti** su web (3 passi con riepilogo laterale) e Android (4 passi con riepilogo finale); importo con slider a tacchi e importo digitabile, pagamento da conto o salvadanaio, categorie sempre visibili, data/ora con mini calendario e orologio, tag; su Android anche tastierino custom, swipe tra Spesa/Entrata/Trasferimento e feedback aptico. Verifiche: web lint/build e controlli design verdi; Android build/test/lint verdi; prova visuale sul telefono. Include inoltre le rifiniture Home, gli skeleton di pagina e il nuovo catalogo degli stati vuoti.
+- **0.9.4 — 2026-11-12** — Icone degli stati vuoti: sostituite le illustrazioni line art disegnate a mano con **un glifo Lucide per stato vuoto** (stesso soggetto dell'icona di navigazione), 96 px, tratto 1,5, accento con opacità 0,85; parità web ↔ Android (DC-120). Verifiche: lint/build web e controlli design verdi, ispezione visiva nei due temi a 390/1200 px; Android compilato e testato (`assembleDebug`, 31 test unitari, `lintDebug` 0 errori) ma **non provato su device**.
 - **0.9.3 — 2026-11-11** — Release di prodotto 0.8.5, **pubblicata** (tag `v0.8.5`): Home web ripristinata senza azioni rapide, ultimi 4 movimenti compatti con icone categoria/tipo e pagina Conti con saldo tra parentesi e nome/tipo modificabili; Android allineato alla 0.8.5 (stesso contenuto funzionale della 0.8.4).
 - **0.9.2 — 2026-11-11** — Release di prodotto 0.8.4, **pubblicata** (tag `v0.8.4`): Home al posto di
   Dashboard (icona `house`) e navigazione web/Android senza «Altro» con Conti dal portafoglio; menu

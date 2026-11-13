@@ -1,10 +1,12 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Tag } from "lucide-react";
 import type { Category } from "../api";
 import { CategoryIcon } from "./CategoryIcon";
@@ -40,6 +42,29 @@ export function CategorySelect({
   const listRef = useRef<HTMLUListElement | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.max(rect.width, 240);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      const top = Math.min(rect.bottom + 6, window.innerHeight - 120);
+      setCoords({ top, left, width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, [open]);
 
   const options: CategoryOption[] = [
     { id: "", name: emptyLabel, icon: null },
@@ -55,7 +80,8 @@ export function CategorySelect({
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: MouseEvent | TouchEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!wrapperRef.current?.contains(target) && !listRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -155,16 +181,18 @@ export function CategorySelect({
         />
       </button>
 
-      {open && (
+      {open && coords && createPortal(
         <ul
           id={listId}
           ref={listRef}
-          className="category-select-list"
+          className="category-select-list category-select-list-portal"
           role="listbox"
           aria-label={ariaLabel}
           tabIndex={-1}
           aria-activedescendant={`${listId}-${active}`}
+          style={{ top: coords.top, left: coords.left, width: coords.width }}
           onKeyDown={handleListKeyDown}
+          onWheel={(event) => event.stopPropagation()}
         >
           {options.map((option, index) => (
             <li
@@ -192,7 +220,8 @@ export function CategorySelect({
               <span>{option.name}</span>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   );

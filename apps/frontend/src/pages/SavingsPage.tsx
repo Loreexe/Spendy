@@ -12,7 +12,7 @@ import {
 } from "../api";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { EmptyState } from "../components/EmptyState";
-import { LoadingScreen } from "../components/Guards";
+import { SavingsSkeleton } from "../components/PageSkeletons";
 import { useToast } from "../components/Toast";
 import { amountClass, money, todayISO } from "../format";
 
@@ -238,7 +238,7 @@ export function SavingsPage() {
     }
   }
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <SavingsSkeleton />;
 
   return (
     <div className="stack-page">

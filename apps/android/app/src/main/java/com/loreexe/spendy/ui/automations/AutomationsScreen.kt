@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -54,6 +53,7 @@ import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
 import com.loreexe.spendy.ui.components.EmptyState
 import com.loreexe.spendy.ui.components.LocalBottomBarInset
+import com.loreexe.spendy.ui.components.SpendyListSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -226,7 +226,10 @@ fun AutomationsScreen(
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
         when {
-            state.loading -> CircularProgressIndicator(Modifier.padding(24.dp))
+            state.loading -> SpendyListSkeleton(
+                modifier = Modifier.fillMaxSize(),
+                rows = 3,
+            )
             state.error != null -> Column(Modifier.padding(24.dp)) {
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = viewModel::load) { Text(stringResource(R.string.retry)) }

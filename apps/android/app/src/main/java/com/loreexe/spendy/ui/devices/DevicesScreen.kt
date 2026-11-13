@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.loreexe.spendy.data.AccountRepository
 import com.loreexe.spendy.data.model.DeviceData
+import com.loreexe.spendy.ui.components.SpendyListSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,7 +101,10 @@ fun DevicesScreen(
         },
     ) { padding ->
         when {
-            state.loading -> CircularProgressIndicator(Modifier.padding(padding))
+            state.loading -> SpendyListSkeleton(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                rows = 4,
+            )
             state.error != null && state.devices.isEmpty() -> Column(Modifier.padding(padding).padding(20.dp)) {
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = viewModel::load) { Text("Riprova") }

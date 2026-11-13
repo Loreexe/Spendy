@@ -12,7 +12,7 @@ non usare per nuovo codice (serve approvazione per dichiararlo tale).
 | Decisione | Contenuto | Impatto sul design system |
 | --- | --- | --- |
 | DC-084 | identità visiva e logo Spendy (flat/mono, tre lockup, pacchetto asset) | logo, favicon/PWA/OG; `DESIGN.md` §01 |
-| DC-085 | design system, tema scuro di default, AA, forma 18–20 px, CSS puro + token, topbar desktop/bottom bar mobile, feedback, motion 150–200 ms, Lucide, line-art, empty state con azione | fondamenta del sistema; `DESIGN.md` §02–11 |
+| DC-085 | design system, tema scuro di default, AA, forma 18–20 px, CSS puro + token, topbar desktop/bottom bar mobile, feedback, motion 150–200 ms, Lucide, line-art, empty state con azione (line-art **superata da DC-120** per gli stati vuoti) | fondamenta del sistema; `DESIGN.md` §02–11 |
 | DC-090 | Inter self-hosted, palette AA, `tokens.css` come unico file di token | fonte autorevole dei token |
 | DC-091 | preferenza tema nel profilo e sincronizzazione web; nessuna libreria i18n (solo italiano, formati centralizzati) | `theme.ts`, `format.ts`, tema chiaro/scuro |
 | DC-092 | shell, tema scuro applicato, topbar/bottom bar, componenti base migrati ai token | `Layout.tsx`, `styles.css` |
@@ -24,6 +24,7 @@ non usare per nuovo codice (serve approvazione per dichiararlo tale).
 | DC-115 | Profilo, avatar e foto: foto del profilo su web e Android con fallback iniziali, upload Android solo in modalità server, testata del menu con foto/nome/cognome/email | **implementato e verificato** (2026-11-11): web verificato (foto profilo e testata del menu); Android compilato e testato, upload/rimozione non provati su device |
 | DC-116 | Orario dei movimenti: `time` con default 12:00, API `HH:MM`, POST opzionale (ora corrente `Europe/Rome`), migrazione, CSV a 6 colonne, archivio schema 5, Room v7 | **implementato e verificato** (2026-11-11): backend 383 test e API provata dal vivo; web verificato; Android compilato e testato, migrazione Room non provata a runtime |
 | DC-117 | Icone delle categorie: `Category.icon` con whitelist di 29 icone Lucide, mappatura delle 9 predefinite, catalogo extra, «Altro» con icona modificabile | **implementato e verificato** (2026-11-11): backend 383 test e API provata dal vivo; web verificato; Android compilato e testato, resa non provata su device |
+| DC-120 | Stati vuoti: sostituite le illustrazioni line art disegnate a mano con **un glifo Lucide per stato vuoto** (stesso soggetto dell'icona di navigazione: `wallet`, `receipt-text`, `piggy-bank`, `trending-up`, `clock`, `trash`), 96 px, tratto 1,5, accento con opacità 0,85; parità web ↔ Android | **implementato** (2026-11-12): web verificato con lint/build, controlli e ispezione visiva nei due temi; Android compilato e testato (`assembleDebug`, 31 test unitari, `lintDebug` 0 errori), resa non provata su device; `DESIGN.md` §05/§10, catalogo, matrice |
 | DC-103/104 | API v1 per il client nativo; archivio locale standalone e migrazione | differenza web/Android sulla modalità dati |
 | DC-105/106 | distribuzione APK, verifiche e fasi della Fase Q | stato «Android implementato con limiti» |
 
@@ -38,6 +39,19 @@ non usare per nuovo codice (serve approvazione per dichiararlo tale).
 5. `docs/design/build/` è la pipeline dati→tavola (HTML autonomo, poster, verifica contrasti).
 6. Nessun test frontend né baseline visiva: le verifiche sono build, controlli statici e ispezione.
 
+## Wizard movimento (approvato dall’utente il 2026-11-13)
+
+- **Web (implementato):** inserimento e modifica movimento in una modale a 3 passi (Importo →
+  Dettagli → Conferma) con riepilogo laterale sempre visibile; tipo a pillola; importo digitabile
+  con ± e slider a tacche 0–100 € a scatti di 0,50 €; conti in listbox app-style; due selettori
+  Da/A per i trasferimenti; descrizione, categoria con icone e pillole recenti; data/ora con mini
+  calendario e mini orologio; tag recenti; Conferma finale.
+- **Android (implementato nella stessa modifica, build verde):** stesso flusso su 4 passi con riepilogo
+  finale, tastierino custom, selettori conto in sovrimpressione, calendario/orologio e tag; verificato
+  con `assembleDebug`/31 test/`lintDebug`, **non provato su device**.
+- Non è un cambio di identità visiva: token e componenti condivisi restano la fonte. Il dettaglio
+  operativo è in `layout-rules.md`; le verifiche in `verification.md`.
+
 ## Incoerenze osservate (aperte, non standard)
 
 | # | Incoerenza | Evidenza | Effetto |
@@ -48,6 +62,8 @@ non usare per nuovo codice (serve approvazione per dichiararlo tale).
 | 4 | `.page-heading`/`.section-heading` scritti a mano in 9+ pagine | `grep` su `pages/` | struttura ripetuta senza componente |
 | 5 | proiezione Android incompleta (`warn-soft`, `accent-hover`, `accent-ink`, aloni, overlay) | `Color.kt`/`Theme.kt` | possibili derivazioni locali non tracciate |
 | 6 | spaziature non tokenizzate | valori `rem` letterali nel CSS | nessun controllo automatico sul ritmo 4/8/12/16/24/32 |
+| 7 | Home: importi dei movimenti firmati e colorati per direzione (spese «−»/`down`, entrate «+»/`up`, trasferimenti neutri), come sul client Android | `DashboardPage.tsx` (`compactAmount`), confronto con `RecentMovementsCard` Android | convenzione unica web↔Android per la direzione degli importi |
+| 8 | Home: la card Conti mostra il saldo del periodo e tra parentesi il saldo attuale con i salvadanai, con una nota esplicita | `DashboardPage.tsx`, nota `.dash-note` | evita di confondere i due importi; `/accounts` mantiene la parentesi con il saldo attuale (allineamento in P-11) |
 
 ## Proposte (in attesa di approvazione)
 
@@ -63,6 +79,7 @@ non usare per nuovo codice (serve approvazione per dichiararlo tale).
 | P-8 | navbar mobile Android: tre varianti valutate (01 Bolla, 02 Pillola, 03 Barretta) in `docs/design/navbar-preview.html` | riferimento esterno rivisto con i token Spendy | **ritirata**: la 01 è stata implementata e rifiutata in collaudo (bolla troppo grande, barra staccata, icona tagliata); codice ripristinato. Nuovo prototipo M3-style in valutazione (P-9) |
 | P-9 | navbar mobile Android in stile **Material 3** (barra agganciata 80 + inset, indicatore a pillola, etichette 12 sp): prototipo in `docs/design/navbar-m3-preview.html` | risposta al rifiuto della «Bolla» | **ritirata in collaudo**: non gradita all'utente; sostituita dal laboratorio di cinque prototipi (P-10) |
 | P-10 | **cinque prototipi navbar** agganciati al bordo (Linea, Blocco, Cerchio, Segmenti, Minimal in vetro) in `docs/design/navbar-lab-preview.html` | risposta al rifiuto di «Bolla» e M3 | **approvata come DC-109**: scelta la 05 «Minimal» in vetro; implementata; prova su device ancora da fare (telefono scollegato durante l'installazione) |
+| P-11 | unificare la convenzione della parentesi saldo tra Home e `/accounts` (etichetta «nel periodo» / «saldo», oppure un solo importo) | la stessa forma oggi ha due significati tra le due schermate | richiede approvazione; può cambiare la lista conti di `/accounts` |
 
 P-8 è stata implementata come DC-108 e poi **ritirata**: la variante 01 «Bolla» non è piaciuta in prova sul dispositivo (bolla troppo grande e rialzata, barra flottante staccata dal resto, spazio vuoto, icona tagliata durante il sollevamento). Il codice è ripristinato alla `NavigationBar` Material 3 e il dispositivo è tornato all'APK ufficiale `0.8.2`. La preview locale `docs/design/navbar-preview.html` resta come memoria delle varianti scartate. **P-9** (Material 3) è stato **ritirato in collaudo** su richiesta dell'utente. **P-10** è stato **approvato come DC-109**: la variante 05 «Minimal» è implementata (senza blur, dopo revisione); le altre quattro proposte restano documentate nella preview locale.
 
@@ -89,8 +106,8 @@ Nessun elemento è stato approvato come deprecato. Candidati da valutare (richie
 
 ## Nota sul versionamento
 
-`DESIGN.md` **0.9.3** (2026-11-11), release di prodotto 0.8.5 (DC-114…117), descrive: Home e navigazione,
-foto/avatar e menu, orario dei movimenti, icone delle categorie. Backend e web sono verificati;
-Android è compilato e testato ma non provato su device. Le modifiche del
+`DESIGN.md` **0.9.5** (2026-11-13), release di prodotto 0.8.6, descrive: il **flusso guidato dei movimenti** su web e Android
+(importo, conto/salvadanaio, categorie, data/ora, tag, riepilogo), i componenti app-style e le rifiniture Home/skeleton.
+Web verificato in browser; Android compilato, testato e provato sul telefono per il wizard. Le modifiche del
 livello operativo (catalogo, regole, controlli, consolidamenti di token senza cambio visivo) **non**
 cambiano la versione dell'identità; cambiano solo quando cambia un valore visivo approvato.

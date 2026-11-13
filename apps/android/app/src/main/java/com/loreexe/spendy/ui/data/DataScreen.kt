@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +30,7 @@ import com.loreexe.spendy.data.AppMode
 import com.loreexe.spendy.data.FinanceRepository
 import com.loreexe.spendy.data.MigrationManager
 import com.loreexe.spendy.data.SessionStore
+import com.loreexe.spendy.ui.components.SpendyInlineSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -218,7 +218,7 @@ fun DataScreen(
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.import_archive)) }
 
-        if (state.loading) CircularProgressIndicator()
+        if (state.loading) SpendyInlineSkeleton(rows = 2)
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         state.analysis?.let {
             Text("Anteprima", style = MaterialTheme.typography.titleMedium)
@@ -265,7 +265,7 @@ fun DataScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (state.migrating) CircularProgressIndicator()
+        if (state.migrating) SpendyInlineSkeleton(rows = 1)
         state.migrationMessage?.let { text ->
             Text("Migrazione", style = MaterialTheme.typography.titleMedium)
             Text(text, style = MaterialTheme.typography.bodySmall)

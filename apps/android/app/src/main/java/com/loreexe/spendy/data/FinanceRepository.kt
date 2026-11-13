@@ -432,6 +432,7 @@ class RemoteFinanceRepository(
             fromSavings = transaction.fromSavingsUuid?.let { savings[it] },
             toSavings = transaction.toSavingsUuid?.let { savings[it] },
             categoryId = categoryId,
+            confirmCoverage = transaction.confirmCoverage,
             tags = transaction.tags,
             time = normalizeTime(transaction.time),
         )

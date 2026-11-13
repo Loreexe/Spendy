@@ -23,3 +23,19 @@
   color: var(--warn);
   background: var(--warn-soft);
 }
+
+/* Errore con azione di recupero (Home): messaggio, eventuale nota e «Riprova». */
+.error-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+}
+
+.error-stack > span:first-child {
+  font-weight: 600;
+}
+
+.error-stack .small-button {
+  margin-left: auto;
+}

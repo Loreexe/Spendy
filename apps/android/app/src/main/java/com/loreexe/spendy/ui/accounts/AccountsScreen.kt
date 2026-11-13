@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -48,6 +47,7 @@ import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.util.formatCents
 import com.loreexe.spendy.util.parseMoneyToCents
 import com.loreexe.spendy.ui.components.EmptyState
+import com.loreexe.spendy.ui.components.SpendyListSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -189,7 +189,10 @@ fun AccountsScreen(
         },
     ) { padding ->
         when {
-            state.loading -> CircularProgressIndicator(Modifier.padding(padding))
+            state.loading -> SpendyListSkeleton(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                rows = 4,
+            )
             state.error != null -> Column(Modifier.padding(padding).padding(24.dp)) {
                 state.error?.let { error ->
                     Text(error, color = MaterialTheme.colorScheme.error)

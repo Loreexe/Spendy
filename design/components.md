@@ -23,8 +23,8 @@ Legenda adozione: **condiviso** = usato da più schermate · **locale** = in una
 | `CategoryIconPicker` | `CategoryIconPicker.tsx` | griglia del catalogo di 29 icone con etichette italiane | selezionata, hover, focus, tastiera | modale gestione categorie |
 | `AuthHero` | `AuthHero.tsx` | `glow?: boolean`; lockup theme-swapped | dark/light, glow | condiviso (4 usi: login, registrazione, attesa, setup) |
 | `Guards` / `LoadingScreen` | `Guards.tsx` | `ProtectedRoute`, `ProfileRoute`, `AdminRoute`, `LoadingScreen` | caricamento, redirect | condiviso (routing) |
-| `EmptyState` | `EmptyState.tsx` | `illustration`, `title`, `description?`, `actionLabel?`, `onAction?` | con azione / senza azione | condiviso (9 usi in 6 pagine) |
-| `Illustrations` | `Illustrations.tsx` | 6 soggetti: conti, movimenti, salvadanai, investimenti, automazioni, cestino | `currentColor` (accento), `aria-hidden` | condiviso via `EmptyState` |
+| `EmptyState` | `EmptyState.tsx` | `illustration` (id dell'icona Lucide), `title`, `description?`, `actionLabel?`, `onAction?`; icona 96 px, tratto 1,5, accento opacità 0,85 | con azione / senza azione | condiviso (9 usi in 6 pagine) |
+| `Illustrations` | `Illustrations.tsx` | 6 glifi Lucide per gli stati vuoti: portafoglio, ricevuta, salvadanaio, andamento, orologio, pattumiera (DC-120) | `currentColor` (accento), 96 px, tratto 1,5, `aria-hidden` | condiviso via `EmptyState` |
 | `SkeletonLines` | `SkeletonLines.tsx` | `rows`, `variant: lines/cards`, `label` | `role="status"`, blocchi `aria-hidden` | condiviso (cestino, investimenti, dispositivi) |
 | `ToastProvider` / `useToast` | `Toast.tsx` | `notify(message, action?)`; max 3 visibili, 8 s, chiusura | azione, annulla, chiusura ×, `aria-live="polite"` | condiviso (7 pagine) |
 | `ConfirmModal` | `ConfirmModal.tsx` | `title`, `summary[]`, `confirmLabel`, `busy` | focus iniziale su Annulla, focus trap, `Esc`, busy | condiviso (8 usi in 5 pagine) |

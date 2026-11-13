@@ -14,7 +14,7 @@ import {
   type InvestmentPositionUpdatePayload,
   type SavingsAccount,
 } from "../api";
-import { LoadingScreen } from "../components/Guards";
+import { InvestmentsPageSkeleton } from "../components/PageSkeletons";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { EmptyState } from "../components/EmptyState";
 import { SkeletonLines } from "../components/SkeletonLines";
@@ -1170,7 +1170,7 @@ export function InvestmentsPage() {
     }
   }
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <InvestmentsPageSkeleton />;
 
   const summary = portfolio?.summary ?? null;
   const investmentAccount = portfolio?.investment_account ?? null;

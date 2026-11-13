@@ -24,7 +24,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -75,6 +74,7 @@ import com.loreexe.spendy.data.model.AccountData
 import com.loreexe.spendy.data.model.CategoryData
 import com.loreexe.spendy.data.model.NewTransaction
 import com.loreexe.spendy.data.model.TransactionData
+import com.loreexe.spendy.data.model.SavingsData
 import com.loreexe.spendy.data.model.TagData
 import com.loreexe.spendy.data.model.TransactionFilters
 import com.loreexe.spendy.util.currentTimeHhMm
@@ -86,6 +86,7 @@ import com.loreexe.spendy.util.parseMoneyToCents
 import com.loreexe.spendy.ui.components.CategoryIconBadge
 import com.loreexe.spendy.ui.components.EmptyState
 import com.loreexe.spendy.ui.components.IconBadge
+import com.loreexe.spendy.ui.components.SpendyListSkeleton
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -107,6 +108,7 @@ data class MovementsUiState(
     val loading: Boolean = true,
     val transactions: List<TransactionData> = emptyList(),
     val accounts: List<AccountData> = emptyList(),
+    val savings: List<SavingsData> = emptyList(),
     val categories: List<CategoryData> = emptyList(),
     val tags: List<TagData> = emptyList(),
     val filters: TransactionFilters = TransactionFilters(),
@@ -134,11 +136,15 @@ class MovementsViewModel @Inject constructor(
             _state.update { it.copy(loading = true, error = null) }
             coroutineScope {
                 val accounts = async { repository.accounts() }
+                val savings = async { repository.savings() }
                 val categories = async { repository.categories() }
                 val transactions = async { repository.transactions(_state.value.filters) }
                 val tags = async { repository.tags() }
                 accounts.await().onSuccess { list ->
                     _state.update { it.copy(accounts = list) }
+                }
+                savings.await().onSuccess { list ->
+                    _state.update { it.copy(savings = list) }
                 }
                 categories.await().onSuccess { list ->
                     _state.update { it.copy(categories = list) }
@@ -528,12 +534,11 @@ fun MovementsScreen(
                 }
             }
             when {
-                state.loading -> Box(
-                    Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
+                state.loading -> SpendyListSkeleton(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    rows = 5,
+                    avatar = true,
+                )
                 state.error != null -> Column(Modifier.padding(24.dp)) {
                     state.error?.let { error ->
                         Text(error, color = MaterialTheme.colorScheme.error)
@@ -570,12 +575,17 @@ fun MovementsScreen(
         }
 
         if (state.showDialog) {
-            AddMovementDialog(
+            MovementWizardDialog(
                 accounts = state.accounts,
+                savings = state.savings,
                 categories = state.categories,
+                existingTags = state.tags,
+                recentCategoryUuids = state.transactions.mapNotNull { it.categoryUuid }.distinct().take(5),
+                recentTagNames = state.transactions.flatMap { it.tags }.distinct().take(6),
                 initial = state.editing,
                 initialKind = state.newKind,
                 saving = state.saving,
+                error = state.error,
                 onDismiss = viewModel::hideAdd,
                 onCreate = viewModel::create,
                 onUpdate = viewModel::update,

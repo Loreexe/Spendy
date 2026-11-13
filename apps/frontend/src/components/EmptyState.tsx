@@ -2,7 +2,7 @@ import { useId } from "react";
 import { ILLUSTRATIONS, type IllustrationId } from "./Illustrations";
 
 /**
- * Stato vuoto illustrato: illustrazione, titolo, descrizione e CTA opzionale.
+ * Stato vuoto: icona Lucide di grandi dimensioni, titolo, descrizione e CTA opzionale.
  * La CTA compare solo se sono presenti sia etichetta sia azione, così il
  * componente degrada bene anche senza azione.
  */

@@ -27,7 +27,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -77,6 +76,7 @@ import com.loreexe.spendy.data.model.DashboardData
 import com.loreexe.spendy.data.model.SeriesData
 import com.loreexe.spendy.ui.automations.AutomationsScreen
 import com.loreexe.spendy.ui.components.LocalBottomBarInset
+import com.loreexe.spendy.ui.components.SpendyDashboardSkeleton
 import com.loreexe.spendy.ui.components.ProfileAvatar
 import com.loreexe.spendy.ui.components.SpendyBottomBar
 import com.loreexe.spendy.ui.components.SpendyBottomBarItem
@@ -363,13 +363,7 @@ private fun DashboardContent(
         )
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             when {
-                state.loading -> Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    CircularProgressIndicator()
-                }
+                state.loading -> SpendyDashboardSkeleton(Modifier.fillMaxSize())
                 state.error != null -> Column(
                     modifier = Modifier
                         .fillMaxSize()
