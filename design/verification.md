@@ -201,3 +201,69 @@ nelle decisioni, ma non nel catalogo componenti finché il file non torna scrivi
 Limiti Android dichiarati dal teammate: nessuna prova su device/emulatore; le categorie/tag “recenti”
 derivano dalle transazioni caricate (risentono dei filtri); il vecchio `AddMovementDialog` privato
 resta nel file `MovementsScreen.kt` ma non è più invocato (codice morto, pulizia successiva).
+
+## Verifica a due fattori admin (2026-11-13, DC-121)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Backend — test 2FA | `cd apps/backend && DJANGO_DEBUG=1 ../../.venv/bin/python manage.py test accounts.test_2fa` | **verde**: 13 test (setup, conferma, login con codice, anti-replay, codici di recupero monouso, disattivazione, rigenerazione, token Android, admin escluso dal token) |
+| Backend — regressioni accounts | `... manage.py test accounts` | **verde**: 55 test preesistenti + 13 nuovi |
+| Web — typecheck + build | `cd apps/frontend && npm run lint && npm run build` | **verde** |
+| Web — design/contrasti | `check_design.py`, `check_contrast.py` | **verdi** (0 violazioni, 2 divergenze note) |
+| Web — flusso 2FA via API | server demo + proxy Vite: login admin, challenge, TOTP, anti-replay, codice di recupero, disattivazione, OpenAPI 401 | **verde** (2026-11-16); la verifica visiva nel browser del QR e dei codici non è stata eseguita |
+| Android | — | **non applicabile**: il login a token dell'admin resta escluso (DC-121) |
+
+### Audit log e sessioni (2026-11-16, DC-122)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Backend — audit e sessioni | `manage.py test accounts.test_audit_sessions` | **verde**: 9 test (eventi login/2FA/password/admin, endpoint admin-only, retention, idle timeout, revoca altre sessioni, policy) |
+| Backend — suite completa | `manage.py test` | **verde**: 408 test |
+| Web — typecheck + build | `npm run lint && npm run build` | **verde** |
+| Web — design/contrasti | `check_design.py`, `check_contrast.py` | **verdi** (0 violazioni, 2 divergenze note) |
+| Web — audit/sessioni nel browser | server demo + browser | **non eseguito**: API e build verdi; la tabella del registro e il modale di revoca non sono stati provati visivamente |
+
+Nota: `design/components.md` è in **sola lettura** in questo workspace; la voce `SessionsSection` è registrata qui e non nel catalogo componenti.
+
+Catalogo aggiornato in `design/components.md` (`TwoFactorSection`). Il flusso non introduce token,
+colori o dipendenze nuove: riusa `InlineMessage`, `SkeletonLines`, `.pairing-*`, `.badge`,
+`.button`/`.secondary`/`.danger`/`.ghost` e il QR già usato dal pairing.
+
+## Hardening P0 (2026-11-13)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Backend — suite completa | `cd apps/backend && DJANGO_DEBUG=1 ../../.venv/bin/python manage.py test` | **verde**: 399 test (383 preesistenti, 13 2FA, 3 hardening) |
+| Throttle con IP reale | `accounts.test_hardening.ClientIpThrottleTests` (XFF falsificato, 11 richieste) | **verde**: `429` all'11ª nonostante l'header cambiato |
+| OpenAPI admin-only | `accounts.test_hardening.ApiDocumentationTests` + test aggiornato in `finance/test_api_v1.py` | **verde**: anonimo 401/403, admin 200 |
+| Revoca sessioni al cambio password | `accounts.test_hardening.PasswordChangeSessionTests` | **verde**: la seconda sessione non è più autenticata |
+| Frontend | nessuna modifica UI in questo blocco | build e controlli design restano quelli del blocco 2FA |
+| Compose | `docker compose config` | **non eseguito**: Docker non disponibile nell'ambiente; il file è validato dalla CI |
+
+Nota: il bind del frontend ora è `${SPENDY_FRONTEND_BIND:-127.0.0.1}` e i log Docker ruotano a 10 MB × 3; in produzione va impostato l'IP LAN dell'LXC. NPM/TLS e gli altri bloccanti restano da applicare sull'host.
+
+
+## MCP — T1 backend e T2 UI (2026-11-18, DC-123)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Backend — MCP | `manage.py test accounts.test_mcp` | **verde**: 12 test (token, password, permessi, default deny, rate limit, audit, tag AI, toggle admin) |
+| Backend — suite completa | `manage.py test` | **verde**: 420 test |
+| Web — typecheck + build | `npm run lint && npm run build` | **verde** |
+| Web — design/contrasti | `check_design.py`, `check_contrast.py` | **verdi** |
+| Web — Impostazioni → MCP e pannello admin | browser | **non eseguito**: matrice, creazione token e toggle non provati visivamente |
+
+Nota: `design/components.md` è in sola lettura; `McpSection` è registrata qui e non nel catalogo. Il servizio MCP (T3) e le verifiche end-to-end (T5) non esistono ancora.
+
+
+## MCP — T3 servizio (2026-11-18, DC-123)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Servizio — import/build | `python apps/mcp/server.py` con backend demo | **verde**: app ASGI avviata, `/health` ok, 63 tool registrati |
+| MCP — initialize | richiesta JSON-RPC su `/mcp` | **verde**: `serverInfo` Spendy |
+| MCP — tools/list filtrato | token con soli `accounts.list` e `dashboard.get` | **verde**: restituisce solo `accounts_list`, `dashboard_get` |
+| MCP — lettura | `accounts_list` | **verde**: contenuto restituito, `isError: false` |
+| MCP — scrittura + AI | `transactions_create` con token abilitato | **verde**: movimento creato, tag `AI` presente |
+| MCP — permesso negato | `transactions_list` non abilitato | **verde**: `isError: true`, rifiutato dal backend |
+| Compose/NPM/toggle host-side | stack Compose reale + Nginx + MCP | **verde**: `/mcp` via frontend, E2E initialize/tools/list/read/write/tag AI/denied; toggle reale ON→OFF→ON con 502 a servizio spento e MCP operativo al riavvio |

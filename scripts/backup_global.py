@@ -57,6 +57,7 @@ INCREMENTAL_HOURS = int(os.environ.get("SPENDY_BACKUP_INCREMENTAL_HOURS", "48"))
 DAILY_KEEP = int(os.environ.get("SPENDY_BACKUP_DAILY_KEEP", "7"))
 WEEKLY_KEEP = int(os.environ.get("SPENDY_BACKUP_WEEKLY_KEEP", "4"))
 MONTHLY_KEEP = int(os.environ.get("SPENDY_BACKUP_MONTHLY_KEEP", "12"))
+MAX_EXTRA_PATHS = 10
 
 
 def log(message: str) -> None:
@@ -160,6 +161,44 @@ def app_version() -> str:
         return "unknown"
 
 
+def parse_extra_paths(value: str | None) -> list[Path]:
+    """Parse ``SPENDY_EXTRA_BACKUP_PATHS`` (virgole o righe)."""
+    paths: list[Path] = []
+    for item in (value or "").replace("\n", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        path = Path(item)
+        if not path.is_absolute():
+            raise RuntimeError(f"Percorso extra non assoluto: {item}")
+        if path == Path(path.anchor):
+            raise RuntimeError(f"Percorso extra troppo ampio: {item}")
+        if path not in paths:
+            paths.append(path)
+    if len(paths) > MAX_EXTRA_PATHS:
+        raise RuntimeError(
+            f"Troppi percorsi extra: massimo {MAX_EXTRA_PATHS}."
+        )
+    return paths
+
+
+def create_config_archive(
+    destination: Path, root: Path, extra_paths: list[Path] | None = None
+) -> None:
+    """Build config.tar.gz with .env/compose/VERSION and configured extras."""
+    extra_paths = extra_paths or []
+    with tarfile.open(destination, "w:gz") as archive:
+        for name in (".env", "compose.yaml", "VERSION"):
+            path = root / name
+            if not path.exists():
+                raise RuntimeError(f"File di configurazione mancante: {name}")
+            archive.add(path, arcname=name)
+        for index, path in enumerate(extra_paths, start=1):
+            if not path.exists():
+                raise RuntimeError(f"Percorso extra mancante: {path}")
+            archive.add(path, arcname=f"extra/{index:02d}-{path.name}")
+
+
 def create_bundle(tmp_dir: Path) -> Path:
     db_dump = tmp_dir / "db.dump"
     log("Dump PostgreSQL ...")
@@ -173,18 +212,17 @@ def create_bundle(tmp_dir: Path) -> Path:
     if db_dump.stat().st_size == 0:
         raise RuntimeError("Il dump del database è vuoto.")
 
+    extra_paths = parse_extra_paths(
+        os.environ.get("SPENDY_EXTRA_BACKUP_PATHS", "")
+    )
     config_tar = tmp_dir / "config.tar.gz"
-    with tarfile.open(config_tar, "w:gz") as archive:
-        for name in (".env", "compose.yaml", "VERSION"):
-            path = ROOT / name
-            if not path.exists():
-                raise RuntimeError(f"File di configurazione mancante: {name}")
-            archive.add(path, arcname=name)
+    create_config_archive(config_tar, ROOT, extra_paths)
 
     manifest = {
         "schema": 1,
         "created_at": iso(),
         "app_version": app_version(),
+        "extra_paths": [str(path) for path in extra_paths],
         "files": {
             "db.dump": sha256(db_dump),
             "config.tar.gz": sha256(config_tar),

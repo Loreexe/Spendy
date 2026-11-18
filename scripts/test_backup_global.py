@@ -99,5 +99,56 @@ class StatusTests(unittest.TestCase):
                 backup_global.STATUS_FILE = original
 
 
+class ExtraPathsTests(unittest.TestCase):
+    def test_parse_extra_paths_normalizes_and_deduplicates(self):
+        paths = backup_global.parse_extra_paths(
+            "/var/lib/npm-data,\n /etc/spendy-backup ,/var/lib/npm-data"
+        )
+        self.assertEqual(
+            [str(path) for path in paths],
+            ["/var/lib/npm-data", "/etc/spendy-backup"],
+        )
+
+    def test_parse_extra_paths_rejects_relative_and_root(self):
+        with self.assertRaises(RuntimeError):
+            backup_global.parse_extra_paths("data/npm")
+        with self.assertRaises(RuntimeError):
+            backup_global.parse_extra_paths("/")
+
+    def test_config_archive_includes_extras(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "root"
+            extra = Path(directory) / "npm-data"
+            root.mkdir()
+            extra.mkdir()
+            (extra / "database.sqlite").write_text("dati")
+            for name in (".env", "compose.yaml", "VERSION"):
+                (root / name).write_text(name)
+            archive_path = Path(directory) / "config.tar.gz"
+            backup_global.create_config_archive(
+                archive_path, root, [extra]
+            )
+            import tarfile
+
+            with tarfile.open(archive_path, "r:gz") as archive:
+                names = archive.getnames()
+            self.assertIn(".env", names)
+            self.assertIn("compose.yaml", names)
+            self.assertIn("extra/01-npm-data/database.sqlite", names)
+
+    def test_config_archive_rejects_missing_extra(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "root"
+            root.mkdir()
+            for name in (".env", "compose.yaml", "VERSION"):
+                (root / name).write_text(name)
+            with self.assertRaises(RuntimeError):
+                backup_global.create_config_archive(
+                    Path(directory) / "config.tar.gz",
+                    root,
+                    [Path(directory) / "assente"],
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

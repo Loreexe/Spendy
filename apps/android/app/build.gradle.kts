@@ -15,8 +15,8 @@ android {
         applicationId = "com.loreexe.spendy"
         minSdk = 31
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.8.6"
+        versionCode = 8
+        versionName = "0.9.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

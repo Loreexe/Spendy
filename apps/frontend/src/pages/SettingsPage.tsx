@@ -6,6 +6,9 @@ import { useAuth } from "../auth";
 import { applyTheme, type Theme } from "../theme";
 import { DevicesSection } from "../components/DevicesSection";
 import { ImportExportSection } from "../components/ImportExportSection";
+import { McpSection } from "../components/McpSection";
+import { SessionsSection } from "../components/SessionsSection";
+import { TwoFactorSection } from "../components/TwoFactorSection";
 
 function matches(query: string, keywords: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -118,7 +121,24 @@ export function SettingsPage() {
     query,
     "dispositivi device qr pairing token revoca accesso telefono",
   );
-  const nothing = !appearance && !data && !devices;
+  const sessions = matches(
+    query,
+    "sessioni sessione sicurezza accesso dispositivi inattività",
+  );
+  const mcp =
+    !user.is_global_admin &&
+    matches(
+      query,
+      "mcp token client claude hermes permessi operazioni lettura scrittura",
+    );
+  const security =
+    user.is_global_admin &&
+    matches(
+      query,
+      "sicurezza 2fa due fattori autenticazione codice recupero",
+    );
+  const nothing =
+    !appearance && !data && !devices && !sessions && !security && !mcp;
 
   return (
     <div className="stack-page profile-page">
@@ -148,6 +168,12 @@ export function SettingsPage() {
           )}
         </div>
       </section>
+
+      <SessionsSection query={query} />
+
+      {security && <TwoFactorSection query={query} />}
+
+      {mcp && <McpSection query={query} />}
 
       {!user.is_global_admin && <AppearanceSection query={query} />}
 

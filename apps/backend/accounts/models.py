@@ -56,6 +56,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
+    # 2FA TOTP (DC-121): il segreto è restituito solo durante il setup.
+    totp_secret = models.CharField(max_length=64, blank=True, default="")
+    totp_enabled = models.BooleanField(default=False)
+    totp_confirmed_at = models.DateTimeField(null=True, blank=True)
+    totp_last_counter = models.BigIntegerField(null=True, blank=True)
     date_joined = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -104,6 +109,144 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self) -> str:
         return self.first_name or self.get_full_name()
+
+    @property
+    def has_2fa(self) -> bool:
+        return bool(self.totp_enabled and self.totp_secret)
+
+
+class RecoveryCode(models.Model):
+    """Codice di recupero monouso per la 2FA (DC-121)."""
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="recovery_codes"
+    )
+    code_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "code_hash"],
+                name="accounts_recovery_code_unique",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"codice di recupero {self.pk} ({'usato' if self.used_at else 'attivo'})"
+
+
+class AuditEvent(models.Model):
+    """Registro append-only delle azioni sensibili (V05, Fase S).
+
+    Non contiene password, token o dati finanziari: solo attore, azione,
+    indirizzo IP, user agent e pochi metadati espliciti.
+    """
+
+    class Action(models.TextChoices):
+        SETUP_COMPLETED = "setup_completed", "Setup amministratore completato"
+        LOGIN_SUCCESS = "login_success", "Accesso riuscito"
+        LOGIN_FAILED = "login_failed", "Accesso fallito"
+        TOKEN_LOGIN = "token_login", "Accesso da dispositivo"
+        TWO_FACTOR_VERIFIED = "2fa_verified", "Secondo fattore verificato"
+        TWO_FACTOR_FAILED = "2fa_failed", "Secondo fattore fallito"
+        TWO_FACTOR_SETUP = "2fa_setup", "Configurazione 2FA avviata"
+        TWO_FACTOR_ENABLED = "2fa_enabled", "2FA attivata"
+        TWO_FACTOR_DISABLED = "2fa_disabled", "2FA disattivata"
+        RECOVERY_CODES = "2fa_recovery_codes", "Codici di recupero rigenerati"
+        PASSWORD_CHANGED = "password_changed", "Password cambiata"
+        ADMIN_APPROVE = "admin_approve", "Account approvato"
+        ADMIN_REJECT = "admin_reject", "Account rifiutato"
+        ADMIN_SETTINGS = "admin_settings", "Impostazioni globali modificate"
+        DEVICE_REVOKED = "device_revoked", "Dispositivo revocato"
+        PAIRING_APPROVED = "pairing_approved", "Pairing approvato"
+        PAIRING_REJECTED = "pairing_rejected", "Pairing rifiutato"
+        SESSIONS_REVOKED = "sessions_revoked", "Sessioni revocate"
+        SESSION_EXPIRED = "session_expired", "Sessione scaduta"
+        MCP_CALL = "mcp_call", "Chiamata MCP"
+        MCP_TOKEN_CREATED = "mcp_token_created", "Token MCP creato"
+        MCP_TOKEN_REVOKED = "mcp_token_revoked", "Token MCP revocato"
+        MCP_PERMISSIONS_CHANGED = "mcp_permissions_changed", "Permessi MCP modificati"
+        MCP_SERVICE_TOGGLE = "mcp_service_toggle", "Servizio MCP acceso/spento"
+
+    actor = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="audit_events",
+    )
+    action = models.CharField(
+        max_length=40, choices=Action.choices, db_index=True
+    )
+    target = models.CharField(max_length=200, blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.action}"
+
+
+class McpToken(models.Model):
+    """Token di un client MCP, con permessi per singola operazione (DC-123).
+
+    Il valore in chiaro esiste solo nella risposta di creazione; il database
+    conserva l'hash SHA-256 e i permessi espliciti (default deny).
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="mcp_tokens"
+    )
+    name = models.CharField(max_length=100)
+    prefix = models.CharField(max_length=12, db_index=True)
+    key_hash = models.CharField(max_length=64, unique=True)
+    permissions = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.prefix}…)"
+
+    @staticmethod
+    def hash_key(raw_key: str) -> str:
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def issue(cls, user: User, name: str):
+        raw_key = "mcp_" + secrets.token_urlsafe(32)
+        token = cls.objects.create(
+            user=user,
+            name=(name or "Client MCP").strip()[:100],
+            prefix=raw_key[:12],
+            key_hash=cls.hash_key(raw_key),
+            permissions={},
+        )
+        return token, raw_key
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None
+
+    def revoke(self) -> None:
+        if self.revoked_at is None:
+            self.revoked_at = timezone.now()
+            self.save(update_fields=["revoked_at"])
+
+    def permission_for(self, operation) -> str | None:
+        level = (self.permissions or {}).get(operation.id)
+        if operation.kind == "read":
+            return level if level in {"read", "write"} else None
+        return level if level == "write" else None
 
 
 class ExternalIdentity(models.Model):

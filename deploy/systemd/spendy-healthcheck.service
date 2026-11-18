@@ -1,0 +1,18 @@
+[Unit]
+Description=Spendy - controllo backup, disco e certificato TLS
+Documentation=file:///opt/spendy/deploy/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/spendy-backup.env
+EnvironmentFile=-/etc/spendy-alert.env
+ExecStart=/usr/bin/python3 /opt/spendy/scripts/healthcheck.py
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+TimeoutStartSec=5min

@@ -1,0 +1,11 @@
+[Unit]
+Description=Spendy - controllo operativo ogni 10 minuti
+
+[Timer]
+OnCalendar=*:0/10
+Persistent=true
+RandomizedDelaySec=30
+Unit=spendy-healthcheck.service
+
+[Install]
+WantedBy=timers.target

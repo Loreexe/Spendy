@@ -1,5 +1,8 @@
 # Esposizione pubblica con Nginx Proxy Manager
 
+Per il percorso completo — DNS, firewall, staging, ordine del go-live, verifiche
+di accettazione e rollback — vedi [deploy/GO-LIVE.md](../GO-LIVE.md).
+
 Questa procedura riguarda solo NPM. L'LXC deve essere raggiungibile sulla LAN e
 il frontend deve rispondere sulla porta `8080`.
 
@@ -13,6 +16,14 @@ In NPM crea un **Proxy Host**:
 - Forward Port: `8080`;
 - Block Common Exploits: attivo;
 - Websockets Support: non necessario.
+
+Nel `.env` dell'LXC imposta `SPENDY_FRONTEND_BIND` con l'IP LAN dell'LXC (es.
+`192.168.1.50`): il frontend non deve essere raggiungibile direttamente da
+Internet e l'inoltro di NPM deve passare da lì.
+
+NPM non richiede un Proxy Host separato per MCP: il frontend inoltra `/mcp`
+al servizio MCP interno. L'endpoint segue la stessa raggiungibilità dell'app
+(LAN/Tailscale adesso, pubblico quando lo sarà l'app).
 
 In **Advanced** incolla il contenuto di
 [`spendy-advanced.conf`](./spendy-advanced.conf).
@@ -34,12 +45,22 @@ DJANGO_ALLOWED_HOSTS=spendy.example.com
 CSRF_TRUSTED_ORIGINS=https://spendy.example.com
 SECURE_COOKIES=1
 SECURE_SSL_REDIRECT=1
+SPENDY_FRONTEND_BIND=192.168.1.50
+TRUSTED_PROXY_CIDRS=127.0.0.0/8,172.16.0.0/12,192.168.1.10
 ```
+
+`TRUSTED_PROXY_CIDRS` deve contenere la rete Docker e l'IP esatto di NPM: il
+rate limiting usa l'IP reale del client solo se il proxy è fidato.
 
 Se NPM forza già HTTPS, `SECURE_SSL_REDIRECT` può restare `0`; con NPM che
 inoltra `X-Forwarded-Proto: https` il valore `1` è comunque sicuro.
 
 Riavvia il backend e il frontend dopo la modifica.
+
+Prima di esporre il servizio, accedi come admin, apri **Impostazioni → Sicurezza**
+e attiva la **verifica a due fattori (TOTP)** con un'app di autenticazione:
+conserva i codici di recupero fuori dal server. Il login web dell'admin richiederà
+il codice a 6 cifre; il login a token Android per l'admin resta escluso.
 
 ## 4. Verifica
 

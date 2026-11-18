@@ -1,11 +1,20 @@
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from accounts.permissions import IsGlobalAdmin
+from accounts.views import McpContextView, McpPublicCatalogView
+
 urlpatterns = [
-    path("api/v1/schema/", SpectacularAPIView.as_view(), name="v1-schema"),
+    path(
+        "api/v1/schema/",
+        SpectacularAPIView.as_view(permission_classes=[IsGlobalAdmin]),
+        name="v1-schema",
+    ),
     path(
         "api/v1/docs/",
-        SpectacularSwaggerView.as_view(url_name="v1-schema"),
+        SpectacularSwaggerView.as_view(
+            url_name="v1-schema", permission_classes=[IsGlobalAdmin]
+        ),
         name="v1-docs",
     ),
     # Legacy web API (kept for the existing frontend).
@@ -27,4 +36,6 @@ urlpatterns = [
         "api/v1/finance/",
         include(("finance.urls", "finance"), namespace="v1-finance"),
     ),
+    path("api/v1/mcp/catalog/", McpPublicCatalogView.as_view(), name="mcp-public-catalog"),
+    path("api/v1/mcp/context/", McpContextView.as_view(), name="mcp-context"),
 ]

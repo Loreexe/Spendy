@@ -14,10 +14,18 @@ from .views import (
     PairingStatusView,
     PasswordChangeView,
     RegisterView,
+    SessionInfoView,
+    SessionRevokeOthersView,
     SetupStatusView,
     SetupView,
     TokenLoginView,
     TokenLogoutView,
+    TwoFactorConfirmView,
+    TwoFactorDisableView,
+    TwoFactorRecoveryCodesView,
+    TwoFactorSetupView,
+    TwoFactorStatusView,
+    TwoFactorVerifyView,
 )
 
 urlpatterns = [
@@ -30,6 +38,22 @@ urlpatterns = [
     path("me/", MeView.as_view(), name="me"),
     path("avatar/", AvatarView.as_view(), name="avatar"),
     path("password/", PasswordChangeView.as_view(), name="password"),
+    path("sessions/", SessionInfoView.as_view(), name="sessions"),
+    path(
+        "sessions/revoke-others/",
+        SessionRevokeOthersView.as_view(),
+        name="sessions-revoke-others",
+    ),
+    path("2fa/status/", TwoFactorStatusView.as_view(), name="two-factor-status"),
+    path("2fa/setup/", TwoFactorSetupView.as_view(), name="two-factor-setup"),
+    path("2fa/confirm/", TwoFactorConfirmView.as_view(), name="two-factor-confirm"),
+    path("2fa/disable/", TwoFactorDisableView.as_view(), name="two-factor-disable"),
+    path(
+        "2fa/recovery-codes/",
+        TwoFactorRecoveryCodesView.as_view(),
+        name="two-factor-recovery-codes",
+    ),
+    path("2fa/verify/", TwoFactorVerifyView.as_view(), name="two-factor-verify"),
     path("devices/", DeviceListView.as_view(), name="devices"),
     path(
         "devices/<int:device_id>/",

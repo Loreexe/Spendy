@@ -1,7 +1,7 @@
 x-backend-environment: &backend-environment
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
   DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
-  SPENDY_VERSION: ${SPENDY_VERSION:-0.8.6}
+  SPENDY_VERSION: ${SPENDY_VERSION:-0.9.0}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:5173,http://localhost:8080}
   POSTGRES_DB: ${POSTGRES_DB:-spendy}
@@ -21,6 +21,20 @@ x-backend-environment: &backend-environment
   SPENDY_AUTOMATION_MAX_ATTEMPTS: ${SPENDY_AUTOMATION_MAX_ATTEMPTS:-3}
   SPENDY_AUTOMATION_RETRY_DELAYS: ${SPENDY_AUTOMATION_RETRY_DELAYS:-60,300,900}
   SPENDY_DEVICE_PAIRING_TTL_SECONDS: ${SPENDY_DEVICE_PAIRING_TTL_SECONDS:-300}
+  SESSION_COOKIE_AGE: ${SESSION_COOKIE_AGE:-43200}
+  SPENDY_SESSION_IDLE_TIMEOUT_SECONDS: ${SPENDY_SESSION_IDLE_TIMEOUT_SECONDS:-7200}
+  SPENDY_AUDIT_RETENTION_DAYS: ${SPENDY_AUDIT_RETENTION_DAYS:-180}
+  SPENDY_MCP_AUDIT_RETENTION_DAYS: ${SPENDY_MCP_AUDIT_RETENTION_DAYS:-30}
+  SPENDY_MCP_RATE_LIMIT_PER_MINUTE: ${SPENDY_MCP_RATE_LIMIT_PER_MINUTE:-60}
+  SPENDY_MCP_WRITE_RATE_LIMIT_PER_MINUTE: ${SPENDY_MCP_WRITE_RATE_LIMIT_PER_MINUTE:-20}
+  SPENDY_MCP_CONTROL_FILE: /app/mcp-control/state.json
+
+# Rotazione dei log Docker: evita che i log riempiano il disco dell'LXC.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   db:
@@ -37,6 +51,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    logging: *default-logging
 
   backend:
     build:
@@ -45,6 +60,7 @@ services:
       <<: *backend-environment
     volumes:
       - ./backup-status:/app/backup-status:ro
+      - ./mcp-control:/app/mcp-control
     depends_on:
       db:
         condition: service_healthy
@@ -61,6 +77,7 @@ services:
       retries: 10
       start_period: 30s
     restart: unless-stopped
+    logging: *default-logging
 
   automation-worker:
     build:
@@ -70,13 +87,43 @@ services:
     command:
       - "sh"
       - "-c"
-      - "while :; do python manage.py run_automations; sleep 60; done"
+      - "while :; do python manage.py run_automations; python manage.py purge_audit_events; sleep 60; done"
     depends_on:
       db:
         condition: service_healthy
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
+
+  mcp:
+    profiles: ["mcp"]
+    build:
+      context: ./apps/mcp
+    environment:
+      SPENDY_BACKEND_URL: http://backend:8000
+      SPENDY_BACKEND_HOST_HEADER: localhost
+      SPENDY_VERSION: ${SPENDY_VERSION:-0.9.0}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8001"
+      SPENDY_MCP_BACKEND_TIMEOUT: "20"
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "8001"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    logging: *default-logging
 
   frontend:
     build:
@@ -85,10 +132,11 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${SPENDY_FRONTEND_BIND:-127.0.0.1}:8080:80"
     volumes:
       - ./maintenance:/etc/nginx/maintenance:ro
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   pgdata:

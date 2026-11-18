@@ -34,6 +34,7 @@ cd "$ROOT_DIR"
 HEALTH_ATTEMPTS=60
 HEALTH_INTERVAL=2
 COMPOSE=(docker compose)
+MCP_CONTROL_FILE="${SPENDY_MCP_CONTROL_FILE:-$ROOT_DIR/mcp-control/state.json}"
 TAG=""
 USE_LATEST=0
 DRY_RUN=0
@@ -85,6 +86,7 @@ fi
 command -v git >/dev/null || die "git non trovato"
 command -v docker >/dev/null || die "docker non trovato"
 command -v curl >/dev/null || die "curl non trovato"
+command -v python3 >/dev/null || die "python3 non trovato"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
     die "eseguire lo script dalla root del repository Spendy"
 [ -f .env ] || die "file .env mancante: create la configurazione prima di aggiornare"
@@ -208,9 +210,10 @@ rollback() {
     if ! set_env_version "$PREVIOUS_VERSION"; then
         echo "Avviso: impossibile ripristinare SPENDY_VERSION nel .env; il container usa la variabile esportata." >&2
     fi
-    if "${COMPOSE[@]}" build < /dev/null &&
-        "${COMPOSE[@]}" up -d --remove-orphans < /dev/null; then
-        if wait_for_backend && wait_for_version "$PREVIOUS_VERSION"; then
+    if "${COMPOSE[@]}" --profile mcp build < /dev/null &&
+        start_stack; then
+        if wait_for_backend && wait_for_version "$PREVIOUS_VERSION" &&
+            wait_for_mcp; then
             rm -f "$MAINTENANCE_FILE"
             echo "Rollback completato: Spendy è di nuovo attivo con la versione precedente." >&2
             echo "Il database potrebbe aver ricevuto migrazioni della versione nuova: verifica prima di riprovare." >&2
@@ -259,6 +262,47 @@ wait_for_version() {
     [ "$running" = "$expected" ]
 }
 
+mcp_enabled() {
+    python3 - "$MCP_CONTROL_FILE" <<'PY' 2>/dev/null
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    print("0")
+else:
+    print("1" if data.get("enabled") else "0")
+PY
+}
+
+start_stack() {
+    if [ "$(mcp_enabled)" = "1" ]; then
+        "${COMPOSE[@]}" --profile mcp up -d --remove-orphans < /dev/null
+    else
+        "${COMPOSE[@]}" up -d --remove-orphans < /dev/null || return 1
+        "${COMPOSE[@]}" stop mcp < /dev/null 2>/dev/null || true
+    fi
+}
+
+wait_for_mcp() {
+    local attempt
+    if ! "${COMPOSE[@]}" config --services 2>/dev/null | grep -qx "mcp"; then
+        return 0
+    fi
+    if [ "$(mcp_enabled)" != "1" ]; then
+        "${COMPOSE[@]}" stop mcp < /dev/null 2>/dev/null || true
+        return 0
+    fi
+    for ((attempt = 1; attempt <= HEALTH_ATTEMPTS; attempt++)); do
+        if "${COMPOSE[@]}" --profile mcp exec -T mcp python -c \
+            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()" \
+            >/dev/null 2>&1 < /dev/null; then
+            return 0
+        fi
+        sleep "$HEALTH_INTERVAL"
+    done
+    return 1
+}
+
 frontend_status() {
     local status
     status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/ 2>/dev/null || true)"
@@ -291,14 +335,15 @@ set_env_version "$VERSION" || rollback "scrittura di SPENDY_VERSION nel .env fal
 export SPENDY_VERSION="$VERSION"
 
 echo "Ricostruzione delle immagini ..."
-"${COMPOSE[@]}" build < /dev/null || rollback "build delle immagini fallita"
+"${COMPOSE[@]}" --profile mcp build < /dev/null || rollback "build delle immagini fallita"
 
 echo "Avvio dello stack ..."
-"${COMPOSE[@]}" up -d --remove-orphans < /dev/null || rollback "avvio dello stack fallito"
+start_stack || rollback "avvio dello stack fallito"
 
 echo "Attendo l'health check del backend ..."
 wait_for_backend || rollback "il backend non risponde all'health check"
 wait_for_version "$VERSION" || rollback "la versione attiva non è $VERSION"
+wait_for_mcp || rollback "il servizio MCP non risponde all'health check"
 
 echo "Verifico il frontend ..."
 wait_for_frontend_up || rollback "il frontend non risponde dopo l'aggiornamento"

@@ -130,6 +130,14 @@ class ApiV1Tests(APITestCase):
         self.assertEqual(invalid.data["code"], "validation_error")
 
     def test_openapi_schema_is_available(self):
+        self.client.force_authenticate(user=None)
+        anonymous = self.client.get(reverse("v1-schema"))
+        self.assertIn(anonymous.status_code, (401, 403))
+
+        admin = User.objects.get(is_global_admin=True)
+        admin.status = User.Status.ACTIVE
+        admin.save(update_fields=["status"])
+        self.client.force_authenticate(user=admin)
         response = self.client.get(reverse("v1-schema"))
         self.assertEqual(response.status_code, 200)
         body = response.content.decode()

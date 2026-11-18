@@ -7,14 +7,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, type User } from "./api";
+import { api, type LoginResult, type User } from "./api";
 import { syncThemeFromProfile } from "./theme";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   refresh: () => Promise<void>;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<LoginResult>;
+  completeTwoFactor: (challenge: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
 }
@@ -43,11 +44,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (identifier: string, password: string) => {
     const data = await api.login(identifier, password);
+    if ("two_factor_required" in data && data.two_factor_required) {
+      return data;
+    }
     setUser(data.user);
     if (!data.user.is_global_admin) {
       await syncThemeFromProfile();
     }
+    return data;
   }, []);
+
+  const completeTwoFactor = useCallback(
+    async (challenge: string, code: string) => {
+      const data = await api.verifyTwoFactor(challenge, code);
+      setUser(data.user);
+      if (!data.user.is_global_admin) {
+        await syncThemeFromProfile();
+      }
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -58,8 +74,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, refresh, login, logout, setUser }),
-    [user, loading, refresh, login, logout],
+    () => ({
+      user,
+      loading,
+      refresh,
+      login,
+      completeTwoFactor,
+      logout,
+      setUser,
+    }),
+    [user, loading, refresh, login, completeTwoFactor, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

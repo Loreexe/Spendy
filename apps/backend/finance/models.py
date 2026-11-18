@@ -591,6 +591,15 @@ class Transaction(SoftDeleteModel):
             ),
         ]
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Durante una richiesta MCP ogni movimento creato/modificato/ripristinato
+        # riceve il tag AI; le esecuzioni automatiche future non hanno contesto
+        # MCP e non vengono taggate.
+        from .mcp_tags import apply_ai_tag_if_mcp
+
+        apply_ai_tag_if_mcp(self)
+
     def __str__(self) -> str:
         return f"{self.get_kind_display()} {self.amount}"
 

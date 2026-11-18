@@ -11,6 +11,7 @@ export interface User {
   avatar_updated_at: string | null;
   status: UserStatus;
   is_global_admin: boolean;
+  totp_enabled: boolean;
   date_joined: string;
 }
 
@@ -52,6 +53,77 @@ export interface PairingCreated {
   server_url: string;
   qr_payload: string;
 }
+
+export interface McpOperation {
+  id: string;
+  label: string;
+  kind: "read" | "write";
+}
+
+export interface McpArea {
+  area: string;
+  operations: McpOperation[];
+}
+
+export interface McpToken {
+  id: number;
+  name: string;
+  prefix: string;
+  permissions: Record<string, "read" | "write">;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface McpCreatedToken {
+  token: string;
+  token_data: McpToken;
+}
+
+export interface McpServiceStatus {
+  enabled: boolean;
+  active_tokens: number;
+  control_file?: string;
+}
+
+export interface SessionInfo {
+  session_cookie_age: number;
+  idle_timeout: number;
+  other_sessions: number;
+}
+
+export interface AuditEvent {
+  id: number;
+  action: string;
+  actor: number | null;
+  actor_label: string;
+  target: string;
+  ip: string | null;
+  user_agent: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  confirmed_at: string | null;
+  recovery_codes_remaining: number;
+  issuer: string;
+  digits: number;
+  period: number;
+}
+
+export interface TwoFactorSetup {
+  secret: string;
+  otpauth_uri: string;
+  issuer: string;
+  digits: number;
+  period: number;
+}
+
+export type LoginResult =
+  | { two_factor_required: true; challenge: string; detail?: string }
+  | { user: User; two_factor_required?: false };
 
 export interface SetupStatus {
   setup_required: boolean;
@@ -713,6 +785,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const record = (data ?? {}) as Record<string, unknown>;
+    if (
+      response.status === 401 &&
+      record.code === "session_expired" &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/login"
+    ) {
+      window.location.assign("/login");
+    }
     throw new ApiError(
       response.status,
       firstError(data) ?? "Operazione non riuscita.",
@@ -752,10 +832,86 @@ export const api = {
     }),
 
   login: (identifier: string, password: string) =>
-    request<{ user: User }>("/api/auth/login/", {
+    request<LoginResult>("/api/auth/login/", {
       method: "POST",
       body: JSON.stringify({ identifier, password }),
     }),
+
+  mcpCatalog: () => request<{ areas: McpArea[] }>("/api/auth/mcp/catalog/"),
+
+  mcpTokens: () =>
+    request<{ tokens: McpToken[] }>("/api/auth/mcp/tokens/"),
+
+  createMcpToken: (name: string, password: string) =>
+    request<McpCreatedToken>("/api/auth/mcp/tokens/", {
+      method: "POST",
+      body: JSON.stringify({ name, password }),
+    }),
+
+  updateMcpPermissions: (
+    id: number,
+    password: string,
+    permissions: Record<string, "read" | "write">,
+  ) =>
+    request<McpToken>(`/api/auth/mcp/tokens/${id}/`, {
+      method: "PATCH",
+      body: JSON.stringify({ password, permissions }),
+    }),
+
+  revokeMcpToken: (id: number, password: string) =>
+    request<McpToken>(`/api/auth/mcp/tokens/${id}/revoke/`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  adminMcpStatus: () => request<McpServiceStatus>("/api/admin/mcp/"),
+
+  adminMcpToggle: (enabled: boolean) =>
+    request<McpServiceStatus>("/api/admin/mcp/toggle/", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
+
+  sessions: () => request<SessionInfo>("/api/auth/sessions/"),
+
+  revokeOtherSessions: () =>
+    request<{ revoked_sessions: number }>(
+      "/api/auth/sessions/revoke-others/",
+      { method: "POST" },
+    ),
+
+  adminAudit: (limit = 100) =>
+    request<{ events: AuditEvent[] }>(`/api/admin/audit/?limit=${limit}`),
+
+  verifyTwoFactor: (challenge: string, code: string) =>
+    request<{ user: User }>("/api/auth/2fa/verify/", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code }),
+    }),
+
+  twoFactorStatus: () =>
+    request<TwoFactorStatus>("/api/auth/2fa/status/"),
+
+  startTwoFactorSetup: () =>
+    request<TwoFactorSetup>("/api/auth/2fa/setup/", { method: "POST" }),
+
+  confirmTwoFactor: (code: string) =>
+    request<{ enabled: boolean; recovery_codes: string[] }>(
+      "/api/auth/2fa/confirm/",
+      { method: "POST", body: JSON.stringify({ code }) },
+    ),
+
+  disableTwoFactor: (password: string, code: string) =>
+    request<{ enabled: boolean; detail: string }>("/api/auth/2fa/disable/", {
+      method: "POST",
+      body: JSON.stringify({ password, code }),
+    }),
+
+  regenerateRecoveryCodes: (password: string, code: string) =>
+    request<{ recovery_codes: string[] }>(
+      "/api/auth/2fa/recovery-codes/",
+      { method: "POST", body: JSON.stringify({ password, code }) },
+    ),
 
   logout: () =>
     request<{ detail: string }>("/api/auth/logout/", { method: "POST" }),

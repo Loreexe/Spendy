@@ -1,10 +1,13 @@
 import secrets
+import time
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import login, logout, update_session_auth_hash
+from django.contrib.sessions.models import Session
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.password_validation import validate_password
+from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
@@ -16,14 +19,32 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from core.net import get_client_ip, is_setup_address_allowed
+from core.throttling import ClientIpScopedRateThrottle
 
-from .models import DevicePairing, DeviceToken, GlobalSettings, User
+from . import totp
+from .audit import record_audit
+from .mcp import catalog, operations_with_paths
+from .mcp_control import read_state, state_path, write_state
+from .models import (
+    AuditEvent,
+    DevicePairing,
+    DeviceToken,
+    GlobalSettings,
+    McpToken,
+    RecoveryCode,
+    User,
+)
 from .permissions import IsGlobalAdmin
 from .serializers import (
+    AuditEventSerializer,
+    McpPermissionsSerializer,
+    McpServiceToggleSerializer,
+    McpTokenCreateSerializer,
+    McpTokenRevokeSerializer,
+    McpTokenSerializer,
     DevicePairingSerializer,
     DeviceTokenRenameSerializer,
     DeviceTokenSerializer,
@@ -35,6 +56,10 @@ from .serializers import (
     ProfileUpdateSerializer,
     RegisterSerializer,
     SetupSerializer,
+    TwoFactorConfirmSerializer,
+    TwoFactorDisableSerializer,
+    TwoFactorRecoveryCodesSerializer,
+    TwoFactorVerifySerializer,
     UserSerializer,
 )
 
@@ -60,6 +85,134 @@ def _too_many_attempts_response() -> Response:
     )
     response["Retry-After"] = str(settings.LOGIN_LOCKOUT_SECONDS)
     return response
+
+
+# 2FA TOTP (DC-121): la sfida firmata vale 5 minuti e non crea la sessione
+# finché il secondo fattore non è verificato.
+TWO_FACTOR_CHALLENGE_SALT = "spendy-2fa-challenge"
+TWO_FACTOR_CHALLENGE_MAX_AGE = 300
+TWO_FACTOR_CODE_MIN_LENGTH = 6
+
+
+def _issue_2fa_challenge(
+    user: User,
+    mode: str,
+    identifier: str,
+    device_name: str = "",
+    platform: str = "android",
+) -> str:
+    return signing.dumps(
+        {
+            "uid": user.pk,
+            "mode": mode,
+            "identifier": identifier,
+            "dn": device_name[:100],
+            "pf": platform[:32],
+        },
+        salt=TWO_FACTOR_CHALLENGE_SALT,
+        compress=True,
+    )
+
+
+def _load_2fa_challenge(raw: str) -> dict | None:
+    try:
+        payload = signing.loads(
+            raw,
+            salt=TWO_FACTOR_CHALLENGE_SALT,
+            max_age=TWO_FACTOR_CHALLENGE_MAX_AGE,
+        )
+    except (signing.BadSignature, signing.SignatureExpired):
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("uid"), int):
+        return None
+    if payload.get("mode") not in {"session", "token"}:
+        return None
+    return payload
+
+
+def _consume_second_factor(user: User, code: str) -> str | None:
+    """Consume a TOTP code (with anti-replay) or a one-time recovery code."""
+    candidate = (code or "").strip()
+    if user.totp_secret:
+        counter = totp.verify_code(user.totp_secret, candidate)
+        if counter is not None:
+            if (
+                user.totp_last_counter is not None
+                and counter <= user.totp_last_counter
+            ):
+                return None
+            user.totp_last_counter = counter
+            user.save(update_fields=["totp_last_counter"])
+            return "totp"
+
+    with transaction.atomic():
+        recovery = (
+            RecoveryCode.objects.select_for_update()
+            .filter(
+                user=user,
+                code_hash=totp.hash_recovery_code(candidate),
+                used_at__isnull=True,
+            )
+            .first()
+        )
+        if recovery is None:
+            return None
+        recovery.used_at = timezone.now()
+        recovery.save(update_fields=["used_at"])
+    return "recovery"
+
+
+def _invalidate_other_sessions(user: User, current_session_key: str | None) -> int:
+    """Elimina subito le altre sessioni web dell'utente.
+
+    Django invalida già le sessioni al cambio password tramite l'hash di
+    sessione; questa pulizia rende immediata la revoca e libera le righe.
+    """
+    deleted = 0
+    for session in Session.objects.filter(
+        expire_date__gte=timezone.now()
+    ).iterator():
+        data = session.get_decoded()
+        if data.get("_auth_user_id") != str(user.pk):
+            continue
+        if current_session_key and session.session_key == current_session_key:
+            continue
+        session.delete()
+        deleted += 1
+    return deleted
+
+
+def _mark_session_activity(request) -> None:
+    request.session["last_activity"] = time.time()
+
+
+def _other_session_count(user: User, current_session_key: str | None) -> int:
+    count = 0
+    for session in Session.objects.filter(
+        expire_date__gte=timezone.now()
+    ).iterator():
+        data = session.get_decoded()
+        if data.get("_auth_user_id") != str(user.pk):
+            continue
+        if current_session_key and session.session_key == current_session_key:
+            continue
+        count += 1
+    return count
+
+
+def _replace_recovery_codes(user: User) -> list[str]:
+    plain_codes = totp.generate_recovery_codes()
+    with transaction.atomic():
+        RecoveryCode.objects.filter(user=user).delete()
+        RecoveryCode.objects.bulk_create(
+            [
+                RecoveryCode(
+                    user=user, code_hash=totp.hash_recovery_code(code)
+                )
+                for code in plain_codes
+            ]
+        )
+    return plain_codes
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -140,13 +293,17 @@ class SetupView(APIView):
             settings.save(update_fields=["setup_completed", "updated_at"])
 
         login(request, admin, backend="accounts.backends.EmailOrUsernameBackend")
+        _mark_session_activity(request)
+        record_audit(
+            request, AuditEvent.Action.SETUP_COMPLETED, actor=admin
+        )
         return Response({"user": UserSerializer(admin).data, "setup_completed": True})
 
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ClientIpScopedRateThrottle]
     throttle_scope = "login"
     create_session = True
     issue_token = False
@@ -169,12 +326,20 @@ class LoginView(APIView):
         if user is None:
             User().set_password(password)  # mitigate timing attacks
             _record_login_failure(lockout_key, attempts)
+            # Non registrare identificativi inesistenti: evita di riempire
+            # l'audit con email casuali da tentativi automatizzati.
             return Response(
                 {"detail": "Credenziali non valide.", "code": "invalid_credentials"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not user.check_password(password):
             _record_login_failure(lockout_key, attempts)
+            record_audit(
+                request,
+                AuditEvent.Action.LOGIN_FAILED,
+                actor=user,
+                metadata={"reason": "invalid_password"},
+            )
             return Response(
                 {"detail": "Credenziali non valide.", "code": "invalid_credentials"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -192,6 +357,12 @@ class LoginView(APIView):
             detail, code = messages.get(
                 user.status, ("Account non attivo.", "inactive")
             )
+            record_audit(
+                request,
+                AuditEvent.Action.LOGIN_FAILED,
+                actor=user,
+                metadata={"reason": code},
+            )
             return Response({"detail": detail, "code": code}, status=status.HTTP_403_FORBIDDEN)
 
         if self.issue_token and user.is_global_admin:
@@ -203,9 +374,28 @@ class LoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        if user.has_2fa:
+            return Response(
+                {
+                    "two_factor_required": True,
+                    "challenge": _issue_2fa_challenge(
+                        user,
+                        "session" if self.create_session else "token",
+                        identifier,
+                        serializer.validated_data.get("device_name", ""),
+                        serializer.validated_data.get("platform") or "android",
+                    ),
+                    "detail": "Inserisci il codice di verifica a due fattori.",
+                }
+            )
+
         cache.delete(lockout_key)
         if self.create_session:
             login(request, user, backend="accounts.backends.EmailOrUsernameBackend")
+            _mark_session_activity(request)
+            record_audit(
+                request, AuditEvent.Action.LOGIN_SUCCESS, actor=user
+            )
 
         payload = {"user": UserSerializer(user).data}
         if self.issue_token:
@@ -213,6 +403,13 @@ class LoginView(APIView):
                 user,
                 name=serializer.validated_data.get("device_name", ""),
                 platform=serializer.validated_data.get("platform", "android"),
+            )
+            record_audit(
+                request,
+                AuditEvent.Action.TOKEN_LOGIN,
+                actor=user,
+                target=token.name,
+                metadata={"platform": token.platform},
             )
             payload.update(
                 {
@@ -243,12 +440,535 @@ class TokenLogoutView(APIView):
         return Response({"detail": "Dispositivo disconnesso."})
 
 
+class TwoFactorVerifyView(APIView):
+    """Secondo fattore dopo la password: apre la sessione o emette il token."""
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    throttle_classes = [ClientIpScopedRateThrottle]
+    throttle_scope = "two_factor"
+
+    def post(self, request):
+        serializer = TwoFactorVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = _load_2fa_challenge(serializer.validated_data["challenge"])
+        if payload is None:
+            record_audit(
+                request,
+                AuditEvent.Action.TWO_FACTOR_FAILED,
+                metadata={"reason": "invalid_challenge"},
+            )
+            return Response(
+                {
+                    "detail": "Sfida scaduta o non valida. Accedi di nuovo.",
+                    "code": "invalid_challenge",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = User.objects.filter(pk=payload["uid"]).first()
+        if user is None or not user.is_active or not user.has_2fa:
+            return Response(
+                {
+                    "detail": "Verifica a due fattori non disponibile.",
+                    "code": "two_factor_unavailable",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if _consume_second_factor(user, serializer.validated_data["code"]) is None:
+            record_audit(
+                request,
+                AuditEvent.Action.TWO_FACTOR_FAILED,
+                actor=user,
+                metadata={"reason": "invalid_code", "mode": payload["mode"]},
+            )
+            return Response(
+                {"detail": "Codice non valido.", "code": "invalid_code"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        record_audit(
+            request,
+            AuditEvent.Action.TWO_FACTOR_VERIFIED,
+            actor=user,
+            metadata={"mode": payload["mode"]},
+        )
+        cache.delete(
+            _login_lockout_key(request, payload.get("identifier", ""))
+        )
+        if payload["mode"] == "session":
+            login(request, user, backend="accounts.backends.EmailOrUsernameBackend")
+            _mark_session_activity(request)
+            record_audit(
+                request,
+                AuditEvent.Action.LOGIN_SUCCESS,
+                actor=user,
+                metadata={"two_factor": True},
+            )
+            return Response({"user": UserSerializer(user).data})
+
+        token, raw_key = DeviceToken.issue(
+            user,
+            name=payload.get("dn", ""),
+            platform=payload.get("pf") or "android",
+        )
+        record_audit(
+            request,
+            AuditEvent.Action.TOKEN_LOGIN,
+            actor=user,
+            target=token.name,
+            metadata={"platform": token.platform, "two_factor": True},
+        )
+        return Response(
+            {
+                "user": UserSerializer(user).data,
+                "token": raw_key,
+                "token_type": "Bearer",
+                "device": DeviceTokenSerializer(token).data,
+            }
+        )
+
+
+class TwoFactorStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response(
+            {
+                "enabled": user.has_2fa,
+                "confirmed_at": user.totp_confirmed_at,
+                "recovery_codes_remaining": user.recovery_codes.filter(
+                    used_at__isnull=True
+                ).count(),
+                "issuer": totp.ISSUER,
+                "digits": totp.DIGITS,
+                "period": totp.PERIOD_SECONDS,
+            }
+        )
+
+
+class TwoFactorSetupView(APIView):
+    """Genera un nuovo segreto TOTP; non attiva la 2FA prima della conferma."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if user.has_2fa:
+            return Response(
+                {
+                    "detail": "La verifica a due fattori è già attiva.",
+                    "code": "two_factor_already_enabled",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        secret = totp.generate_secret()
+        user.totp_secret = secret
+        user.totp_enabled = False
+        user.totp_confirmed_at = None
+        user.totp_last_counter = None
+        user.save(
+            update_fields=[
+                "totp_secret",
+                "totp_enabled",
+                "totp_confirmed_at",
+                "totp_last_counter",
+            ]
+        )
+        record_audit(
+            request, AuditEvent.Action.TWO_FACTOR_SETUP, actor=user
+        )
+        account_name = user.username or user.email or f"utente-{user.pk}"
+        return Response(
+            {
+                "secret": secret,
+                "otpauth_uri": totp.provisioning_uri(secret, account_name),
+                "issuer": totp.ISSUER,
+                "digits": totp.DIGITS,
+                "period": totp.PERIOD_SECONDS,
+            }
+        )
+
+
+class TwoFactorConfirmView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if user.has_2fa:
+            return Response(
+                {
+                    "detail": "La verifica a due fattori è già attiva.",
+                    "code": "two_factor_already_enabled",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not user.totp_secret:
+            return Response(
+                {
+                    "detail": "Avvia prima la configurazione.",
+                    "code": "two_factor_setup_required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = TwoFactorConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        counter = totp.verify_code(
+            user.totp_secret, serializer.validated_data["code"]
+        )
+        if counter is None:
+            record_audit(
+                request,
+                AuditEvent.Action.TWO_FACTOR_FAILED,
+                actor=user,
+                metadata={"reason": "confirm_invalid_code"},
+            )
+            return Response(
+                {"detail": "Codice non valido.", "code": "invalid_code"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.totp_enabled = True
+        user.totp_confirmed_at = timezone.now()
+        user.totp_last_counter = counter
+        user.save(
+            update_fields=[
+                "totp_enabled",
+                "totp_confirmed_at",
+                "totp_last_counter",
+            ]
+        )
+        plain_codes = _replace_recovery_codes(user)
+        record_audit(
+            request, AuditEvent.Action.TWO_FACTOR_ENABLED, actor=user
+        )
+        return Response({"enabled": True, "recovery_codes": plain_codes})
+
+
+class TwoFactorDisableView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if not user.has_2fa:
+            return Response(
+                {
+                    "detail": "La verifica a due fattori non è attiva.",
+                    "code": "two_factor_not_enabled",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = TwoFactorDisableSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not user.check_password(serializer.validated_data["password"]):
+            return Response(
+                {
+                    "detail": "La password attuale non è corretta.",
+                    "code": "invalid_password",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if _consume_second_factor(user, serializer.validated_data["code"]) is None:
+            return Response(
+                {"detail": "Codice non valido.", "code": "invalid_code"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.totp_secret = ""
+        user.totp_enabled = False
+        user.totp_confirmed_at = None
+        user.totp_last_counter = None
+        user.save(
+            update_fields=[
+                "totp_secret",
+                "totp_enabled",
+                "totp_confirmed_at",
+                "totp_last_counter",
+            ]
+        )
+        user.recovery_codes.all().delete()
+        record_audit(
+            request, AuditEvent.Action.TWO_FACTOR_DISABLED, actor=user
+        )
+        return Response({"enabled": False, "detail": "2FA disattivata."})
+
+
+class TwoFactorRecoveryCodesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if not user.has_2fa:
+            return Response(
+                {
+                    "detail": "La verifica a due fattori non è attiva.",
+                    "code": "two_factor_not_enabled",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = TwoFactorRecoveryCodesSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not user.check_password(serializer.validated_data["password"]):
+            return Response(
+                {
+                    "detail": "La password attuale non è corretta.",
+                    "code": "invalid_password",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if _consume_second_factor(user, serializer.validated_data["code"]) is None:
+            return Response(
+                {"detail": "Codice non valido.", "code": "invalid_code"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        plain_codes = _replace_recovery_codes(user)
+        record_audit(
+            request, AuditEvent.Action.RECOVERY_CODES, actor=user
+        )
+        return Response({"recovery_codes": plain_codes})
+
+
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         logout(request)
         return Response({"detail": "Sessione terminata."})
+
+
+class SessionInfoView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        current = (
+            request.session.session_key
+            if getattr(request, "session", None)
+            else None
+        )
+        return Response(
+            {
+                "session_cookie_age": settings.SESSION_COOKIE_AGE,
+                "idle_timeout": settings.SESSION_IDLE_TIMEOUT_SECONDS,
+                "other_sessions": _other_session_count(request.user, current),
+            }
+        )
+
+
+class SessionRevokeOthersView(APIView):
+    """Termina tutte le altre sessioni web dell'utente."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        current = (
+            request.session.session_key
+            if getattr(request, "session", None)
+            else None
+        )
+        revoked = _invalidate_other_sessions(request.user, current)
+        record_audit(
+            request,
+            AuditEvent.Action.SESSIONS_REVOKED,
+            actor=request.user,
+            metadata={"revoked": revoked},
+        )
+        return Response({"revoked_sessions": revoked})
+
+
+class McpPublicCatalogView(APIView):
+    """Catalogo con method/path per il servizio MCP (nessun dato utente)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+
+    def get(self, request):
+        client = get_client_ip(request)
+        if client is None or not (client.is_private or client.is_loopback):
+            return Response(
+                {"detail": "Catalogo MCP disponibile solo dalla rete interna."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return Response({"operations": operations_with_paths()})
+
+
+class McpContextView(APIView):
+    """Contesto del token MCP: permessi abilitati per filtrare tools/list."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        token = getattr(request.auth, "name", "")
+        permissions = getattr(request.auth, "permissions", {}) or {}
+        return Response(
+            {
+                "name": token,
+                "permissions": permissions,
+                "operations": [
+                    operation["id"]
+                    for operation in operations_with_paths()
+                ],
+            }
+        )
+
+
+class McpCatalogView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response({"areas": catalog()})
+
+
+class McpTokenListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        tokens = request.user.mcp_tokens.all()
+        return Response(
+            {"tokens": McpTokenSerializer(tokens, many=True).data}
+        )
+
+    def post(self, request):
+        user = request.user
+        if user.is_global_admin:
+            return Response(
+                {
+                    "detail": "L'amministratore globale non ha un profilo per i token MCP."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = McpTokenCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not user.check_password(serializer.validated_data["password"]):
+            return Response(
+                {
+                    "detail": "La password attuale non è corretta.",
+                    "code": "invalid_password",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        token, raw_key = McpToken.issue(
+            user, serializer.validated_data["name"]
+        )
+        record_audit(
+            request,
+            AuditEvent.Action.MCP_TOKEN_CREATED,
+            actor=user,
+            target=token.name,
+        )
+        return Response(
+            {
+                "token": raw_key,
+                "token_data": McpTokenSerializer(token).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class McpTokenDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get(self, request, token_id: int) -> McpToken:
+        return get_object_or_404(request.user.mcp_tokens, pk=token_id)
+
+    def get(self, request, token_id: int):
+        return Response(McpTokenSerializer(self._get(request, token_id)).data)
+
+    def patch(self, request, token_id: int):
+        token = self._get(request, token_id)
+        if not token.is_active:
+            return Response(
+                {"detail": "Il token è revocato."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = McpPermissionsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not request.user.check_password(
+            serializer.validated_data["password"]
+        ):
+            return Response(
+                {
+                    "detail": "La password attuale non è corretta.",
+                    "code": "invalid_password",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        token.permissions = serializer.validated_data["permissions"]
+        token.save(update_fields=["permissions"])
+        record_audit(
+            request,
+            AuditEvent.Action.MCP_PERMISSIONS_CHANGED,
+            actor=request.user,
+            target=token.name,
+            metadata={"enabled": len(token.permissions)},
+        )
+        return Response(McpTokenSerializer(token).data)
+
+
+class McpTokenRevokeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, token_id: int):
+        token = get_object_or_404(
+            request.user.mcp_tokens, pk=token_id
+        )
+        serializer = McpTokenRevokeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not request.user.check_password(
+            serializer.validated_data["password"]
+        ):
+            return Response(
+                {
+                    "detail": "La password attuale non è corretta.",
+                    "code": "invalid_password",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        token.revoke()
+        record_audit(
+            request,
+            AuditEvent.Action.MCP_TOKEN_REVOKED,
+            actor=request.user,
+            target=token.name,
+        )
+        return Response(McpTokenSerializer(token).data)
+
+
+class AdminMcpStatusView(APIView):
+    permission_classes = [IsGlobalAdmin]
+
+    def get(self, request):
+        state = read_state()
+        return Response(
+            {
+                "enabled": state["enabled"],
+                "active_tokens": McpToken.objects.filter(
+                    revoked_at__isnull=True
+                ).count(),
+                "control_file": str(state_path()),
+            }
+        )
+
+
+class AdminMcpToggleView(APIView):
+    permission_classes = [IsGlobalAdmin]
+
+    def post(self, request):
+        serializer = McpServiceToggleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        enabled = serializer.validated_data["enabled"]
+        state = write_state(enabled)
+        record_audit(
+            request,
+            AuditEvent.Action.MCP_SERVICE_TOGGLE,
+            actor=request.user,
+            metadata={"enabled": enabled},
+        )
+        return Response(
+            {
+                "enabled": state["enabled"],
+                "active_tokens": McpToken.objects.filter(
+                    revoked_at__isnull=True
+                ).count(),
+            }
+        )
 
 
 class MeView(APIView):
@@ -385,6 +1105,20 @@ class PasswordChangeView(APIView):
         if _current_token(request) is None:
             update_session_auth_hash(request, user)
 
+        current_session_key = (
+            request.session.session_key
+            if getattr(request, "session", None)
+            else None
+        )
+        revoked_sessions = _invalidate_other_sessions(user, current_session_key)
+        request.session["last_activity"] = time.time()
+        record_audit(
+            request,
+            AuditEvent.Action.PASSWORD_CHANGED,
+            actor=user,
+            metadata={"revoked_sessions": revoked_sessions},
+        )
+
         revoked = 0
         if request.data.get("revoke_other_devices") in {True, "true", "1", 1}:
             tokens = user.device_tokens.filter(revoked_at__isnull=True)
@@ -394,14 +1128,18 @@ class PasswordChangeView(APIView):
             revoked = tokens.count()
             tokens.update(revoked_at=timezone.now())
         return Response(
-            {"detail": "Password aggiornata.", "revoked_devices": revoked}
+            {
+                "detail": "Password aggiornata.",
+                "revoked_devices": revoked,
+                "revoked_sessions": revoked_sessions,
+            }
         )
 
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ClientIpScopedRateThrottle]
     throttle_scope = "register"
 
     def post(self, request):
@@ -443,6 +1181,31 @@ class RegisterView(APIView):
         )
 
 
+class AdminAuditView(APIView):
+    """Ultimi eventi di audit, in sola lettura (admin globale)."""
+
+    permission_classes = [IsGlobalAdmin]
+
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", "100"))
+        except (TypeError, ValueError):
+            limit = 100
+        limit = max(1, min(limit, 200))
+        events = AuditEvent.objects.select_related("actor")
+        action = request.query_params.get("action", "").strip()
+        if action:
+            events = events.filter(action=action)
+        return Response(
+            {
+                "events": [
+                    AuditEventSerializer(event).data
+                    for event in events[:limit]
+                ]
+            }
+        )
+
+
 class AdminUserListView(APIView):
     permission_classes = [IsGlobalAdmin]
 
@@ -473,6 +1236,14 @@ class AdminUserDecisionView(APIView):
                 {"detail": "Decisione non valida."}, status=status.HTTP_400_BAD_REQUEST
             )
         user.save(update_fields=["status", "updated_at"])
+        record_audit(
+            request,
+            AuditEvent.Action.ADMIN_APPROVE
+            if decision == "approve"
+            else AuditEvent.Action.ADMIN_REJECT,
+            actor=request.user,
+            target=user.email or user.username or str(user.pk),
+        )
         return Response({"user": UserSerializer(user).data})
 
 
@@ -489,6 +1260,14 @@ class AdminSettingsView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        record_audit(
+            request,
+            AuditEvent.Action.ADMIN_SETTINGS,
+            actor=request.user,
+            metadata={
+                "fields": sorted(serializer.validated_data.keys())
+            },
+        )
         return Response(serializer.data)
 
 
@@ -555,6 +1334,13 @@ class DeviceDetailView(APIView):
     def delete(self, request, device_id: int):
         device = self._get(request, device_id)
         device.revoke()
+        record_audit(
+            request,
+            AuditEvent.Action.DEVICE_REVOKED,
+            actor=request.user,
+            target=device.name or device.prefix,
+            metadata={"platform": device.platform},
+        )
         if _current_token(request) and _current_token(request).pk == device.pk:
             if getattr(request, "session", None) and request.session.session_key:
                 logout(request)
@@ -633,6 +1419,13 @@ class PairingApproveView(APIView):
         pairing.status = DevicePairing.Status.APPROVED
         pairing.approved_at = timezone.now()
         pairing.save(update_fields=["status", "approved_at"])
+        record_audit(
+            request,
+            AuditEvent.Action.PAIRING_APPROVED,
+            actor=request.user,
+            target=str(pairing.pk),
+            metadata={"device": pairing.new_device_name},
+        )
         return Response(DevicePairingSerializer(pairing).data)
 
 
@@ -650,13 +1443,19 @@ class PairingRejectView(APIView):
             )
         pairing.status = DevicePairing.Status.REJECTED
         pairing.save(update_fields=["status"])
+        record_audit(
+            request,
+            AuditEvent.Action.PAIRING_REJECTED,
+            actor=request.user,
+            target=str(pairing.pk),
+        )
         return Response(DevicePairingSerializer(pairing).data)
 
 
 class PairingClaimView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ClientIpScopedRateThrottle]
     throttle_scope = "pairing"
 
     def post(self, request):
@@ -734,7 +1533,7 @@ class PairingStatusView(APIView):
 class PairingCompleteView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ClientIpScopedRateThrottle]
     throttle_scope = "pairing"
 
     def post(self, request, pairing_id):

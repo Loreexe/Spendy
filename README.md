@@ -8,7 +8,7 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.8.6`. Livello
+> **Stato:** release `v0.9.0`. Livello
 > operativo del **design system** in `design/` (catalogo componenti, token, layout,
 > matrice piattaforme, verifiche) e controlli automatici in CI. La **Dashboard**
 > diventa **Home**: portafoglio nella card saldo, grafici, elenchi di conti e salvadanai
@@ -17,11 +17,11 @@ senza integrazioni bancarie.
 > un catalogo Lucide. Su Android la barra ha **Home, Movimenti, Salvadanai,
 > Investimenti, Automazioni**, l'avatar è in alto a destra e i Conti si aprono dal
 > portafoglio; l'archivio personale passa allo **schema 5** con ora e icone.
-> La **0.8.6** introduce un **nuovo flusso guidato per registrare i movimenti** su web e
+> La **0.9.0** aggiunge il **server MCP opzionale** (token per client, permessi per operazione, tag AI, audit e toggle dal pannello admin), la **2FA TOTP dell'admin**, il registro attività, le sessioni a 12 ore/2 ore, gli alert operativi e il backup esteso. La **0.8.6** aveva introdotto il **nuovo flusso guidato per registrare i movimenti** su web e
 > Android: importo con slider a tacche, conti o salvadanaio, categorie, data/ora, tag e
 > riepilogo con conferma. Include inoltre le rifiniture della Home, gli skeleton di
 > pagina coerenti e il feedback aptico Android.
-> Restano fuori gruppi, MCP e notifiche push/email.
+> Restano fuori gruppi e notifiche push/email; il servizio MCP è opzionale e va abilitato dal pannello admin.
 
 ## Screenshot
 
@@ -77,9 +77,10 @@ Immagini catturate dall'ambiente demo (dati finti), **solo tema scuro**.
 - **Cestino** con ripristino, annullamento immediato e filtri per tipo e data.
 - **Saldi mai negativi**: ogni operazione che porterebbe un conto sotto zero viene rifiutata con il saldo disponibile.
 - **Isolamento tra profili**: ogni account normale ha il proprio spazio finanziario; l'admin globale non ha un profilo finanziario.
-- **Autenticazione** email/password, registrazione con approvazione e setup iniziale protetto.
+- **Autenticazione** email/password, registrazione con approvazione, setup iniziale protetto e **2FA TOTP per l'admin globale** (QR e codici di recupero, dal web).
 - **Sistema (admin)**: controllo manuale delle release GitHub, versione backend/frontend, stato del database e stato del backup globale, in sola lettura.
 - **Backup globale automatico**: dump PostgreSQL ogni 15 minuti, configurazione cifrata con age, copia su Backblaze B2 tramite rclone e test di ripristino mensile. La procedura è in [deploy/README.md](deploy/README.md).
+- **MCP (opzionale)**: servizio separato per collegare client come Claude Code o Hermes, con token per client, permessi per singola operazione, audit e tag AI sui movimenti scritti dall’agente. Procedura in [deploy/README.md](deploy/README.md) § «Servizio MCP».
 
 ## Stack
 
@@ -330,14 +331,22 @@ a un altro server; non sostituisce il backup globale.
 
 ## Configurazione di produzione
 
+- Segui la guida di go-live [deploy/GO-LIVE.md](deploy/GO-LIVE.md) per DNS, firewall, NPM/TLS, staging, verifiche e rollback.
 - Servire l'app tramite **HTTPS** con Nginx Proxy Manager: procedura e header in [deploy/npm/README.md](deploy/npm/README.md).
 - Impostare `SECURE_COOKIES=1` quando HTTPS è attivo.
 - Impostare `SECURE_SSL_REDIRECT=1` se NPM non forza già HTTPS.
 - Impostare `DJANGO_SECRET_KEY` con un valore casuale lungo: senza questa variabile il backend non parte quando `DJANGO_DEBUG=0`.
 - Impostare `DJANGO_ALLOWED_HOSTS` e `CSRF_TRUSTED_ORIGINS` con il dominio reale.
+- Impostare `SPENDY_FRONTEND_BIND` con l'IP LAN dell'LXC (non `0.0.0.0`) e limitare `TRUSTED_PROXY_CIDRS` all'IP di NPM e alla rete Docker.
+- Attivare la **2FA TOTP dell'admin** da Impostazioni → Sicurezza prima dell'esposizione.
 - Non esporre PostgreSQL.
 - Conservare il volume PostgreSQL e includerlo nel backup.
 - Non mantenere `SETUP_ALLOWED_CIDRS` aperto alla LAN dopo il primo setup.
+
+Django espone la documentazione OpenAPI solo all'admin; i log dei container
+ruotano a 10 MB × 3 file. Le sessioni web durano al massimo 12 ore, scadono
+dopo 2 ore di inattività e il cambio password chiude le altre sessioni. Il
+registro attività è visibile all'admin con retention di 180 giorni.
 
 Il frontend Nginx invia già `Content-Security-Policy`, `X-Content-Type-Options`,
 `X-Frame-Options`, `Referrer-Policy` e `Permissions-Policy`. HSTS va gestito da
@@ -350,8 +359,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.8.6
-./scripts/update.sh v0.8.6
+./scripts/update.sh --dry-run v0.9.0
+./scripts/update.sh v0.9.0
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).
@@ -373,10 +382,17 @@ Il backup globale del database e della configurazione, cifrato con age e
 caricato su Backblaze B2 tramite rclone, è descritto in
 [deploy/README.md](deploy/README.md). Include dump PostgreSQL, `.env`,
 `compose.yaml`, manifesto con checksum e un test di ripristino mensile.
-Lo stato è visibile nella sezione **Sistema** del pannello admin.
+Con `SPENDY_EXTRA_BACKUP_PATHS` include anche configurazione e certificati NPM
+(o altri percorsi dell’host) nello stesso bundle cifrato. Lo stato è visibile
+nella sezione **Sistema** del pannello admin.
+
+Gli **alert operativi** (backup fallito o troppo vecchio, disco pieno,
+certificato TLS in scadenza) sono inviati via webhook ntfy da
+`deploy/systemd/spendy-healthcheck.timer` e dalle unità di backup; la
+configurazione è in [deploy/README.md](deploy/README.md) § «Alert e monitoraggio».
 
 Per l'accesso iniziale è consigliato **Tailscale**; l'esposizione pubblica
-richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
+richiede ancora hardening, rate limiting perimetrale, verifica email e monitoraggio (la 2FA TOTP dell'admin è implementata sul web).
 
 ## Sicurezza e privacy
 
@@ -390,7 +406,8 @@ richiede ancora hardening, rate limiting, verifica email, 2FA e monitoraggio.
 - Gruppi, MCP e notifiche push/email non sono inclusi.
 - Le spese ricorrenti usano solo un conto, non un salvadanaio come metodo di pagamento; gli importi variabili e le categorie automatiche non sono ancora disponibili.
 - Il cambio del conto di appoggio di un salvadanaio non è ancora disponibile.
-- L'LXC su Proxmox è già stato creato e ospita l'app; configurazione NPM, verifica email, SSO e 2FA non sono completati.
+- L'LXC su Proxmox è già stato creato e ospita l'app; configurazione NPM, verifica email e SSO non sono completati. La 2FA TOTP dell'admin globale è implementata sul web; il flusso API è provato sul demo, mentre la verifica visiva nel browser e l'attivazione in produzione restano da eseguire.
+- Il servizio MCP è implementato e provato in locale, ma non ancora attivato in produzione: richiede l’unità host-side per il toggle e la verifica con un client reale.
 
 ## Licenza
 

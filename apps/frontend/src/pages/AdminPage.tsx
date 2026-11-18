@@ -1,12 +1,39 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   api,
+  type AuditEvent,
+  type McpServiceStatus,
   type Settings,
   type SystemInfo,
   type User,
   type UserStatus,
 } from "../api";
+import { useAuth } from "../auth";
+import { InlineMessage } from "../components/InlineMessage";
 import { AdminPageSkeleton } from "../components/PageSkeletons";
+
+const AUDIT_LABEL: Record<string, string> = {
+  setup_completed: "Setup completato",
+  login_success: "Accesso riuscito",
+  login_failed: "Accesso fallito",
+  token_login: "Accesso da dispositivo",
+  "2fa_verified": "Secondo fattore verificato",
+  "2fa_failed": "Secondo fattore fallito",
+  "2fa_setup": "Configurazione 2FA avviata",
+  "2fa_enabled": "2FA attivata",
+  "2fa_disabled": "2FA disattivata",
+  "2fa_recovery_codes": "Codici di recupero rigenerati",
+  password_changed: "Password cambiata",
+  admin_approve: "Account approvato",
+  admin_reject: "Account rifiutato",
+  admin_settings: "Impostazioni globali modificate",
+  device_revoked: "Dispositivo revocato",
+  pairing_approved: "Pairing approvato",
+  pairing_rejected: "Pairing rifiutato",
+  sessions_revoked: "Sessioni revocate",
+  session_expired: "Sessione scaduta",
+};
 
 const STATUS_LABEL: Record<UserStatus, string> = {
   pending: "In attesa",
@@ -23,6 +50,7 @@ function formatDateTime(value: string | null): string {
 }
 
 export function AdminPage() {
+  const { user } = useAuth();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -33,6 +61,12 @@ export function AdminPage() {
   const [systemMessageError, setSystemMessageError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [mcp, setMcp] = useState<McpServiceStatus | null>(null);
+  const [mcpBusy, setMcpBusy] = useState(false);
+  const [mcpError, setMcpError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -52,9 +86,51 @@ export function AdminPage() {
     }
   }, []);
 
+  const loadAudit = useCallback(async () => {
+    setAuditBusy(true);
+    setAuditError(null);
+    try {
+      const result = await api.adminAudit(50);
+      setAudit(result.events);
+    } catch (err) {
+      setAuditError(
+        err instanceof Error ? err.message : "Registro non disponibile.",
+      );
+    } finally {
+      setAuditBusy(false);
+    }
+  }, []);
+
+  const loadMcp = useCallback(async () => {
+    setMcpError(null);
+    try {
+      setMcp(await api.adminMcpStatus());
+    } catch (err) {
+      setMcpError(
+        err instanceof Error ? err.message : "Stato MCP non disponibile.",
+      );
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadAudit();
+    void loadMcp();
+  }, [load, loadAudit, loadMcp]);
+
+  async function toggleMcp() {
+    setMcpBusy(true);
+    setMcpError(null);
+    try {
+      setMcp(await api.adminMcpToggle(!(mcp?.enabled ?? false)));
+    } catch (err) {
+      setMcpError(
+        err instanceof Error ? err.message : "Cambio stato non riuscito.",
+      );
+    } finally {
+      setMcpBusy(false);
+    }
+  }
 
   async function changeMode(mode: "approval" | "open") {
     setBusy(true);
@@ -127,6 +203,13 @@ export function AdminPage() {
 
   return (
     <div className="stack-page">
+      {user && !user.totp_enabled && (
+        <InlineMessage tone="warning">
+          La verifica a due fattori non è attiva.{" "}
+          <Link to="/settings">Attivala nelle impostazioni</Link> prima di
+          esporre il servizio su Internet.
+        </InlineMessage>
+      )}
       <section className="card">
         <p className="eyebrow">Amministrazione</p>
         <h1>Impostazioni globali</h1>
@@ -163,6 +246,41 @@ export function AdminPage() {
         )}
         {message && <p className="notice success">{message}</p>}
         {error && <p className="error">{error}</p>}
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">MCP</p>
+        <h2>Servizio MCP</h2>
+        {mcpError && <InlineMessage tone="error">{mcpError}</InlineMessage>}
+        {mcp ? (
+          <div className="stack">
+            <p>
+              Stato:{" "}
+              <strong>{mcp.enabled ? "acceso" : "spento"}</strong> · token
+              attivi: <strong>{mcp.active_tokens}</strong>
+            </p>
+            <p className="muted small">
+              L’interruttore scrive il flag letto dall’unità host-side; il
+              container viene avviato o fermato entro circa un minuto.
+            </p>
+            <div className="actions">
+              <button
+                type="button"
+                className={mcp.enabled ? "danger" : undefined}
+                onClick={() => void toggleMcp()}
+                disabled={mcpBusy}
+              >
+                {mcpBusy
+                  ? "Aggiorno…"
+                  : mcp.enabled
+                    ? "Spegni servizio MCP"
+                    : "Accendi servizio MCP"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Stato MCP non disponibile.</p>
+        )}
       </section>
 
       <section className="card">
@@ -296,6 +414,49 @@ export function AdminPage() {
           </div>
         ) : (
           <p className="muted">Informazioni di sistema non disponibili.</p>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="section-heading">
+          <h2>Registro attività</h2>
+          <button
+            type="button"
+            className="secondary small-button"
+            onClick={() => void loadAudit()}
+            disabled={auditBusy}
+          >
+            {auditBusy ? "Aggiorno…" : "Aggiorna"}
+          </button>
+        </div>
+        {auditError && <InlineMessage tone="error">{auditError}</InlineMessage>}
+        {audit.length === 0 ? (
+          <p className="muted">Nessun evento registrato.</p>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Azione</th>
+                  <th>Attore</th>
+                  <th>Dettaglio</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.map((event) => (
+                  <tr key={event.id}>
+                    <td>{formatDateTime(event.created_at)}</td>
+                    <td>{AUDIT_LABEL[event.action] ?? event.action}</td>
+                    <td>{event.actor_label || "—"}</td>
+                    <td>{event.target || "—"}</td>
+                    <td>{event.ip || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

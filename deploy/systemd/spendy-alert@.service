@@ -1,0 +1,16 @@
+[Unit]
+Description=Spendy - invio alert per %i
+Documentation=file:///opt/spendy/deploy/README.md
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/spendy-backup.env
+EnvironmentFile=-/etc/spendy-alert.env
+ExecStart=/usr/bin/python3 /opt/spendy/scripts/alert.py failure %i
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+TimeoutStartSec=2min

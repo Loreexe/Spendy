@@ -1,0 +1,18 @@
+[Unit]
+Description=Spendy - applica il flag acceso/spento del servizio MCP
+Documentation=file:///opt/spendy/deploy/README.md
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=SPENDY_ROOT=/opt/spendy
+Environment=SPENDY_MCP_CONTROL_FILE=/opt/spendy/mcp-control/state.json
+ExecStart=/opt/spendy/scripts/mcp_toggle.sh
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+TimeoutStartSec=5min

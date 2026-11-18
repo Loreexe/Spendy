@@ -807,6 +807,9 @@ class TransactionWriteSerializer(serializers.Serializer):
             category=category,
         )
         transaction_obj.tags.set(resolve_tags(profile, tag_names))
+        from .mcp_tags import apply_ai_tag_if_mcp
+
+        apply_ai_tag_if_mcp(transaction_obj)
         Line.objects.bulk_create(
             [Line(transaction=transaction_obj, **line) for line in self._lines]
         )
@@ -830,6 +833,9 @@ class TransactionWriteSerializer(serializers.Serializer):
             instance.tags.set(
                 resolve_tags(instance.profile, validated_data["tags"])
             )
+        from .mcp_tags import apply_ai_tag_if_mcp
+
+        apply_ai_tag_if_mcp(instance)
         instance.lines.all().delete()
         Line.objects.bulk_create(
             [Line(transaction=instance, **line) for line in self._lines]

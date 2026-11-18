@@ -4,7 +4,15 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import DevicePairing, DeviceToken, GlobalSettings, User
+from .mcp import BY_ID
+from .models import (
+    AuditEvent,
+    DevicePairing,
+    DeviceToken,
+    GlobalSettings,
+    McpToken,
+    User,
+)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -24,6 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
             "avatar_updated_at",
             "status",
             "is_global_admin",
+            "totp_enabled",
             "date_joined",
         )
         read_only_fields = fields
@@ -238,3 +247,96 @@ class PairingClaimSerializer(serializers.Serializer):
 
 class PairingClaimTokenSerializer(serializers.Serializer):
     claim_token = serializers.CharField(max_length=128)
+
+
+class TwoFactorVerifySerializer(serializers.Serializer):
+    challenge = serializers.CharField(max_length=2048)
+    code = serializers.CharField(max_length=64)
+
+
+class TwoFactorConfirmSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=64)
+
+
+class TwoFactorDisableSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    code = serializers.CharField(max_length=64)
+
+
+class TwoFactorRecoveryCodesSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    code = serializers.CharField(max_length=64)
+
+
+class AuditEventSerializer(serializers.ModelSerializer):
+    actor_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditEvent
+        fields = (
+            "id",
+            "action",
+            "actor",
+            "actor_label",
+            "target",
+            "ip",
+            "user_agent",
+            "metadata",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_actor_label(self, obj: AuditEvent) -> str:
+        return obj.actor.get_full_name() if obj.actor else ""
+
+
+class McpTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = McpToken
+        fields = (
+            "id",
+            "name",
+            "prefix",
+            "permissions",
+            "created_at",
+            "last_used_at",
+            "revoked_at",
+        )
+        read_only_fields = fields
+
+
+class McpTokenCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+
+class McpPermissionsSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    permissions = serializers.DictField(
+        child=serializers.CharField(max_length=8)
+    )
+
+    def validate_permissions(self, value):
+        cleaned: dict[str, str] = {}
+        for operation_id, level in value.items():
+            operation = BY_ID.get(operation_id)
+            if operation is None:
+                raise serializers.ValidationError(
+                    f"Operazione MCP sconosciuta: {operation_id}"
+                )
+            expected = "read" if operation.kind == "read" else "write"
+            if level not in {"off", expected}:
+                raise serializers.ValidationError(
+                    f"Livello non valido per {operation_id}: {level}"
+                )
+            if level != "off":
+                cleaned[operation_id] = level
+        return cleaned
+
+
+class McpTokenRevokeSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
+
+class McpServiceToggleSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()

@@ -52,6 +52,21 @@ def read_version() -> str:
 
 
 SPENDY_VERSION = read_version()
+AUDIT_RETENTION_DAYS = int(
+    os.environ.get("SPENDY_AUDIT_RETENTION_DAYS", "180")
+)
+MCP_AUDIT_RETENTION_DAYS = int(
+    os.environ.get("SPENDY_MCP_AUDIT_RETENTION_DAYS", "30")
+)
+MCP_RATE_LIMIT_PER_MINUTE = int(
+    os.environ.get("SPENDY_MCP_RATE_LIMIT_PER_MINUTE", "60")
+)
+MCP_WRITE_RATE_LIMIT_PER_MINUTE = int(
+    os.environ.get("SPENDY_MCP_WRITE_RATE_LIMIT_PER_MINUTE", "20")
+)
+MCP_CONTROL_FILE = os.environ.get(
+    "SPENDY_MCP_CONTROL_FILE", str(BASE_DIR / "mcp-control" / "state.json")
+)
 BACKUP_STATUS_FILE = os.environ.get(
     "SPENDY_BACKUP_STATUS_FILE", str(BASE_DIR / "backup-status" / "status.json")
 )
@@ -79,6 +94,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.middleware.McpAuditMiddleware",
+    "accounts.middleware.SessionIdleTimeoutMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -146,6 +163,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
+# Durata assoluta della sessione web e timeout di inattività (Fase S).
+SESSION_COOKIE_AGE = int(os.environ.get("SESSION_COOKIE_AGE", "43200"))
+SESSION_EXPIRE_AT_BROWSER_CLOSE = env_bool(
+    "SESSION_EXPIRE_AT_BROWSER_CLOSE", False
+)
+SESSION_IDLE_TIMEOUT_SECONDS = int(
+    os.environ.get("SPENDY_SESSION_IDLE_TIMEOUT_SECONDS", "7200")
+)
 CSRF_COOKIE_SAMESITE = "Lax"
 # Secure by default outside development; set SECURE_COOKIES=0 only for local HTTP.
 SECURE_COOKIES = env_bool("SECURE_COOKIES", not DEBUG)
@@ -165,6 +190,7 @@ X_FRAME_OPTIONS = "DENY"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "accounts.mcp_authentication.McpTokenAuthentication",
         "accounts.authentication.DeviceTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
@@ -180,6 +206,7 @@ REST_FRAMEWORK = {
         "login": "10/min",
         "register": "5/hour",
         "pairing": "20/min",
+        "two_factor": "10/min",
     },
 }
 

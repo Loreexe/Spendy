@@ -1,6 +1,7 @@
 [Unit]
 Description=Spendy - backup globale PostgreSQL e configurazione
 Documentation=file:///opt/spendy/deploy/README.md
+OnFailure=spendy-alert@%N.service
 Wants=network-online.target
 After=network-online.target docker.service
 Requires=docker.service

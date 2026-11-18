@@ -1,0 +1,10 @@
+[Unit]
+Description=Spendy - applica il toggle MCP ogni minuto
+
+[Timer]
+OnCalendar=*:0/1
+Persistent=true
+Unit=spendy-mcp-toggle.service
+
+[Install]
+WantedBy=timers.target

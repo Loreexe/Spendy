@@ -35,6 +35,7 @@ Legenda adozione: **condiviso** = usato da più schermate · **locale** = in una
 | `TransactionIcon` | `TransactionIcon.tsx` | `transaction`, `size`; esporta `MovementKindIcon` | icona categoria (fallback icona del tipo) a sinistra della riga movimento; icona del tipo nelle righe compatte della Home | dashboard, Movimenti |
 | `ImportExportSection` | `ImportExportSection.tsx` | import/export nelle Impostazioni; CSV a 6 colonne e archivio schema 5 (0.8.4) | analisi, anteprima, esito, errore | Impostazioni |
 | `DevicesSection` | `DevicesSection.tsx` | dispositivi, pairing QR/codice | caricamento, rinomina, revoca, QR creato/scaduto, errore | Impostazioni |
+| `TwoFactorSection` | `TwoFactorSection.tsx` | 2FA TOTP per l'admin (DC-121): stato, QR `otpauth`, segreto, conferma, codici di recupero monouso, rigenerazione, disattivazione | caricamento, attiva/disattiva, conferma, codici mostrati una volta, copia, errore | Impostazioni (solo admin globale) |
 
 I componenti sono esportati con nome e usati direttamente dalle pagine; non c'è un barrel file né
 un catalogo interattivo (la tavola `docs/design/` è una rappresentazione, non una storybook).

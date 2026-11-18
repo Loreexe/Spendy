@@ -18,6 +18,14 @@ jobs:
         run: bash -n scripts/update.sh
       - name: Update script tests
         run: bash scripts/test_update.sh
+      - name: Ops alert e healthcheck tests
+        run: python3 scripts/test_healthcheck.py
+      - name: Backup globale tests
+        run: python3 scripts/test_backup_global.py
+      - name: MCP toggle test
+        run: bash scripts/test_mcp_toggle.sh
+      - name: MCP smoke script compile
+        run: python3 -m py_compile scripts/mcp_smoke_test.py
 
   design-system:
     runs-on: ubuntu-latest

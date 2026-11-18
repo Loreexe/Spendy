@@ -23,6 +23,7 @@ dist/
 backups/
 backup-status/
 maintenance/on
+mcp-control/
 
 # OS / editor
 .DS_Store

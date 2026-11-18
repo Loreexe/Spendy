@@ -20,24 +20,20 @@ fail() {
 mkdir -p "$BASE/bin"
 cat > "$BASE/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-if [ "$1" = "compose" ] && [ "$2" = "build" ]; then
-    if [ "${FAIL_TARGET:-0}" = "1" ] && [ "$(cat VERSION)" = "0.6.0" ]; then
-        exit 1
-    fi
-    exit 0
-fi
-if [ "$1" = "compose" ] && [ "$2" = "up" ]; then
-    exit 0
-fi
-if [ "$1" = "compose" ] && [ "$2" = "exec" ]; then
-    for arg in "$@"; do
-        if [ "$arg" = "printenv" ]; then
-            printf '%s\n' "${SPENDY_VERSION:-}"
-            exit 0
+for arg in "$@"; do
+    if [ "$arg" = "build" ]; then
+        if [ "${FAIL_TARGET:-0}" = "1" ] && [ "$(cat VERSION)" = "0.6.0" ]; then
+            exit 1
         fi
-    done
-    exit 0
-fi
+        exit 0
+    fi
+done
+for arg in "$@"; do
+    if [ "$arg" = "printenv" ]; then
+        printf '%s\n' "${SPENDY_VERSION:-}"
+        exit 0
+    fi
+done
 exit 0
 EOF
 cat > "$BASE/bin/curl" <<'EOF'

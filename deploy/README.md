@@ -97,7 +97,11 @@ Imposta almeno:
 - `SPENDY_AGE_RECIPIENT`;
 - `SPENDY_RCLONE_REMOTE` (ad esempio `b2:SpendyBackup`);
 - `SPENDY_BACKUP_STATUS_FILE` con il percorso del repository;
-- `SPENDY_AGE_IDENTITY_FILE=/etc/spendy-backup/age.key`.
+- `SPENDY_AGE_IDENTITY_FILE=/etc/spendy-backup/age.key`;
+- `SPENDY_EXTRA_BACKUP_PATHS` (opzionale): percorsi assoluti di configurazione
+  e certificati NPM o altri dati dell'host da includere nel bundle cifrato, ad
+  esempio `/var/lib/docker/volumes/npm_data/_data` se NPM usa un volume Docker.
+  Separare più percorsi con virgola o riga. Il bundle resta cifrato con age.
 
 ## 4. systemd
 
@@ -109,6 +113,7 @@ sudo cp deploy/systemd/spendy-*.service deploy/systemd/spendy-*.timer /etc/syste
 sudo systemctl daemon-reload
 sudo systemctl enable --now spendy-backup.timer
 sudo systemctl enable --now spendy-restore-test.timer
+sudo systemctl enable --now spendy-healthcheck.timer
 ```
 
 Verifica:
@@ -118,6 +123,104 @@ systemctl list-timers 'spendy-*'
 sudo systemctl start spendy-backup.service
 sudo journalctl -u spendy-backup.service -n 100
 ```
+
+Le unità `spendy-backup.service` e `spendy-restore-test.service` hanno
+`OnFailure=spendy-alert@%N.service`: un fallimento avvia l'invio dell'alert.
+
+## 4bis. Alert e monitoraggio
+
+Gli alert usano un webhook compatibile **ntfy** (`SPENDY_ALERT_WEBHOOK`). Il
+messaggio contiene solo host, unità, ora e il problema rilevato: nessun dato
+finanziario e nessun segreto. Se il webhook non è impostato, l'alert resta nel
+journal.
+
+Configurazione consigliata (permessi `600`, proprietario `root`):
+
+```bash
+sudo install -m 600 /dev/null /etc/spendy-alert.env
+sudo editor /etc/spendy-alert.env
+```
+
+```bash
+SPENDY_ALERT_WEBHOOK=https://ntfy.example.com/spendy-<topic-privato>
+SPENDY_DOMAIN=spendy.example.com
+```
+
+Puoi mettere le stesse variabili in `/etc/spendy-backup.env`; le unità leggono
+entrambi i file. `scripts/healthcheck.py`, eseguito ogni 10 minuti, controlla:
+
+- età dell'ultimo backup riuscito (default 30 minuti) e stato `failed`;
+- spazio disco (default allarme all'85%);
+- scadenza del certificato TLS del dominio (default 14 giorni), se
+  `SPENDY_DOMAIN` è impostato.
+
+Prova manuale:
+
+```bash
+sudo sh -c 'set -a; . /etc/spendy-backup.env; [ -f /etc/spendy-alert.env ] && . /etc/spendy-alert.env; set +a; /usr/bin/python3 /opt/spendy/scripts/alert.py test'
+sudo sh -c 'set -a; . /etc/spendy-backup.env; [ -f /etc/spendy-alert.env ] && . /etc/spendy-alert.env; set +a; /usr/bin/python3 /opt/spendy/scripts/healthcheck.py'
+```
+
+Per un uptime esterno usa Uptime Kuma o Healthchecks.io su
+`https://<dominio>/api/health/` (intervallo 1–5 minuti) e configura l'alert
+sullo stesso canale. NPM rinnova il certificato Let's Encrypt; il controllo di
+`healthcheck.py` segnala se il rinnovo non è andato a buon fine.
+
+```bash
+sudo systemctl start spendy-healthcheck.service
+sudo journalctl -u spendy-healthcheck.service -n 50
+```
+
+## 4ter. Servizio MCP
+
+Il servizio MCP è un container separato (`apps/mcp`), con profilo Compose
+`mcp`, che parla con l'API Spendy e non accede al database. È **spento di
+default** e si accende dal pannello admin (Impostazioni globali → MCP).
+
+Prima del primo avvio crea la cartella del flag con i permessi dell'utente
+backend (UID 10001):
+
+```bash
+cd /opt/spendy
+sudo install -d -m 775 -o 10001 -g 10001 mcp-control
+```
+
+- Flag: `mcp-control/state.json` (`{"enabled": true|false}`), montato nel
+  backend; il pannello lo scrive.
+- Applicazione del flag: `spendy-mcp-toggle.timer` esegue ogni minuto
+  [scripts/mcp_toggle.sh](../scripts/mcp_toggle.sh), che esegue solo
+  `docker compose --profile mcp up -d mcp` oppure `docker compose stop mcp`.
+  Nessun socket Docker è montato nel container web.
+- Endpoint: NPM inoltra il dominio al frontend (porta 8080); il frontend Nginx
+  inoltra `/mcp` al servizio `mcp:8001`. I client usano
+  `https://<dominio>/mcp` con `Authorization: Bearer mcp_...`.
+- Aggiornamento: `./scripts/update.sh <tag>` ricostruisce anche l'immagine MCP
+  e la avvia solo se il flag è attivo; il rollback rispetta lo stesso flag.
+
+Installazione delle unità di toggle:
+
+```bash
+sudo cp deploy/systemd/spendy-mcp-toggle.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now spendy-mcp-toggle.timer
+sudo systemctl list-timers 'spendy-mcp-toggle*'
+```
+
+Verifica manuale:
+
+```bash
+docker compose --profile mcp up -d mcp
+docker compose exec -T mcp python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read().decode())"
+curl -sS https://<dominio>/mcp -H 'Authorization: Bearer mcp_...' ...
+```
+
+In assenza di token validi l'endpoint rifiuta le chiamate; le operazioni non
+abilitate per il token sono rifiutate dal backend con `403` e registrate
+nell'audit. Il servizio non espone tool di amministrazione o sicurezza.
+
+Verifica su staging: [STAGING-MCP.md](./STAGING-MCP.md) e smoke test
+[scripts/mcp_smoke_test.py](../scripts/mcp_smoke_test.py).
 
 ## 5. Prova manuale
 
@@ -210,6 +313,11 @@ tar -xzf bundle.tar.gz
 ```
 
 4. Ricrea `.env` da `config.tar.gz` (contiene segreti: maneggia con cautela).
+   Il bundle può contenere anche `extra/NN-<nome>/…`: sono i percorsi indicati
+   in `SPENDY_EXTRA_BACKUP_PATHS` (configurazione e certificati NPM, dati
+   dell'host). Il manifest cifrato elenca i percorsi originali; ripristinali
+   nella stessa posizione. Se ripristini NPM, ferma il suo servizio prima di
+   sostituire database e certificati.
 5. Avvia PostgreSQL e ripristina il dump:
 
 ```bash
