@@ -129,7 +129,7 @@ export function SettingsPage() {
     !user.is_global_admin &&
     matches(
       query,
-      "mcp token client claude hermes permessi operazioni lettura scrittura",
+      "mcp endpoint token client claude hermes permessi operazioni lettura scrittura",
     );
   const security =
     user.is_global_admin &&

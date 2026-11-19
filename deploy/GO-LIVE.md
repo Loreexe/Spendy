@@ -119,7 +119,7 @@ Se vuoi collegare Claude Code, Hermes o un altro client MCP:
 4. Crea il token nell'account proprietario del profilo (**Impostazioni → MCP**),
    scegli le operazioni abilitate e copia il token una sola volta.
 5. Configura il client con URL `https://<DOMINIO>/mcp` e header
-   `Authorization: Bearer mcp_...`.
+   `Authorization: Bearer <token>` (il token include già `mcp_`).
 6. Verifica:
    ```bash
    curl -sS -o /dev/null -w '%{http_code}\n' https://<DOMINIO>/mcp

@@ -50,13 +50,37 @@ def load_operations() -> list[dict]:
     return list(payload.get("operations", []))
 
 
-def fetch_enabled_operations(authorization: str) -> set[str] | None:
+def _bearer_value(authorization: str) -> str:
+    parts = authorization.strip().split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return ""
+
+
+def fetch_enabled_operations(authorization: str) -> set[str]:
+    """Return enabled operations; raise a clear MCP error on bad credentials."""
     try:
         payload = _fetch_json(
             f"{BACKEND_URL}/api/v1/mcp/context/", authorization
         )
-    except (OSError, ValueError, URLError):
-        return None
+    except HTTPError as exc:
+        if exc.code == 401:
+            raise ValueError(
+                "Token MCP non valido o revocato (HTTP 401). Crea un nuovo "
+                "token in Spendy → Impostazioni → MCP e aggiorna il client."
+            ) from exc
+        if exc.code == 403:
+            raise ValueError(
+                "Token MCP non autorizzato (HTTP 403). Controlla i permessi "
+                "del token in Spendy → Impostazioni → MCP."
+            ) from exc
+        raise ValueError(
+            f"Spendy non ha potuto verificare il token MCP (HTTP {exc.code})."
+        ) from exc
+    except (OSError, ValueError, URLError) as exc:
+        raise ValueError(
+            "Spendy non è raggiungibile per verificare il token MCP."
+        ) from exc
     permissions = payload.get("permissions") or {}
     return set(permissions.keys())
 
@@ -103,6 +127,16 @@ def _call_backend(authorization: str, operation: dict, params: dict):
             message = parsed.get("detail") or parsed
         except ValueError:
             message = detail[:500]
+        if exc.code == 401:
+            raise ValueError(
+                "Token MCP non valido o revocato (HTTP 401). Crea un nuovo "
+                "token in Spendy → Impostazioni → MCP."
+            ) from exc
+        if exc.code == 403:
+            raise ValueError(
+                f"Operazione non consentita per questo token MCP (HTTP 403): "
+                f"{message}"
+            ) from exc
         raise ValueError(f"Spendy API {exc.code}: {message}") from exc
     except URLError as exc:
         raise ValueError(f"Spendy API non raggiungibile: {exc.reason}") from exc
@@ -117,8 +151,18 @@ def _call_backend(authorization: str, operation: dict, params: dict):
 def make_tool(operation: dict):
     async def tool(ctx: Context, params: dict | None = None) -> dict:
         authorization = _authorization_from(ctx)
-        if not authorization:
-            raise ValueError("Token MCP mancante nell'header Authorization.")
+        token = _bearer_value(authorization)
+        if not token:
+            raise ValueError(
+                "Token MCP mancante: aggiungi l'header "
+                "Authorization: Bearer mcp_… al client."
+            )
+        if not token.startswith("mcp_"):
+            raise ValueError(
+                "Il token configurato non è un token MCP: deve iniziare con "
+                "mcp_. Non usare un token di Dispositivi; crealo in "
+                "Spendy → Impostazioni → MCP."
+            )
         return await asyncio.to_thread(
             _call_backend, authorization, operation, params or {}
         )
@@ -135,12 +179,20 @@ class SpendyMCPServer(MCPServer):
         tools = await super().list_tools()
         authorization = _current_authorization.get()
         if not authorization:
-            return tools
+            raise ValueError(
+                "Token MCP mancante: configura Authorization: Bearer mcp_… "
+                "nel client."
+            )
+        token = _bearer_value(authorization)
+        if not token.startswith("mcp_"):
+            raise ValueError(
+                "Il token configurato non è un token MCP (deve iniziare con "
+                "mcp_). Crealo in Spendy → Impostazioni → MCP; non usare un "
+                "token di Dispositivi."
+            )
         enabled = await asyncio.to_thread(
             fetch_enabled_operations, authorization
         )
-        if enabled is None:
-            return tools
         return [
             tool
             for tool in tools

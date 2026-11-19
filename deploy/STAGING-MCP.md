@@ -94,7 +94,7 @@ e che lo stack web resti sano. Non forzare il rollback del database.
 - Nel pannello admin, **Registro attività** deve mostrare eventi `mcp_call`
   con esito, tool e durata, senza payload finanziari completi.
 - Configura **Claude Code** o **Hermes** con URL `https://<staging>/mcp` e
-  header `Authorization: Bearer mcp_...`; prova una lettura e una scrittura.
+  header `Authorization: Bearer <token>` (il token include già `mcp_`); prova una lettura e una scrittura.
 - Verifica che le operazioni non abilitate siano assenti da `tools/list` e
   rifiutate se chiamate direttamente.
 

@@ -193,7 +193,7 @@ sudo install -d -m 775 -o 10001 -g 10001 mcp-control
   Nessun socket Docker è montato nel container web.
 - Endpoint: NPM inoltra il dominio al frontend (porta 8080); il frontend Nginx
   inoltra `/mcp` al servizio `mcp:8001`. I client usano
-  `https://<dominio>/mcp` con `Authorization: Bearer mcp_...`.
+  `https://<dominio>/mcp` con `Authorization: Bearer <token>` (il token include già `mcp_`).
 - Aggiornamento: `./scripts/update.sh <tag>` ricostruisce anche l'immagine MCP
   e la avvia solo se il flag è attivo; il rollback rispetta lo stesso flag.
 
@@ -212,7 +212,7 @@ Verifica manuale:
 docker compose --profile mcp up -d mcp
 docker compose exec -T mcp python -c \
   "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read().decode())"
-curl -sS https://<dominio>/mcp -H 'Authorization: Bearer mcp_...' ...
+curl -sS https://<dominio>/mcp -H 'Authorization: Bearer <token>' ...
 ```
 
 In assenza di token validi l'endpoint rifiuta le chiamate; le operazioni non

@@ -9,6 +9,7 @@ from pathlib import Path
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 
 from finance.models import Profile, Tag, Transaction
@@ -210,7 +211,7 @@ class McpAuthorizationTests(APITestCase):
             "/api/v1/finance/transactions/",
             {
                 "kind": "expense",
-                "date": "2026-11-18",
+                "date": timezone.localdate().isoformat(),
                 "description": "Spesa creata via MCP",
                 "amount": "10.00",
                 "account": account["id"],
@@ -226,7 +227,7 @@ class McpAuthorizationTests(APITestCase):
             f"/api/v1/finance/transactions/{transaction.pk}/",
             {
                 "kind": "expense",
-                "date": "2026-11-18",
+                "date": timezone.localdate().isoformat(),
                 "description": "Modificata via MCP",
                 "amount": "10.00",
                 "account": account["id"],
@@ -246,7 +247,7 @@ class McpAuthorizationTests(APITestCase):
             "/api/v1/finance/transactions/",
             {
                 "kind": "expense",
-                "date": "2026-11-18",
+                "date": timezone.localdate().isoformat(),
                 "description": "Spesa manuale",
                 "amount": "10.00",
                 "account": account["id"],

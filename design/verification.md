@@ -267,3 +267,14 @@ Nota: `design/components.md` è in sola lettura; `McpSection` è registrata qui 
 | MCP — scrittura + AI | `transactions_create` con token abilitato | **verde**: movimento creato, tag `AI` presente |
 | MCP — permesso negato | `transactions_list` non abilitato | **verde**: `isError: true`, rifiutato dal backend |
 | Compose/NPM/toggle host-side | stack Compose reale + Nginx + MCP | **verde**: `/mcp` via frontend, E2E initialize/tools/list/read/write/tag AI/denied; toggle reale ON→OFF→ON con 502 a servizio spento e MCP operativo al riavvio |
+
+
+## MCP — UX endpoint e permessi (2026-11-19)
+
+| Controllo | Prova eseguita | Esito |
+| --- | --- | --- |
+| Web — typecheck + build | `cd apps/frontend && npm run lint && npm run build` | **verde** |
+| Web — design/contrasti | `check_design.py`, `check_contrast.py` | **verdi** |
+| Guida endpoint/token | URL derivato da `window.location.origin`, header Bearer, avviso esplicito “non usare un token Dispositivi” | implementato; verifica visiva nel browser **non eseguita** |
+| Matrice permessi | aree con icone, conteggi, ricerca, segmenti Off/Lettura o Off/Scrittura, azioni per area, salvataggio con password | implementata; verifica visiva e tastiera nel browser **non eseguite** |
+| MCP service — errori auth | `cd apps/mcp && python -m unittest -v test_server.py` | **verde**: 6 test su Bearer, 401, filtro tool e token non MCP |

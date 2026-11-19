@@ -8,7 +8,7 @@ senza integrazioni bancarie.
 
 ![CI](https://github.com/Loreexe/Spendy/actions/workflows/ci.yml/badge.svg)![Release](https://img.shields.io/github/v/release/Loreexe/Spendy?label=release)![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
 
-> **Stato:** release `v0.9.0`. Livello
+> **Stato:** release `v0.9.1`. Livello
 > operativo del **design system** in `design/` (catalogo componenti, token, layout,
 > matrice piattaforme, verifiche) e controlli automatici in CI. La **Dashboard**
 > diventa **Home**: portafoglio nella card saldo, grafici, elenchi di conti e salvadanai
@@ -17,7 +17,7 @@ senza integrazioni bancarie.
 > un catalogo Lucide. Su Android la barra ha **Home, Movimenti, Salvadanai,
 > Investimenti, Automazioni**, l'avatar è in alto a destra e i Conti si aprono dal
 > portafoglio; l'archivio personale passa allo **schema 5** con ora e icone.
-> La **0.9.0** aggiunge il **server MCP opzionale** (token per client, permessi per operazione, tag AI, audit e toggle dal pannello admin), la **2FA TOTP dell'admin**, il registro attività, le sessioni a 12 ore/2 ore, gli alert operativi e il backup esteso. La **0.8.6** aveva introdotto il **nuovo flusso guidato per registrare i movimenti** su web e
+> La **0.9.1** corregge e rifinisce la sezione MCP: guida a endpoint e token con copia dell’header completo, matrice dei permessi ridisegnata per area, messaggi di errore più chiari e rifiuto esplicito dei token non MCP. La **0.9.0** aveva aggiunto il **server MCP opzionale** (token per client, permessi per operazione, tag AI, audit e toggle dal pannello admin), la **2FA TOTP dell'admin**, il registro attività, le sessioni a 12 ore/2 ore, gli alert operativi e il backup esteso. La **0.8.6** aveva introdotto il **nuovo flusso guidato per registrare i movimenti** su web e
 > Android: importo con slider a tacche, conti o salvadanaio, categorie, data/ora, tag e
 > riepilogo con conferma. Include inoltre le rifiniture della Home, gli skeleton di
 > pagina coerenti e il feedback aptico Android.
@@ -80,7 +80,7 @@ Immagini catturate dall'ambiente demo (dati finti), **solo tema scuro**.
 - **Autenticazione** email/password, registrazione con approvazione, setup iniziale protetto e **2FA TOTP per l'admin globale** (QR e codici di recupero, dal web).
 - **Sistema (admin)**: controllo manuale delle release GitHub, versione backend/frontend, stato del database e stato del backup globale, in sola lettura.
 - **Backup globale automatico**: dump PostgreSQL ogni 15 minuti, configurazione cifrata con age, copia su Backblaze B2 tramite rclone e test di ripristino mensile. La procedura è in [deploy/README.md](deploy/README.md).
-- **MCP (opzionale)**: servizio separato per collegare client come Claude Code o Hermes, con token per client, permessi per singola operazione, audit e tag AI sui movimenti scritti dall’agente. Procedura in [deploy/README.md](deploy/README.md) § «Servizio MCP».
+- **MCP (opzionale)**: servizio separato per collegare client come Claude Code o Hermes, con token per client, permessi per singola operazione, audit e tag AI sui movimenti scritti dall’agente. Procedura in [deploy/README.md](deploy/README.md) § «Servizio MCP»; configurazione client in [apps/mcp/README.md](apps/mcp/README.md).
 
 ## Stack
 
@@ -359,8 +359,8 @@ verifica il tag, crea un backup locale, attiva la pagina di manutenzione,
 ricostruisce lo stack e fa rollback in caso di errore:
 
 ```bash
-./scripts/update.sh --dry-run v0.9.0
-./scripts/update.sh v0.9.0
+./scripts/update.sh --dry-run v0.9.1
+./scripts/update.sh v0.9.1
 ```
 
 Dettagli e limiti in [deploy/README.md](deploy/README.md#aggiornamento-a-una-release).

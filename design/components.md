@@ -36,6 +36,8 @@ Legenda adozione: **condiviso** = usato da più schermate · **locale** = in una
 | `ImportExportSection` | `ImportExportSection.tsx` | import/export nelle Impostazioni; CSV a 6 colonne e archivio schema 5 (0.8.4) | analisi, anteprima, esito, errore | Impostazioni |
 | `DevicesSection` | `DevicesSection.tsx` | dispositivi, pairing QR/codice | caricamento, rinomina, revoca, QR creato/scaduto, errore | Impostazioni |
 | `TwoFactorSection` | `TwoFactorSection.tsx` | 2FA TOTP per l'admin (DC-121): stato, QR `otpauth`, segreto, conferma, codici di recupero monouso, rigenerazione, disattivazione | caricamento, attiva/disattiva, conferma, codici mostrati una volta, copia, errore | Impostazioni (solo admin globale) |
+| `SessionsSection` | `SessionsSection.tsx` | politica sessioni web (12 h, 2 h di inattività), altre sessioni attive, revoca delle altre sessioni (DC-122) | caricamento, nessuna altra sessione, conferma modale, esito, errore | Impostazioni (tutti gli utenti) |
+| `McpSection` | `McpSection.tsx` | endpoint MCP con guida client/token, elenco token con revoca, matrice permessi per singola operazione raggruppata per area (DC-123) | caricamento, token creato mostrato una volta, matrice con ricerca e azioni per area, salvataggio con password, revoca | Impostazioni (account normali) |
 
 I componenti sono esportati con nome e usati direttamente dalle pagine; non c'è un barrel file né
 un catalogo interattivo (la tavola `docs/design/` è una rappresentazione, non una storybook).

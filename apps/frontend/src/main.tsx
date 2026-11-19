@@ -4,6 +4,7 @@ import { App } from "./App";
 import "./styles.css";
 import "./styles/empty-state.css";
 import "./styles/inline-message.css";
+import "./styles/mcp.css";
 import { applyTheme, getInitialTheme, watchSystemTheme } from "./theme";
 
 applyTheme(getInitialTheme());

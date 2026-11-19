@@ -20,11 +20,32 @@ SPENDY_BACKEND_URL=http://127.0.0.1:8000 \
 
 Configura il client MCP con:
 
-- URL: `https://<dominio>/mcp`;
-- header `Authorization: Bearer mcp_...` (token creato in Spendy).
+- trasporto **Streamable HTTP**;
+- URL: `https://<dominio>/mcp` (in LAN: `http://<IP-LXC>:8080/mcp`);
+- header `Authorization: Bearer <token>`, con un token creato in
+  **Spendy → Impostazioni → MCP** da un account normale.
 
-I tool visibili sono solo quelli abilitati per quel token; le operazioni non
-abilitate vengono rifiutate dal backend con `403`.
+Claude Code:
+
+```bash
+claude mcp add --transport http spendy \
+  http://<IP-LXC>:8080/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+Non usare un token della sezione **Dispositivi**: il token MCP inizia già con
+`mcp_`; incollalo interamente dopo `Bearer`, senza aggiungere un secondo `mcp_`. I tool visibili sono solo quelli abilitati per quel token; le
+operazioni non abilitate vengono rifiutate dal backend con `403`.
+
+Per diagnosticare il token senza chiamare un tool:
+
+```bash
+curl -sS http://<IP-LXC>:8080/api/v1/mcp/context/ \
+  -H "Authorization: Bearer <token>"
+```
+
+Deve restituire `permissions` e l’elenco delle operazioni; un token dispositivo
+o revocato riceve `401`.
 
 ## Verifica
 
