@@ -303,10 +303,25 @@ wait_for_mcp() {
     return 1
 }
 
+frontend_host() {
+    local bind
+    bind="$(grep -E '^SPENDY_FRONTEND_BIND=' .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
+    case "$bind" in
+        "" | "0.0.0.0" | "127.0.0.1") printf '127.0.0.1' ;;
+        *) printf '%s' "$bind" ;;
+    esac
+}
+
 frontend_status() {
-    local status
-    status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/ 2>/dev/null || true)"
-    printf '%s' "${status:-000}"
+    local host status
+    for host in "$(frontend_host)" "127.0.0.1"; do
+        [ -n "$host" ] || continue
+        status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$host:8080/" 2>/dev/null || true)"
+        case "$status" in
+            200 | 503) printf '%s' "$status"; return ;;
+        esac
+    done
+    printf '000'
 }
 
 wait_for_frontend_up() {
