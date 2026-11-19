@@ -1,7 +1,7 @@
 x-backend-environment: &backend-environment
   DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
   DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
-  SPENDY_VERSION: ${SPENDY_VERSION:-0.9.2}
+  SPENDY_VERSION: ${SPENDY_VERSION:-0.9.3}
   DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
   CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:5173,http://localhost:8080}
   POSTGRES_DB: ${POSTGRES_DB:-spendy}
@@ -103,7 +103,7 @@ services:
     environment:
       SPENDY_BACKEND_URL: http://backend:8000
       SPENDY_BACKEND_HOST_HEADER: localhost
-      SPENDY_VERSION: ${SPENDY_VERSION:-0.9.2}
+      SPENDY_VERSION: ${SPENDY_VERSION:-0.9.3}
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8001"
       SPENDY_MCP_BACKEND_TIMEOUT: "20"

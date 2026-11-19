@@ -91,3 +91,23 @@ Verifiche:
 - HTTP è ammesso solo su host privati/Tailscale, dopo conferma esplicita; HTTPS è sempre preferito.
 - `allowBackup=false`: l'archivio locale non entra nel backup Android.
 - QR pairing, salvadanai, investimenti, automazioni, import/export e impostazioni arrivano nelle fasi Q4–Q7.
+
+## Firma release
+
+La chiave di release Android è in `~/.android-keys/` (fuori dal repository):
+
+- `spendy-release.jks` — keystore;
+- `spendy-release.txt` — password del keystore.
+
+Dal **2026-11-19** è stata generata una nuova chiave perché quella precedente
+non era più disponibile. Impronta SHA-256 del certificato:
+
+```text
+0C:6D:89:31:CC:93:41:E1:D4:10:04:71:C0:FF:03:AE:
+D4:A4:C9:78:BB:8D:CB:21:59:91:FC:1D:5D:30:1F:E5
+```
+
+**Backup obbligatorio:** copiare keystore e password nel password manager e su
+un supporto offline. Se la chiave si perde, le versioni successive non possono
+aggiornare l’app installata. La nuova firma richiede la disinstallazione della
+APK precedente; esportare prima l’eventuale archivio locale.
